@@ -94,11 +94,16 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
     sections=[];current=None
     for block in blocks:
         if block['heading']:
-            current={'title':block['text'],'blocks':[],'refs':[]};sections.append(current)
+            current={'title':block['text'],'blocks':[],'refs':[],'image_ids':[]};sections.append(current)
         elif current is None and not has_headings:
-            current={'title':title,'blocks':[],'refs':[]};sections.append(current)
+            current={'title':title,'blocks':[],'refs':[],'image_ids':[]};sections.append(current)
         if current is not None and not block['heading']:
             if re.match(r'^来源[:：]',block['text']):current['refs'].append(block['text']);continue
+            if re.match(r'^配图[:：]',block['text']):
+                image_ids=re.split(r'[,，\s]+',re.split('[:：]',block['text'],maxsplit=1)[1].strip())
+                if not image_ids or any(not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,79}',key) for key in image_ids):
+                    raise ValueError('配图必须填写已登记的图片ID,多个ID用逗号分隔')
+                current['image_ids']=list(dict.fromkeys(current['image_ids']+image_ids));continue
             current['blocks'].append(block)
     chunks=[]
     for section in sections:
@@ -114,7 +119,7 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
             if content:
                 chunks.append({'title':section['title'],'content':content,'source_pages':pages,
                                'source_locator':section['title']+' / '+(', '.join(dict.fromkeys(b['locator'] for b in section['blocks']))),
-                               'source_references':section['refs']})
+                               'source_references':section['refs'],'image_ids':section['image_ids']})
             if end==len(text):break
             start=max(start+1,end-overlap)
     return chunks

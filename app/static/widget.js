@@ -111,6 +111,10 @@
         const large=element('img','preview-image');large.src=url;large.alt=image.alt;large.referrerPolicy='no-referrer';
         sourcePane.append(back,element('h3','',picture.title || '图片详情'),large);back.focus();
       };group.append(button);
+      if(!url.startsWith('data:')) {
+        const original=element('a','source','查看原图 ↗');original.href=url;original.target='_blank';original.rel='noopener noreferrer';
+        group.append(original);
+      }
     });
     if(group.childNodes.length)parent.append(group);
   }

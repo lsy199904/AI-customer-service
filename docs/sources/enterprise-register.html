@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>企业客户注册、登录及企业认证业务流程图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f0f4f8; padding: 20px; }
+  .container { max-width: 1600px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); overflow: hidden; }
+  .title-bar { background: #fff; color: #111; padding: 20px 28px; font-size: 20px; font-weight: 700; letter-spacing: 1px; border-bottom: 1px solid #e0e6ed; }
+  .canvas { position: relative; padding-left: 200px; }
+  .group-bg { position: absolute; left: 0; width: 200px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: 700; letter-spacing: 2px; z-index: 1; text-align: center; line-height: 1.4; }
+  .bg-register { background: linear-gradient(135deg, #5b9bd5, #4472c4); }
+  .bg-certify  { background: linear-gradient(135deg, #ed7d31, #c55a11); }
+  .g { display: grid; grid-template-columns: 1fr 1fr 1fr; position: relative; z-index: 2; }
+  .rh { padding: 14px; text-align: center; font-weight: 700; font-size: 15px; color: #fff; }
+  .ru { background: #5b9bd5; }
+  .rs { background: #70ad47; }
+  .rm { background: #ed7d31; }
+  .rc { padding: 14px 8px; min-height: 92px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .col-u { background: rgba(91,155,213,0.08); }
+  .col-s { background: rgba(112,173,71,0.08); }
+  .col-m { background: rgba(237,125,49,0.08); }
+  .nd { padding: 7px 12px; border-radius: 5px; font-size: 12px; text-align: center; line-height: 1.45; color: #111; min-width: 135px; max-width: 185px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position: relative; z-index: 4; font-weight: 500; }
+  .nu { background: #dae3f3; border: 2px solid #5b9bd5; }
+  .ns { background: #e2efda; border: 2px solid #70ad47; }
+  .nm { background: #fce4d6; border: 2px solid #ed7d31; }
+  .ndec { background: #fff2cc; border: 2px solid #d6b656; clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); padding: 18px 14px; min-width: 155px; max-width: 185px; font-size: 11.5px; line-height: 1.35; }
+  .ne { background: #d9ead3; border: 2px solid #6aa84f; }
+  .hlp { color: #888; font-size: 10.5px; font-weight: normal; }
+  .svg-wrap { position: absolute; top: 0; left: 200px; right: 0; bottom: 0; pointer-events: none; z-index: 3; }
+  .svg-wrap svg { width: 100%; height: 100%; overflow: visible; }
+  .a { stroke: #111; stroke-width: 1.8; fill: none; marker-end: url(#ah); }
+  .tb { font-size: 10.5px; font-weight: bold; fill: #111; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="title-bar">企业客户注册、登录及企业认证业务流程图</div>
+
+  <div class="canvas" id="canvas">
+    <div class="group-bg bg-register" id="gReg">注册 / 登录</div>
+    <div class="group-bg bg-certify"  id="gCer">企业认证</div>
+
+    <div class="svg-wrap"><svg id="svgLayer"></svg></div>
+
+    <div class="g" id="grid">
+      <div class="rh ru">客户</div>
+      <div class="rh rs">系统</div>
+      <div class="rh rm">客户经理</div>
+
+      <div class="rc col-u"><div class="nd nu" id="n1">填写手机号及验证码<br>提交登录</div></div>
+      <div class="rc col-s"></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"><div class="nd ns" id="n2">校验并登录系统</div></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"><div class="nd ndec" id="n3">是否匹配到过往<br>手机号信息？<br><span class="hlp">据此判断是否已注册</span></div></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"><div class="nd ns" id="n4">弹出注册页面<br><span class="hlp">未匹配：新客户</span></div></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"><div class="nd nu" id="n5">填写企业注册信息<br><span class="hlp">企业名称、组织机构代码证、<br>行业、行业分类、推荐客户经理、公司地址</span></div></div>
+      <div class="rc col-s"></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"><div class="nd ns" id="n6">完成注册<br><span class="hlp">保存企业客户资料</span></div></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"><div class="nd nu" id="n7">登录系统工作台</div></div>
+      <div class="rc col-s"></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"><div class="nd ndec" id="n9">判断客户是否<br>已完成企业认证</div></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"><div class="nd ns" id="n10">提示：需完成企业认证<br><span class="hlp">认证后方可领取试用套餐<br>及订购正式套餐</span></div></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"><div class="nd ndec" id="n11">选择认证方式</div></div>
+      <div class="rc col-m"></div>
+
+      <div class="rc col-u"><div class="nd nu" id="n12">在线企业认证<br><span class="hlp">法大大 / e签宝<br>按页面指引完成</span></div></div>
+      <div class="rc col-s"></div>
+      <div class="rc col-m"><div class="nd nm" id="n13">线下认证<br><span class="hlp">联系客户经理<br>或致电热线</span></div></div>
+
+      <div class="rc col-u"></div>
+      <div class="rc col-s"></div>
+      <div class="rc col-m"><div class="nd nm" id="n14">受理线下认证<br><span class="hlp">协助客户完成认证</span></div></div>
+
+      <div class="rc col-u"><div class="nd ne" id="n15">认证完成<br><span class="hlp">可领取 / 订购套餐</span></div></div>
+      <div class="rc col-s"></div>
+      <div class="rc col-m"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.addEventListener('load', layout);
+window.addEventListener('resize', layout);
+
+function layout() {
+  const canvas = document.getElementById('canvas');
+  const grid = document.getElementById('grid');
+  const cr = canvas.getBoundingClientRect();
+  const gr = grid.getBoundingClientRect();
+
+  const allRcs = Array.from(grid.querySelectorAll(':scope > .rc'));
+  const regEndIdx = 6 * 3;
+  const firstReg = allRcs[0], lastReg = allRcs[regEndIdx - 1];
+  const firstCer = allRcs[regEndIdx], lastCer = allRcs[allRcs.length - 1];
+
+  const gReg = document.getElementById('gReg');
+  const gCer = document.getElementById('gCer');
+  gReg.style.top = firstReg.getBoundingClientRect().top - cr.top + 'px';
+  gReg.style.height = (lastReg.getBoundingClientRect().bottom - firstReg.getBoundingClientRect().top) + 'px';
+  gCer.style.top = firstCer.getBoundingClientRect().top - cr.top + 'px';
+  gCer.style.height = (lastCer.getBoundingClientRect().bottom - firstCer.getBoundingClientRect().top) + 'px';
+
+  const svg = document.getElementById('svgLayer');
+  svg.setAttribute('width', grid.offsetWidth);
+  svg.setAttribute('height', grid.offsetHeight);
+
+  function np(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { cx: r.left - gr.left + r.width/2, cy: r.top - gr.top + r.height/2, top: r.top - gr.top, bot: r.bottom - gr.top, left: r.left - gr.left, right: r.right - gr.left };
+  }
+
+  const N = {};
+  ['n1','n2','n3','n4','n5','n6','n7','n9','n10','n11','n12','n13','n14','n15'].forEach(id => { const p = np(id); if (p) N[id] = p; });
+
+  const L = [];
+
+  function down(a, b, label) {
+    const A = N[a], B = N[b]; if (!A || !B) return;
+    const midY = (A.bot + B.top) / 2;
+    L.push(`<path class="a" d="M ${A.cx} ${A.bot} L ${A.cx} ${midY} L ${B.cx} ${midY} L ${B.cx} ${B.top}"/>`);
+    if (label) L.push(`<text x="${(A.cx+B.cx)/2}" y="${midY - 5}" text-anchor="middle" class="tb">${label}</text>`);
+  }
+
+  function diamondOut(diaId, targetId, side, label) {
+    const D = N[diaId], T = N[targetId]; if (!D || !T) return;
+    const startX = side === 'left' ? D.left : D.right;
+    L.push(`<path class="a" d="M ${startX} ${D.cy} L ${T.cx} ${D.cy} L ${T.cx} ${T.top}"/>`);
+    if (label) L.push(`<text x="${(startX + T.cx) / 2}" y="${D.cy - 5}" text-anchor="middle" class="tb">${label}</text>`);
+  }
+
+  function bypassRight(a, b, label) {
+    const A = N[a], B = N[b]; if (!A || !B) return;
+    const farX = Math.max(A.right, B.right) + 60;
+    L.push(`<path class="a" d="M ${A.right} ${A.cy} L ${farX} ${A.cy} L ${farX} ${B.cy} L ${B.right} ${B.cy}"/>`);
+    if (label) L.push(`<text x="${farX - 6}" y="${(A.cy+B.cy)/2 + 4}" text-anchor="end" class="tb">${label}</text>`);
+  }
+
+  // ┘ 形：下 + 左（两段）
+  function downThenLeft(fromId, toId) {
+    const F = N[fromId], T = N[toId]; if (!F || !T) return;
+    L.push(`<path class="a" d="M ${F.cx} ${F.bot} L ${F.cx} ${T.cy} L ${T.right} ${T.cy}"/>`);
+  }
+
+  // ================ 注册/登录 ================
+  down('n1','n2');
+  down('n2','n3');
+  down('n3','n4', '否（未注册客户）');
+  bypassRight('n3','n7', '是（已注册客户）');
+  down('n4','n5');
+  down('n5','n6');
+  down('n6','n7');
+
+  // ================ 企业认证 ================
+  down('n7','n9');
+  down('n9','n10', '否（未认证）');
+  down('n10','n11');
+  diamondOut('n11', 'n12', 'left',  '在线认证');
+  diamondOut('n11', 'n13', 'right', '线下认证');
+  down('n13','n14');
+  down('n12','n15');
+  downThenLeft('n14','n15');
+
+  svg.innerHTML = `<defs><marker id="ah" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#111"/></marker></defs>` + L.join('');
+}
+</script>
+</body>
+</html>

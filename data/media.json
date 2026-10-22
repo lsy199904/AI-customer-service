@@ -4,7 +4,24 @@
     "title": "SmartTITU 产品标识",
     "alt": "SmartTITU 产品 Logo",
     "url": "/media/smarttitu-logo.png",
-    "keywords": ["logo", "产品标识", "品牌标识", "产品商标"],
+    "keywords": [
+      "logo",
+      "产品标识",
+      "品牌标识",
+      "产品商标"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "enterprise-register",
+    "title": "企业注册与认证流程图",
+    "alt": "手机号登录、企业注册及在线或线下企业认证流程",
+    "url": "/media/enterprise-register.png",
+    "keywords": [
+      "企业注册流程图",
+      "企业认证流程图",
+      "注册示意图"
+    ],
     "knowledge_ids": []
   }
 ]

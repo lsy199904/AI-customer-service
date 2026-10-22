@@ -79,8 +79,14 @@ class MediaCatalog:
 
     def candidates(self, question, evidence):
         ids={r['id'] for r in evidence};q=question.lower()
-        return [r for r in self.rows.values() if any(k.lower() in q for k in r.get('keywords',[]) if k)
-                or ids.intersection(r.get('knowledge_ids',[]))][:4]
+        bound=self.bound(evidence);seen={r['id'] for r in bound}
+        return (bound+[r for r in self.rows.values() if r['id'] not in seen and (any(k.lower() in q for k in r.get('keywords',[]) if k)
+                or ids.intersection(r.get('knowledge_ids',[])))])[:4]
+
+    def bound(self,evidence):
+        # Stable operator IDs come from document metadata, never from generated URLs.
+        keys=dict.fromkeys(key for row in evidence for key in row.get('image_ids',[]))
+        return [self.rows[key] for key in keys if key in self.rows][:4]
 
     def public(self, row):
         return {k:row.get(k,'') for k in ('id','url','title','alt')}

@@ -202,6 +202,12 @@ def ingest_documents(config,rebuild=False,embedder=None):
             inactive+=1;continue
         if any(p.is_symlink() for p in [path,*list(path.parents)[:len(path.relative_to(root).parts)-1]]):raise ValueError('不接受符号链接来源:'+relative)
         parsed=parse_document(path,config.chunk_chars,config.overlap_chars)
+        required_images={key for chunk in parsed.chunks for key in chunk.get('image_ids',[])}
+        if required_images:
+            from .conversation import MediaCatalog
+            catalog=MediaCatalog(os.getenv('MEDIA_PATH',str(BASE/'data/media.json')),BASE/'app/static/media')
+            if required_images-catalog.rows.keys():
+                raise ValueError('文档配图ID未在data/media.json登记:'+','.join(sorted(required_images-catalog.rows.keys())))
         revision=hashlib.sha256((parsed.sha256+config.fingerprint).encode()).hexdigest()
         old=existing.get(relative)
         if old and old['active'] and old['current_revision']==revision and not rebuild:

@@ -81,8 +81,8 @@ class LifecycleTests(unittest.TestCase):
 class ParserAndProtocolTests(unittest.TestCase):
  def test_curated_word(self):
   p=Path(__file__).resolve().parent.parent/'knowledge_sources/SmartTITU客户问答.docx'
-  result=parse_document(p);self.assertEqual(len(result.chunks),18)
-  self.assertEqual(result.version,'2026-10-22 v1');self.assertTrue(result.chunks[0]['source_references'])
+  result=parse_document(p);self.assertEqual(len(result.chunks),19)
+  self.assertEqual(result.version,'2026-10-22 v2');self.assertTrue(result.chunks[0]['source_references'])
   self.assertNotIn('来源:',result.chunks[0]['content'])
  def test_docx_tables(self):
   with tempfile.TemporaryDirectory() as t:

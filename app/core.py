@@ -453,6 +453,11 @@ class Service:
                     answer='找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？';reason='image';success=True
                 elif evidence:
                     selected=[evidence[0]];answer=selected[0]['content'];reason='extractive';success=True
+            # Attach required diagrams only for evidence actually cited in a successful answer.
+            # Rejected, irrelevant and uncited retrieval candidates must not add images.
+            if success and selected:
+                bound=self.media.bound(selected)
+                images=list({r['id']:r for r in [*[self.media.public(r) for r in bound],*images]}.values())[:4]
             result_intent=intent
             result={'session_id':sid,'request_id':rid,'message_id':str(uuid.uuid4()),
                     'answer':answer,'status':'answered' if success else 'handoff','intent':result_intent,'images':images,

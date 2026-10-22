@@ -79,3 +79,5 @@ answer_mode仍保留给开发者诊断,客户聊天界面不展示“未调用�
 citations新增document_id、revision、download_url、source_locator、source_references。download_url指向该修订原始Word/PDF等文件快照，需要相同Bearer认证，以附件返回，不是JSON。更新和停用文档后历史快照仍保留。新知识来源接口支持历史片段ID。当前客户知识为所有已认证用户共享，没有企业私有知识分区。
 
 文档新增、停用和版本切换仅通过服务端manage.py命令，未开放面向客户的管理接口。
+
+Word章节的配图标记会被保存为知识元数据image_ids；成功回答实际引用该节时，后端自动合并已登记图片到回复images，即使生成模型未选择图片也会附带。拒答和未引用的候选章节不强制附图。images结构保持不变，前端可用url展示缩略图或打开原图；不需要另外识别Word内嵌图片。
