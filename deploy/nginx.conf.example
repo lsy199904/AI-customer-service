@@ -1,0 +1,28 @@
+# 在已安装Nginx的服务器使用。替换域名和证书路径,先执行nginx -t。
+# 此模板不会签发证书,不会实现现有控制台的登录凭证接口。
+server {
+    listen 80;
+    server_name assistant.example.com;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl;
+    server_name assistant.example.com;
+    ssl_certificate /etc/nginx/certs/assistant/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/assistant/privkey.pem;
+    client_max_body_size 16k;
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 65s;
+        proxy_send_timeout 65s;
+        proxy_cache off;
+    }
+    # 联调页只在本机访问,公网只开放widget.js和业务接口。
+    location = /widget/demo { return 404; }
+    location = /widget/demo.js { return 404; }
+    location = /widget/demo.css { return 404; }
+}

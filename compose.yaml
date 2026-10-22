@@ -1,0 +1,19 @@
+services:
+  assistant:
+    build: .
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_PATH: /srv/assistant/var/assistant.db
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - assistant-data:/srv/assistant/var
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  assistant-data:

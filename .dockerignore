@@ -1,0 +1,8 @@
+.env
+var
+__pycache__
+**/__pycache__
+tests
+backups
+prototype
+knowledge

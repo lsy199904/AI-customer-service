@@ -1,0 +1,74 @@
+[
+  {
+    "source_file": "1.SmartTITU智信词元产品体系文檔列表.url",
+    "sha256": "8dd95c79a2ab85caba7f354261e2c1c0ff3f50058251673f603b319901ca1ab0",
+    "bytes": 115,
+    "handling": "仅链接,未获取在线正文"
+  },
+  {
+    "source_file": "10.SmartTITU 产品logo.png",
+    "sha256": "9ab93987937ea78096e360858ff67a3dcb3856649da956a256351be238716064",
+    "bytes": 25807,
+    "handling": "品牌图,不入库"
+  },
+  {
+    "source_file": "11.TITU Hub用户操作手册-20261009.pdf",
+    "sha256": "bc500c8588e5688022ded98ef96104df5797c5edfe00749fd304b58baf127966",
+    "bytes": 796565,
+    "handling": "已整理;参见记录来源与待核实清单"
+  },
+  {
+    "source_file": "12.TITU Edge 用户操作手册-20261002.pdf",
+    "sha256": "c03ae61ecff4726f7667c3816285a0cfc29b68e0012c3bfbb6101e0ab0a3d2cb",
+    "bytes": 14146833,
+    "handling": "已整理;参见记录来源与待核实清单"
+  },
+  {
+    "source_file": "13.安全审计报告-仅供参考.pdf",
+    "sha256": "51e1f8d1e2b806f20b3204f43f2f009cf4a9ffd31fd056be479b6a3e935f1d25",
+    "bytes": 151893,
+    "handling": "按页提取,参考库隔离"
+  },
+  {
+    "source_file": "14.SmartTITU智信词元产品体系介绍-20261020.pdf",
+    "sha256": "22c85783f48c2ab7765e51fd2ffbc1107a85dc3e016ce8b3b6f422f58219e2c1",
+    "bytes": 2355903,
+    "handling": "已整理;参见记录来源与待核实清单"
+  },
+  {
+    "source_file": "15.TITU Edge部署手册-V1.0.0.0.pdf",
+    "sha256": "843c139ac3329eddd578923896db0d013724cce08d9733d0657036d10ae05ea4",
+    "bytes": 836962,
+    "handling": "按页提取,参考库隔离"
+  },
+  {
+    "source_file": "5.SmartTITU智信词元产品体系介绍-20261009-3.pptx.url",
+    "sha256": "04146fec92191e1757ede49a52f4624368068a2d04bbd95b4286aa4ad9ccf475",
+    "bytes": 115,
+    "handling": "仅链接,未获取在线正文"
+  },
+  {
+    "source_file": "6.AICC AI机密计算产品介绍-26Q3.pdf",
+    "sha256": "2aa2418bf1ba5b4d8dda52a0d6a14f80c212697fe4a6aed4a7cb2e2c196c71a5",
+    "bytes": 7301466,
+    "handling": "按页提取,参考库隔离"
+  },
+  {
+    "source_file": "7.SmartTITU销售常见问题速查FAQ-20261008v1.pdf",
+    "sha256": "a50ee99d16ac4dd3fe09cdf29f9d66030419e1318734c5fde08f02d2c0cec844",
+    "bytes": 758793,
+    "handling": "已整理;参见记录来源与待核实清单"
+  },
+  {
+    "source_file": "8.AI_Token术语词典.html",
+    "sha256": "dc6ccbe701e3b4cfcd2bcc93b07aa3e46f621768d0cdf03d41b05b2ce0c84de4",
+    "bytes": 58944,
+    "handling": "已整理;参见记录来源与待核实清单"
+  },
+  {
+    "source_file": "9.智信SmartTITU单页_SC_V4.jpg",
+    "sha256": "45e6791074966e011eeca1ce7e305ae7a9d357241ec43ae631fa37ba21d040f6",
+    "bytes": 1266861,
+    "handling": "已目视审阅,重复宣传材料不入主库"
+  }
+]
