@@ -93,7 +93,7 @@ class HTTPTests(unittest.TestCase):
   status,r=self.req('/v1/sessions/'+sid+'/messages');self.assertEqual(len(r['items']),2)
   self.assertEqual(self.req('/v1/sessions/'+sid,'DELETE')[0],200)
  def test_widget_assets_and_same_origin(self):
-  for path,kind in [('/widget.js','javascript'),('/widget/demo','text/html'),('/widget/demo.js','javascript'),('/widget/demo.css','text/css')]:
+  for path,kind in [('/widget.js','javascript'),('/widget/demo','text/html'),('/widget/demo.js','javascript'),('/widget/demo.css','text/css'),('/media/smarttitu-logo.png','image/png')]:
    with urllib.request.urlopen(self.url+path) as r:
     self.assertEqual(r.status,200);self.assertIn(kind,r.headers['Content-Type']);self.assertTrue(r.read())
   self.assertEqual(self.req('/v1/sessions','POST',{},headers={'Origin':self.url})[0],201)

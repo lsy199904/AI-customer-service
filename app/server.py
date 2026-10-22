@@ -95,6 +95,7 @@ class Handler(BaseHTTPRequestHandler):
             '/widget/demo':('demo.html','text/html; charset=utf-8'),
             '/widget/demo.js':('demo.js','application/javascript; charset=utf-8'),
             '/widget/demo.css':('demo.css','text/css; charset=utf-8')}
+        assets.update(service.media.assets)
         if path in assets and self.command=='GET':
             return self.send_asset(*assets[path])
         header=self.headers.get('Authorization','')

@@ -36,7 +36,7 @@ context仅允许上述三个字符串字段,每字段最多200字符。企业ID�
   "message_id":"...",
   "answer":"请降低请求频率,检查RPM/TPM上限...",
   "status":"answered",
-  "reason":"answered",
+  "reason":"knowledge",
   "answer_mode":"llm",
   "citations":[{
     "id":"KB-...",
@@ -60,3 +60,13 @@ context仅允许上述三个字符串字段,每字段最多200字符。企业ID�
 ## 自带悬浮组件
 
 GET /widget.js:可嵌入脚本;GET /widget/demo:本地验证页面;GET /widget/demo.js与GET /widget/demo.css:演示页资源。均不含业务数据,无需Bearer。问答、历史和知识来源接口仍需认证。静态资源使用固定路由映射,不开放任意目录读取。
+
+## 意图、命中与图片回复
+
+回答新增intent(如greeting、knowledge、image、handoff)、retrieval(是否命中、算法、阈值和最高相似度)、images数组。问候没有知识引用也可以status=answered;status不再依赖是否存在citation。业务问题未达到知识命中条件时直接handoff=true,不调用模型生成。知识命中后模型answerable=false也返回人工卡片。
+
+images每项包含id、url、title、alt,只来自data/media.json中已登记资源,模型不能创建任意图片URL。本地图片通过公开的固定/media/文件名提供,仅适合可公开的客户资料,不是内部文档下载服务。当前支持PNG/JPEG/WebP/GIF。
+
+二维码当前未提供,SUPPORT_QR_URL保持空白,contact.wechat_qr_url为null;窗口不显示二维码、占位或扫码引导。后台图片能力仍可提供普通产品图片。
+
+answer_mode仍保留给开发者诊断,客户聊天界面不展示“未调用大模型”等技术提示。历史中旧的摘录前缀只在界面隐藏,数据库原始记录不被篡改。

@@ -6,9 +6,7 @@ import shutil
 import tempfile
 import runpy
 ROOT=Path(__file__).resolve().parent.parent
-transport=runpy.run_path(str(ROOT/'scripts/build_prototype.py'))['TRANSPORT']
-rows=[json.loads(x) for x in (ROOT/'data/knowledge.jsonl').read_text().splitlines()]
-source=transport.replace('__KNOWLEDGE__',json.dumps(rows,ensure_ascii=False).replace('<','\\u003c')).replace('\\\\','\\')
+source=runpy.run_path(str(ROOT/'scripts/build_prototype.py'))['transport_source']()
 checks=r'''
 async function check(){
  function assert(test,name){if(!test)throw new Error(name);}
@@ -25,7 +23,13 @@ async function check(){
  await request(path,'POST',{message:'如何开通账号?',request_id:'test-001'});assert((await request(path)).items.length===8,'idempotency');
  assert((await request('/v1/sessions')).items.length===1,'list');
  await request('/v1/sessions/'+created.session_id,'DELETE');assert((await request('/v1/sessions')).items.length===0,'delete');
- console.log('Offline transport: 10 checks passed');
+ const second=await request('/v1/sessions','POST',{context:{}}),secondPath='/v1/sessions/'+second.session_id+'/messages';
+ const greeting=await request(secondPath,'POST',{message:'你好',request_id:'hello-001'});assert(greeting.status==='answered'&&!greeting.citations.length&&greeting.answer.includes('SmartTITU'),'greeting');
+ await request(secondPath,'POST',{message:'平台如何计费',request_id:'billing-001'});
+ const failure=await request(secondPath,'POST',{message:'我的token调用失败怎么办',request_id:'failure-001'});assert(failure.citations[0].title.includes('错误码'),'topic switch');
+ const picture=await request(secondPath,'POST',{message:'给我logo图片',request_id:'picture-001'});assert(picture.images.length===1&&picture.images[0].url.startsWith('data:image/'),'image');
+ const missed=await request(secondPath,'POST',{message:'月球采矿机图片',request_id:'picture-002'});assert(missed.handoff&&missed.contact.wechat_qr_url===null,'no QR on handoff');
+ console.log('Offline transport: 14 checks passed');
 }
 check().catch(error=>{console.error(error.message);process.exitCode=1;});
 '''

@@ -2,7 +2,7 @@
 
 本项目包含真实后端、可嵌入业务页面的悬浮客服、134 条客户知识，以及一个可双击打开的独立 HTML 交互原型。不依赖 Dify、前端框架或外部数据库。
 
-> **当前状态**：可本地运行、可按单实例方式部署。历史会话写入 SQLite；知识采用词法检索。真实大模型和现有企业登录需要按下面的步骤配置。尚未完成真实模型/SSO/生产环境验收，不能把原型效果等同于生产 AI 回答质量。
+> **当前状态**：可本地运行、可按单实例方式部署。历史会话写入 SQLite；知识采用BM25词法检索与TF-IDF余弦相似度门槛,再由模型判断证据能否支持回答。真实大模型和现有企业登录需要按下面的步骤配置。尚未完成真实模型/SSO/生产环境验收，不能把原型效果等同于生产 AI 回答质量。
 
 ## 1. 先看功能原型，不用安装环境
 
@@ -74,7 +74,7 @@ python3 manage.py token --tenant demo-company --user demo-user
 
 复制输出的短期凭证，打开 `http://127.0.0.1:8000/widget/demo`，粘贴凭证并点击“连接并打开客服”。这是本地联调入口，不要求填写模型密钥。
 
-默认 `ANSWER_MODE=extractive`：真实检索知识并返回原文摘录，显示明确标识；不会调用大模型。会话实际保存在 SQLite 中，重启后仍可恢复。短期凭证默认一小时有效，到期重新生成即可。
+默认 `ANSWER_MODE=extractive`：知识命中后返回资料正文,不调用大模型。客户窗口不展示内部模式提示;实际模式保留在接口字段与配置检查中。问候/致谢等走独立会话流程。会话实际保存在 SQLite 中，重启后仍可恢复。短期凭证默认一小时有效，到期重新生成即可。
 
 ## 4. 如何接入大模型
 
@@ -89,10 +89,11 @@ MODEL_NAME=填写控制台已开通的实际模型ID
 
 保存后重新执行 `python3 manage.py check` 并重启服务。check 只校验配置格式与知识文件，不访问外网，不能证明密钥或模型有效。
 
-- `MODEL_BASE_URL` 必须是 HTTPS 基础地址，不包含 `/chat/completions`；服务会在末尾拼接该路径。例如基础地址为 `https://api.smarttitu.cn/v1`，实际请求地址就是 `https://api.smarttitu.cn/v1/chat/completions`。
+- `MODEL_BASE_URL` 默认要求 HTTPS 基础地址，不包含 `/chat/completions`；服务会在末尾拼接该路径。例如基础地址为 `https://api.smarttitu.cn/v1`，实际请求地址就是 `https://api.smarttitu.cn/v1/chat/completions`。
+- 内网HTTP模型可显式配置准确来源,例如`MODEL_HTTP_ORIGINS=http://10.180.158.23:18080`。仅允许私有IP/localhost的已列出来源,不含`/v1`;不再需要手改core.py。
 - `MODEL_API_KEY` 仅保留在服务器，浏览器和原型都不需要模型密钥。含空格或 `#` 的值请使用引号包裹。
 - `MODEL_NAME` 使用实际 model ID，不填写页面展示名，不预设某个模型一定可用。
-- 兼容非流式 Chat Completions 接口，发送 `model`、`messages`、`stream:false`，使用 `Authorization: Bearer ...` 鉴权。模型应按提示生成 JSON 对象，包含 `answerable`、`answer`、`citation_ids`。服务会验证 JSON 和引用ID；格式不符或超时会转人工兜底。
+- 兼容非流式 Chat Completions 接口，发送 `model`、`messages`、`stream:false`，使用 `Authorization: Bearer ...` 鉴权。模型应按提示生成 JSON 对象，包含 `answerable`、`answer`、`citation_ids`和可选的`image_ids`。服务会验证 JSON、知识引用及已登记图片ID；格式不符或超时会转人工兜底。
 - 当前不强制传 `response_format`，也不使用 Responses API、工具调用或流式输出。请求超时45秒，不跟随重定向。对接其他供应商时，须确认其接口路径、认证及消息格式兼容。
 
 模型适配参考：[OpenAI Chat Completions 官方接口说明](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)。该引用说明接口格式，不代表所有第三方模型均兼容。
@@ -113,10 +114,10 @@ python3 manage.py init
 
 ```dotenv
 CORS_ORIGINS=https://console.example.com
-SUPPORT_QR_URL=https://你的受控图片域名/企业微信客服二维码.png
+SUPPORT_QR_URL=
 ```
 
-以上域名和地址为示例，必须替换为实际值；没有二维码时留空。多个业务来源用逗号分隔，不接受 `*`。
+来源域名为示例,替换为实际业务页面来源。当前未提供企业微信二维码,保持SUPPORT_QR_URL为空:人工卡片只展示电话和邮箱,不占位、不提示扫码。多个业务来源用逗号分隔，不接受 `*`。
 
 启动、查看状态与日志：
 
@@ -211,3 +212,11 @@ python3 -m unittest discover -s tests -v
 - [API对接说明](docs/API对接说明.md)、[OpenAPI描述](docs/openapi.json)：接口约定。
 - [MVP验收清单](docs/MVP验收清单.md)：一期范围及未实现内容。
 - [知识整理说明](knowledge/README.md)：知识来源、运行数据和可读文档的关系。
+
+## 本次客服交互修正
+
+问候/身份/能力/致谢/告别先分流;llm模式由系统提示驱动模型友好回应,不检索知识。业务问题先检索并通过主题覆盖、BM25分数及TF-IDF余弦相似度门槛,有效命中才进入模型证据判断与生成;无有效知识直接转人工,模型判定依据不足也转人工。用户主动转人工同样展示联系卡片。
+
+`RETRIEVAL_MIN_SIMILARITY=0.14`可配置,数值是词法向量相似度,不是答案准确率或置信概率,也不是Embedding语义检索。不要盲目调低门槛;实际业务语料仍需验收。错误追问不再自动继承无关的计费上下文。
+
+回复支持已登记图片,详见[图片回复与人工联系](docs/图片回复与人工联系.md)。这不包含图片生成或上传OCR。目前没有企业微信二维码,不展示;无需等待二维码即可使用人工电话/邮箱。
