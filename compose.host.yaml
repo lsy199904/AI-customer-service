@@ -1,0 +1,28 @@
+# Standalone Compose configuration for the existing Linux model host.
+# Run through scripts/docker-host.sh so bind-mounted data uses the host user's UID/GID.
+services:
+  assistant:
+    build: .
+    env_file: .env
+    network_mode: host
+    user: "${ASSISTANT_UID:?use scripts/docker-host.sh}:${ASSISTANT_GID:?use scripts/docker-host.sh}"
+    working_dir: /ai_customer
+    environment:
+      HOST: 127.0.0.1
+      PORT: "${PORT:-8000}"
+      DATABASE_PATH: /ai_customer/var/assistant.db
+      RAG_INDEX_PATH: /ai_customer/var/rag.sqlite3
+      KNOWLEDGE_SOURCE_DIR: /ai_customer/knowledge_sources
+    volumes:
+      - .:/ai_customer
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','8000')+'/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -106,6 +106,19 @@ python manage.py ingest --rebuild
 
 ## Docker 部署
 
+当前这台 Linux 模型主机可直接把整个 `~/ai_customer` 挂载到容器 `/ai_customer`，保留原有模型、会话和知识文件。使用宿主机网络，无需改变Ollama的回环监听：
+
+```bash
+cd ~/ai_customer
+python3 scripts/configure_existing_services.py
+# 确认.env中ANSWER_MODE=llm；停止原来占用8000端口的Python客服后执行
+sh scripts/docker-host.sh up --build -d
+sh scripts/docker-host.sh exec assistant python manage.py ingest
+sh scripts/docker-host.sh exec assistant python manage.py check
+```
+
+依赖在镜像构建时自动安装；宿主机不用pip安装。当前方案通过 `compose.host.yaml` 整目录挂载，不创建新的数据卷。详细日志、凭证、更新和备份命令见 [容器部署](docs/容器部署.md)。以下桥接网络方式为另一种部署选择，选定一种后保持使用同一套配置。
+
 先准备 `.env`。普通 `compose.yaml` 需要填容器可访问的模型地址，容器中的 `127.0.0.1` 是容器自己。在用户当前模型主机上，可使用复用模型网络的叠加配置：
 
 ```bash

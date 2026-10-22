@@ -5,8 +5,10 @@ from pathlib import Path
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
+from urllib.parse import urlsplit
 ROOT=Path(__file__).resolve().parent.parent
 
 def inspect(name):
@@ -27,10 +29,17 @@ def main():
     ip=network.get('IPAddress')
     if not ip:raise SystemExit('未找到重排容器IP,请配置实际地址;没有修改.env')
     update={'RETRIEVAL_BACKEND':'semantic','EMBEDDING_PROVIDER':'ollama','EMBEDDING_URL':'http://127.0.0.1:11434/api/embed','EMBEDDING_MODEL':'bge-m3:latest','EMBEDDING_REVISION':'v1','RERANK_ENABLED':'true','RERANK_URL':'http://'+ip+':8001/v1/rerank','RERANK_MODEL':'Qwen3-Reranker-4B','RERANK_API_KEY':key}
-    lines=env.read_text().splitlines();old_origins=''
+    lines=env.read_text().splitlines();old_origins='';chat_url=''
     for line in lines:
-        if line.startswith('MODEL_HTTP_ORIGINS='):old_origins=line.split('=',1)[1].strip().strip('"\'')
+        if line.startswith(('MODEL_HTTP_ORIGINS=','MODEL_BASE_URL=')):
+            name,value=line.split('=',1);parts=shlex.split(value,comments=True)
+            if len(parts)>1:raise SystemExit('配置值包含空格，请使用引号包裹；没有修改.env')
+            value=parts[0] if parts else ''
+            if name=='MODEL_HTTP_ORIGINS':old_origins=value
+            else:chat_url=value
     origins=[v for v in old_origins.split(',') if v]+['http://127.0.0.1:11434','http://'+ip+':8001']
+    chat=urlsplit(chat_url)
+    if chat.scheme=='http' and chat.netloc:origins.append('http://'+chat.netloc)
     update['MODEL_HTTP_ORIGINS']=','.join(dict.fromkeys(origins))
     result=[];written=set()
     for line in lines:
