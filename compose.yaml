@@ -5,10 +5,13 @@ services:
     environment:
       HOST: 0.0.0.0
       DATABASE_PATH: /srv/assistant/var/assistant.db
+      RAG_INDEX_PATH: /srv/assistant/var/rag.sqlite3
+      KNOWLEDGE_SOURCE_DIR: /srv/assistant/knowledge_sources
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - assistant-data:/srv/assistant/var
+      - ./knowledge_sources:/srv/assistant/knowledge_sources:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]

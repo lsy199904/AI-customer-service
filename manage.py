@@ -1,4 +1,4 @@
-"""Local operations: no third-party dependencies, never executes .env as code."""
+"""Local operations; never executes .env as code. PDF parsing uses pypdf."""
 import argparse
 import json
 import os
@@ -57,6 +57,12 @@ def main():
     run.add_argument('--host');run.add_argument('--port',type=int)
     token=sub.add_parser('token',help='可信后端本地调试签发器')
     token.add_argument('--tenant',required=True);token.add_argument('--user',required=True);token.add_argument('--ttl',type=int,default=3600)
+    ingest=sub.add_parser('ingest',help='增量读取Word/PDF/Markdown/TXT,生成语义索引')
+    ingest.add_argument('--rebuild',action='store_true',help='模型或切分变化时全量重建')
+    sub.add_parser('documents',help='列出文档及当前版本')
+    revisions=sub.add_parser('revisions',help='查看文档修订记录');revisions.add_argument('document_id')
+    disable=sub.add_parser('deactivate',help='显式停用文档,保留历史引用');disable.add_argument('document_id')
+    activate=sub.add_parser('activate',help='切换已保存修订,保留原文件');activate.add_argument('document_id');activate.add_argument('--revision',required=True)
     sub.add_parser('check',help='校验配置和知识,不发送外网请求')
     backup=sub.add_parser('backup',help='一致性备份SQLite,默认写入backups目录')
     backup.add_argument('--output')
@@ -64,19 +70,42 @@ def main():
     try:
         if args.command=='init':
             init_env(BASE/'.env');print('已创建.env并生成随机AUTH_SECRET,请按需编辑配置。');return
-        load_env(BASE/'.env');config=Settings();config.validate()
+        # Containers receive configuration through env_file, without copying the secret file into the image.
+        if (BASE/'.env').is_file():load_env(BASE/'.env')
+        elif not os.getenv('AUTH_SECRET'):raise ValueError('未找到.env或AUTH_SECRET环境变量,请先初始化配置')
+        config=Settings();config.validate()
         if args.command=='check':
-            kb=Knowledge(config.knowledge)
-            print(json.dumps({'configuration':'valid','mode':config.mode,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db},ensure_ascii=False,indent=2))
+            if config.retrieval_backend=='semantic':
+                from app.rag import RAGSettings,SemanticKnowledge
+                rag=RAGSettings();rag.validate();kb=SemanticKnowledge(rag)
+            else:kb=Knowledge(config.knowledge)
+            print(json.dumps({'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db,'next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))
+        elif args.command in ('ingest','documents','revisions','deactivate','activate'):
+            from app.rag import RAGSettings,DocumentStore,ingest_documents
+            rag=RAGSettings();store=DocumentStore(rag.index_path)
+            if args.command=='ingest':result=ingest_documents(rag,rebuild=args.rebuild)
+            elif args.command=='documents':result=store.documents()
+            elif args.command=='revisions':result=store.revisions(args.document_id)
+            elif args.command=='activate':store.activate(args.document_id,args.revision);result={'activated':args.document_id,'revision':args.revision}
+            else:store.deactivate(args.document_id);result={'deactivated':args.document_id}
+            print(json.dumps(result,ensure_ascii=False,indent=2))
         elif args.command=='token':print(issue_token(config.secret,args.tenant,args.user,args.ttl))
         elif args.command=='backup':
             output=args.output or str(BASE/'backups'/('assistant-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'.sqlite3'))
-            print('备份已校验:'+str(backup_database(config.db,output)))
+            print('会话备份已校验:'+str(backup_database(config.db,output)))
+            from app.rag import RAGSettings
+            index=RAGSettings().index_path
+            if Path(index).is_file():
+                target=Path(output).with_name(Path(output).stem+'-knowledge.sqlite3')
+                print('知识索引及原文版本备份已校验:'+str(backup_database(index,target)))
         elif args.command=='serve':
             from app.server import main as serve
             import sys
             sys.argv=[sys.argv[0]]+(['--host',args.host] if args.host else [])+(['--port',str(args.port)] if args.port else [])
             serve()
-    except (ValueError,FileExistsError) as error:parser.exit(2,str(error)+'\n')
+    except Exception as error:
+        from app.rag import RAGError
+        if not isinstance(error,(ValueError,FileExistsError,RAGError)):raise
+        parser.exit(2,str(error)+'\n')
 
 if __name__=='__main__':main()

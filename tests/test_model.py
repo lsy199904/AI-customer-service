@@ -13,7 +13,7 @@ class ModelContractTests(unittest.TestCase):
    def read(self,n):return json.dumps({'choices':[{'message':{'content':json.dumps(result)}}]}).encode()
   class Opener:
    def open(self,req,timeout):outer.sent=json.loads(req.data);return Response()
-  c=Settings(model='test-model',model_key='test-key')
+  c=Settings(retrieval_backend='lexical',model='test-model',model_key='test-key')
   with patch('urllib.request.build_opener',return_value=Opener()):
    return Model(c).answer('如何计费',[],[{'id':'KB-001','content':'按量计费'}],context or {})
  def test_success(self):

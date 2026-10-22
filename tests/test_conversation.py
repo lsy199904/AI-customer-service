@@ -10,7 +10,7 @@ SECRET='test-secret-abcdefghijklmnopqrstuvwxyz-0123456789'
 ACTOR={'tenant_id':'t','sub':'u'}
 class ConversationTests(unittest.TestCase):
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.config=Settings(secret=SECRET,db=str(Path(self.tmp.name)/'db'))
+  self.tmp=tempfile.TemporaryDirectory();self.config=Settings(retrieval_backend='lexical',secret=SECRET,db=str(Path(self.tmp.name)/'db'))
   self.s=Service(self.config);self.sid=self.s.create(ACTOR,{})['session_id'];self.count=0
  def tearDown(self):self.s.db.close();self.tmp.cleanup()
  def ask(self,q):
@@ -62,11 +62,11 @@ class ConversationTests(unittest.TestCase):
   self.assertEqual(self.s.knowledge.search('你好'),[])
  def test_private_http_explicit_allowlist(self):
   base=dict(secret=SECRET,mode='llm',model_key='not-empty',model='Qwen/Qwen3-32B',model_url='http://10.180.158.23:18080/v1')
-  with self.assertRaises(ValueError):Settings(**base).validate()
-  Settings(**base,http_origins=('http://10.180.158.23:18080',)).validate()
-  with self.assertRaises(ValueError):Settings(**{**base,'model_url':'http://8.8.8.8/v1'},http_origins=('http://8.8.8.8',)).validate()
+  with self.assertRaises(ValueError):Settings(retrieval_backend='lexical',**base).validate()
+  Settings(retrieval_backend='lexical',**base,http_origins=('http://10.180.158.23:18080',)).validate()
+  with self.assertRaises(ValueError):Settings(retrieval_backend='lexical',**{**base,'model_url':'http://8.8.8.8/v1'},http_origins=('http://8.8.8.8',)).validate()
  def test_media_catalog_refuses_untrusted_schemes(self):
   path=Path(self.tmp.name)/'media.json';path.write_text(json.dumps([{'id':'test','url':'javascript:alert(1)'}]))
   with self.assertRaises(ValueError):MediaCatalog(path,Path(self.tmp.name))
  def test_local_qr_must_be_registered(self):
-  self.assertRaises(ValueError,Service,Settings(secret=SECRET,db=str(Path(self.tmp.name)/'other'),qr_url='/media/no-such-qr.png'))
+  self.assertRaises(ValueError,Service,Settings(retrieval_backend='lexical',secret=SECRET,db=str(Path(self.tmp.name)/'other'),qr_url='/media/no-such-qr.png'))

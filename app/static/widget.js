@@ -198,6 +198,15 @@
       loading.remove();if(v===generation) {setBusy(false);input.focus();scroll();}
     }
   }
+  async function downloadDocument(path,filename) {
+    if(!/^\/v1\/documents\/DOC-[a-f0-9]+\/revisions\/[a-f0-9]{64}\/download$/.test(path))throw new Error('文档链接无效');
+    const auth=await token();
+    const response=await fetch(apiURL(path),{headers:{Authorization:'Bearer '+auth},cache:'no-store',credentials:'omit'});
+    if(!response.ok)throw new Error('文档暂时无法下载');
+    const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=filename || 'knowledge.docx';a.style.display='none';document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }
   async function showSource(source) {
     const v=generation;sourcePane.hidden=false;sourcePane.replaceChildren();
     const back=element('button','source-back','← 返回对话');back.onclick=()=>{sourcePane.hidden=true;input.focus();};sourcePane.append(back);back.focus();
@@ -206,6 +215,9 @@
       const r=await request('/v1/sources/'+encodeURIComponent(source.id));
       if(v!==generation) return;
       content.replaceChildren(element('h3','',r.title),element('div','meta',`${r.source_file} · ${r.version || ''} · 页码 ${(r.pages || []).join(', ') || '不适用'}`),element('p','',r.content));
+      if(r.source_locator)content.append(element('div','meta',r.source_locator));
+      if(r.source_references?.length)content.append(element('p','meta',r.source_references.join('\n')));
+      if(r.download_url){const b=element('button','source-back','下载这份知识文档');b.onclick=async()=>{try{await downloadDocument(r.download_url,r.source_file);}catch(err){b.textContent=err.message;}};content.append(b);}
       const url=safeHTTPS(r.document_url);
       if(url) {const a=element('a','','查看原文档 ↗');a.href=url;a.target='_blank';a.rel='noopener noreferrer';content.append(a);}
     } catch(err) {if(v===generation) content.textContent=err.message;}

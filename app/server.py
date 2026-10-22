@@ -6,7 +6,7 @@ import os
 import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, parse_qs, quote
 from .core import APIError, Service, Settings, authenticate, BASE
 
 LOG=logging.getLogger('assistant')
@@ -50,6 +50,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header('Connection','close')
         self.end_headers();self.wfile.write(raw);self.close_connection=True
+
+    def send_document(self,filename,raw):
+        types={'.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.pdf':'application/pdf','.md':'text/markdown; charset=utf-8','.txt':'text/plain; charset=utf-8'}
+        from pathlib import Path
+        self.send_response(200)
+        self.send_header('Content-Type',types.get(Path(filename).suffix.lower(),'application/octet-stream'))
+        self.send_header('Content-Length',str(len(raw)))
+        self.send_header('Content-Disposition',"attachment; filename*=UTF-8''"+quote(filename,safe=''))
+        self.send_header('Cache-Control','no-store')
+        self.send_header('X-Content-Type-Options','nosniff')
+        origin=self.headers.get('Origin')
+        if origin in self.server.service.config.origins:
+            self.send_header('Access-Control-Allow-Origin',origin);self.send_header('Vary','Origin')
+        self.send_header('Connection','close');self.end_headers();self.wfile.write(raw);self.close_connection=True
 
     def body(self):
         if self.headers.get('Transfer-Encoding'):
@@ -121,6 +135,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200,service.chat(actor,sid,self.body()))
             elif self.command=='DELETE':
                 return self.send_json(200,service.delete(actor,sid))
+        document=re.fullmatch(r'/v1/documents/(DOC-[a-f0-9]+)/revisions/([a-f0-9]{64})/download',path)
+        if document and self.command=='GET':
+            return self.send_document(*service.document(*document.groups()))
         m=re.fullmatch(r'/v1/sources/(KB-[a-f0-9]+)',path)
         if m and self.command=='GET':
             return self.send_json(200,service.source(m.group(1)))

@@ -32,3 +32,8 @@ class ManageTests(unittest.TestCase):
    try:self.assertEqual(read.execute('SELECT text FROM chat').fetchone()[0],'saved')
    finally:read.close();connection.close()
    with self.assertRaises(ValueError):backup_database(db,target)
+ def test_container_environment_without_dotenv_file(self):
+  import io
+  import manage
+  with tempfile.TemporaryDirectory() as d,patch('manage.BASE',Path(d)),patch.dict(os.environ,{'AUTH_SECRET':'test-secret-abcdefghijklmnopqrstuvwxyz-0123456789','ANSWER_MODE':'extractive','RETRIEVAL_BACKEND':'lexical'},clear=True),patch('sys.argv',['manage.py','check']),patch('sys.stdout',new_callable=io.StringIO) as out:
+   manage.main();self.assertEqual(json.loads(out.getvalue())['configuration'],'valid')

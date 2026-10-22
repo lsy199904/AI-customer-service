@@ -3,13 +3,13 @@ from pathlib import Path
 import hashlib
 import zipfile
 ROOT=Path(__file__).resolve().parent.parent
-SKIP_DIRS={'.git','__pycache__','var','backups','.venv','node_modules'}
+SKIP_DIRS={'.git','__pycache__','var','backups','.venv','node_modules','models'}
 
 def files():
  for path in sorted(ROOT.rglob('*')):
   relative=path.relative_to(ROOT)
   if not path.is_file() or any(x in SKIP_DIRS for x in relative.parts):continue
-  if path.name in {'.env','SHA256SUMS'} or path.suffix in {'.pyc','.db','.sqlite3','.zip'}:continue
+  if (path.name.startswith('.env') and path.name!='.env.example') or path.name=='SHA256SUMS' or path.suffix in {'.pyc','.db','.sqlite3','.zip'}:continue
   yield path
 
 def build():

@@ -14,7 +14,7 @@ B={'tenant_id':'b','sub':'one'}
 C={'tenant_id':'a','sub':'two'}
 class BackendTests(unittest.TestCase):
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.c=Settings(db=str(Path(self.tmp.name)/'db'),secret=SECRET)
+  self.tmp=tempfile.TemporaryDirectory();self.c=Settings(retrieval_backend='lexical',db=str(Path(self.tmp.name)/'db'),secret=SECRET)
   self.s=Service(self.c);self.sid=self.s.create(A,{'context':{'page_path':'/console'}})['session_id']
  def tearDown(self):self.s.db.close();self.tmp.cleanup()
  def ask(self,q,rid='request-001'):return self.s.chat(A,self.sid,{'message':q,'request_id':rid})
@@ -72,7 +72,7 @@ class BackendTests(unittest.TestCase):
   finally:other.db.close()
 class HTTPTests(unittest.TestCase):
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.s=create_server(Settings(db=str(Path(self.tmp.name)/'db'),secret=SECRET,origins=('https://console.example.com',)),port=0)
+  self.tmp=tempfile.TemporaryDirectory();self.s=create_server(Settings(retrieval_backend='lexical',db=str(Path(self.tmp.name)/'db'),secret=SECRET,origins=('https://console.example.com',)),port=0)
   self.t=threading.Thread(target=self.s.serve_forever,daemon=True);self.t.start()
   self.url='http://127.0.0.1:'+str(self.s.server_port);self.tok=issue_token(SECRET,'a','one')
  def tearDown(self):self.s.shutdown();self.t.join();self.s.server_close();self.s.service.db.close();self.tmp.cleanup()

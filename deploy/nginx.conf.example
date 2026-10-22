@@ -17,8 +17,8 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_connect_timeout 5s;
-        proxy_read_timeout 65s;
-        proxy_send_timeout 65s;
+        proxy_read_timeout 200s;
+        proxy_send_timeout 200s;
         proxy_cache off;
     }
     # 联调页只在本机访问,公网只开放widget.js和业务接口。

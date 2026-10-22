@@ -12,6 +12,7 @@
 |POST|/v1/sessions/{id}/messages|提问|
 |DELETE|/v1/sessions/{id}|删除本人会话及全部消息|
 |GET|/v1/sources/{knowledge_id}|查看允许客户访问的引用条目|
+|GET|/v1/documents/{document_id}/revisions/{revision}/download|认证下载引用所对应的原文版本|
 
 创建会话示例:
 
@@ -53,7 +54,7 @@ context仅允许上述三个字符串字段,每字段最多200字符。企业ID�
 }
 ```
 
-所有时间是Unix秒。answer_mode=extractive时answer明确标记为知识原文摘录,reason=extractive。handoff=true时前端应展示contact,而非显示“已转接成功”。理由包括no_knowledge、insufficient_evidence、model_unavailable、requested_handoff、business_tool_unavailable。contact中的wechat_qr_url未配置时为null,应隐藏二维码区域并展示电话和邮箱。
+所有时间是Unix秒。answer_mode=extractive时返回资料正文,reason=extractive,客户窗口不显示模式提示。handoff=true时前端应展示contact,而非显示“已转接成功”。理由包括no_knowledge、insufficient_evidence、model_unavailable、retrieval_unavailable、requested_handoff、business_tool_unavailable。contact中的wechat_qr_url未配置时为null,应隐藏二维码区域并展示电话和邮箱。
 
 前端显示模型或知识文本时应作为纯文本或经过安全过滤的Markdown处理,不要直接作为HTML渲染。读取来源需附带同一Bearer凭证。API没有自动执行来源正文中的命令或跳转的能力。
 
@@ -70,3 +71,11 @@ images每项包含id、url、title、alt,只来自data/media.json中已登记资
 二维码当前未提供,SUPPORT_QR_URL保持空白,contact.wechat_qr_url为null;窗口不显示二维码、占位或扫码引导。后台图片能力仍可提供普通产品图片。
 
 answer_mode仍保留给开发者诊断,客户聊天界面不展示“未调用大模型”等技术提示。历史中旧的摘录前缀只在界面隐藏,数据库原始记录不被篡改。
+
+## 语义检索与版本引用
+
+默认retrieval.method为embedding_rerank，明确禁用重排时为embedding。问候跳过检索。threshold为余弦门槛，similarity为最高召回分数，都不是正确率。检索服务不可用时reason=retrieval_unavailable且handoff=true。
+
+citations新增document_id、revision、download_url、source_locator、source_references。download_url指向该修订原始Word/PDF等文件快照，需要相同Bearer认证，以附件返回，不是JSON。更新和停用文档后历史快照仍保留。新知识来源接口支持历史片段ID。当前客户知识为所有已认证用户共享，没有企业私有知识分区。
+
+文档新增、停用和版本切换仅通过服务端manage.py命令，未开放面向客户的管理接口。

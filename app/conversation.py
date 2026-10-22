@@ -28,12 +28,17 @@ def intent_of(question):
     return 'knowledge'
 
 
-def retrieval_query(question, history):
-    # A new question ending in "怎么办" must not inherit an unrelated billing topic.
+def contextual_query(question,history):
     query=question
     if len(question)<24 and re.search(r'这个|那个|它|上述|刚才|然后|接下来|还有呢',question):
         previous=next((h['content'] for h in reversed(history) if h['role']=='user'), '')
         if previous:query=previous+' '+question
+    return query
+
+
+def retrieval_query(question, history):
+    # A new question ending in "怎么办" must not inherit an unrelated billing topic.
+    query=contextual_query(question,history)
     if re.search(r'调用失败|调用不了|不能调用|无法调用|鉴权失败|报错|错误码|\b(?:400|401|403|404|429|500|503|504)\b',question,re.I):
         query=question+' 调用报错 错误 排查'
     return query

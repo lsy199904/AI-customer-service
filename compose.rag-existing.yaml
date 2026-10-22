@@ -1,0 +1,16 @@
+# 复用用户已验证的Ollama和Reranker,不启动新的GPU模型副本
+services:
+  assistant:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      EMBEDDING_URL: http://host.docker.internal:11434/api/embed
+      RERANK_URL: http://qwen3-reranker-4b:8001/v1/rerank
+      MODEL_HTTP_ORIGINS: "${MODEL_HTTP_ORIGINS},http://host.docker.internal:11434,http://qwen3-reranker-4b:8001"
+    networks:
+      - default
+      - model-network
+networks:
+  model-network:
+    external: true
+    name: ${MODEL_NETWORK:-model-serving_model-net}

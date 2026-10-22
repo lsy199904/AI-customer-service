@@ -17,7 +17,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 
-from .conversation import WELCOME, REPLIES, intent_of, retrieval_query, MediaCatalog
+from .conversation import WELCOME, REPLIES, intent_of, retrieval_query, contextual_query, MediaCatalog
 
 BASE = Path(__file__).resolve().parent.parent
 
@@ -41,12 +41,15 @@ class Settings:
     http_origins: tuple = field(default_factory=lambda: tuple(x.strip().rstrip('/') for x in os.getenv('MODEL_HTTP_ORIGINS','').split(',') if x.strip()))
     media_path: str = field(default_factory=lambda: os.getenv('MEDIA_PATH',str(BASE/'data/media.json')))
     min_similarity: float = field(default_factory=lambda: float(os.getenv('RETRIEVAL_MIN_SIMILARITY','0.14')))
+    retrieval_backend: str = field(default_factory=lambda: os.getenv('RETRIEVAL_BACKEND','semantic'))
     idle_seconds: int = 1800
     requests_per_minute: int = 30
 
     def validate(self):
         if len(self.secret.encode()) < 32:
             raise ValueError('AUTH_SECRET 必须至少 32 字节,请使用随机密钥')
+        if self.retrieval_backend not in ('semantic','lexical'):
+            raise ValueError('RETRIEVAL_BACKEND仅支持semantic/lexical')
         if self.mode not in ('extractive', 'llm'):
             raise ValueError('ANSWER_MODE 仅支持 extractive / llm')
         if self.mode == 'llm' and (not self.model_key or not self.model):
@@ -246,7 +249,11 @@ class Service:
     def __init__(self, config, model=None):
         config.validate()
         self.config = config
-        self.knowledge = Knowledge(config.knowledge,config.min_similarity)
+        if config.retrieval_backend=='semantic':
+            from .rag import SemanticKnowledge,RAGSettings
+            self.knowledge=SemanticKnowledge(RAGSettings())
+        else:
+            self.knowledge=Knowledge(config.knowledge,config.min_similarity)
         self.model = model or Model(config)
         self.media = MediaCatalog(config.media_path, BASE/'app/static/media')
         if config.qr_url.startswith('/media/') and config.qr_url not in self.media.assets:
@@ -280,7 +287,7 @@ class Service:
         return {'name': 'SmartTITU 智能客服', 'welcome': WELCOME,
                 'quick_questions': ['如何开通账号?', '如何创建 API 密钥?', '平台如何计费?', '调用出现429错误怎么办?', '如何联系人工客服?'],
                 'idle_timeout_seconds': self.config.idle_seconds, 'contact': self.contact(),
-                'answer_mode': self.config.mode, 'knowledge_count': len(self.knowledge.rows),
+                'answer_mode': self.config.mode, 'knowledge_count': len(self.knowledge.rows), 'retrieval_backend':self.config.retrieval_backend,
                 'capabilities': {'text_chat': True, 'history': True, 'citations': True,
                                  'reply_images': True, 'upload': False, 'business_tools': False, 'proactive_messages': False}}
 
@@ -354,13 +361,21 @@ class Service:
                 document_url += '#page='+str(row['source_pages'][0])
         return {'id':row['id'],'title':row['title'],'source_file':row['source_file'],
                 'pages':row.get('source_pages',[]),'version':row.get('version'),
-                'url':url,'document_url':document_url}
+                'url':url,'document_url':document_url,'download_url':row.get('download_url'),'document_id':row.get('document_id'),'revision':row.get('revision'),'source_locator':row.get('source_locator'),'source_references':row.get('source_references',[])}
 
     def source(self, key):
-        row=self.knowledge.rows.get(key)
+        row=self.knowledge.get(key) if hasattr(self.knowledge,'get') else self.knowledge.rows.get(key)
+        if row is None and self.config.retrieval_backend=='semantic':
+            # Keep pre-migration citations readable without using the legacy data for new retrieval.
+            row=Knowledge(self.config.knowledge).rows.get(key)
         if row is None:
             raise APIError(404,'not_found','来源不存在')
         return {**self.citation(row), 'content':row['content']}
+
+    def document(self,document_id,revision):
+        row=self.knowledge.store.download(document_id,revision) if hasattr(self.knowledge,'store') else None
+        if row is None:raise APIError(404,'not_found','文档版本不存在')
+        return row
 
     def chat(self, actor, sid, body):
         if set(body)-{'message','request_id'}:
@@ -392,7 +407,7 @@ class Service:
             intent=intent_of(question)
             fallback='这个问题暂时没有找到足够准确的资料，为了不误导您，建议联系人工客服进一步确认。您可以通过下方电话或邮箱联系我们～'
             reason='no_knowledge';answer=fallback;selected=[];images=[];success=False;mode=self.config.mode
-            evidence=[];candidates=[]
+            evidence=[];candidates=[];retrieval_failed=False
             retrieval={'matched':False,'method':'skipped','threshold':self.config.min_similarity,'similarity':None}
             if intent=='handoff':
                 answer='好的，您可以通过以下方式联系人工客服。';reason='requested_handoff'
@@ -401,13 +416,19 @@ class Service:
             else:
                 conversation=intent in REPLIES
                 if not conversation:
-                    retrieval=self.knowledge.assess(retrieval_query(question,history))
-                    evidence=[r for _,r,_ in retrieval['hits']]
-                    candidates=self.media.candidates(question,evidence)
+                    try:
+                        query=contextual_query(question,history) if self.config.retrieval_backend=='semantic' else retrieval_query(question,history)
+                        retrieval=self.knowledge.assess(query)
+                        evidence=[r for _,r,_ in retrieval['hits']]
+                        candidates=self.media.candidates(question,evidence)
+                    except Exception:
+                        retrieval_failed=True
+                        retrieval={'matched':False,'method':self.config.retrieval_backend,'reason':'retrieval_unavailable','similarity':None}
                 # A business question without enough evidence goes directly to handoff.
                 # The generator never gets a chance to invent a missing product answer.
                 if not conversation and not evidence and not candidates:
-                    reason='no_knowledge'
+                    reason='retrieval_unavailable' if retrieval_failed else 'no_knowledge'
+                    if retrieval_failed:answer='资料查询暂时不可用，您可以稍后再试，或通过下方方式联系人工客服。'
                     if intent=='image':
                         answer='暂时没有找到您需要的图片资料。您可以通过下方方式联系人工客服，我们帮您确认并提供合适的资料～'
                 elif mode=='llm':
