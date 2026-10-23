@@ -49,7 +49,7 @@ TRANSPORT=r'''
   function prototypeCitation(row) {return {id:row.id,title:row.title,source_file:row.source_file,pages:row.source_pages,version:row.version,url:'/v1/sources/'+row.id,document_url:null};}
   async function request(path,method='GET',body) {
     const contact={phone:'4008841883',email:'help@china-entercom.net',wechat_qr_url:null};
-    if(path==='/v1/bootstrap')return {welcome:prototypeReplies.greeting,quick_questions:['如何开通账号?','如何创建 API 密钥?','平台如何计费?','调用出现429错误怎么办?','如何联系人工客服?'],idle_timeout_seconds:1800,contact,answer_mode:'extractive'};
+    if(path==='/v1/bootstrap')return {welcome:prototypeReplies.greeting,quick_questions:['如何创建API密钥','如何注册企业账号与认证','如何开发票','快速使用流程','操作审计流程','安全审计流程'],idle_timeout_seconds:1800,contact,answer_mode:'extractive'};
     if(path==='/v1/sessions'&&method==='GET')return {items:[...prototypeSessions.values()].sort((a,b)=>b.updated_at-a.updated_at)};
     if(path==='/v1/sessions'&&method==='POST') {
       const id='offline-'+Date.now()+'-'+Math.random().toString(36).slice(2);

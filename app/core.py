@@ -311,7 +311,7 @@ class Service:
 
     def bootstrap(self):
         return {'name': 'SmartTITU 智能客服', 'welcome': WELCOME,
-                'quick_questions': ['如何开通账号?', '如何创建 API 密钥?', '平台如何计费?', '调用出现429错误怎么办?', '如何联系人工客服?'],
+                'quick_questions': ['如何创建API密钥', '如何注册企业账号与认证', '如何开发票', '快速使用流程', '操作审计流程', '安全审计流程'],
                 'idle_timeout_seconds': self.config.idle_seconds, 'contact': self.contact(),
                 'answer_mode': self.config.mode, 'knowledge_count': len(self.knowledge.rows), 'retrieval_backend':self.config.retrieval_backend,
                 'capabilities': {'text_chat': True, 'history': True, 'citations': True,
