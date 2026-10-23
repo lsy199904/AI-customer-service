@@ -103,12 +103,17 @@ class DocumentImageTests(unittest.TestCase):
 class DocumentImageParserTests(unittest.TestCase):
  def test_updated_word(self):
   result=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx')
-  self.assertEqual(len(result.chunks),71)
-  self.assertFalse(any(c['title'].startswith('问题'+str(i)+' ') for c in result.chunks for i in [5,9,15,22,26,28]))
-  self.assertEqual(result.version,'2026-10-23 v3')
+  self.assertEqual(len(result.chunks),73)
+  import re
+  numbers=[int(re.match(r'问题(\d+)',c['title']).group(1)) for c in result.chunks]
+  self.assertEqual(numbers,sorted(set(numbers)))
+  self.assertEqual([c['title'] for c in result.chunks[3:6]],['问题4 企业注册与认证流程','问题5 开发票流程','问题6 充值、结算流程'])
+  self.assertEqual(result.chunks[4]['image_ids'],['billing-invoice-flow'])
+  self.assertEqual(result.chunks[5]['image_ids'],['recharge-balance-flow'])
+  self.assertEqual(result.version,'2026-10-23 v4')
   bound=[c for c in result.chunks if 'enterprise-register' in c['image_ids']];self.assertEqual(len(bound),1)
   self.assertIn('企业注册与认证流程',bound[0]['title'])
-  self.assertEqual(len(set(k for c in result.chunks for k in c['image_ids'])),30)
+  self.assertEqual(len(set(k for c in result.chunks for k in c['image_ids'])),32)
   self.assertFalse(any('运营团队预创建' in c['content'] for c in result.chunks))
   self.assertFalse(any('配图:' in c['content'] for c in result.chunks))
 

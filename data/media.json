@@ -248,5 +248,30 @@
       "品牌标识"
     ],
     "knowledge_ids": []
+  },
+  {
+    "id": "billing-invoice-flow",
+    "title": "开发票流程",
+    "alt": "开发票流程",
+    "url": "/media/billing-invoice-flow.png",
+    "keywords": [
+      "开发票流程图",
+      "开票流程图",
+      "账单与发票流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "recharge-balance-flow",
+    "title": "充值、结算流程",
+    "alt": "充值、结算流程",
+    "url": "/media/recharge-balance-flow.png",
+    "keywords": [
+      "充值流程图",
+      "结算流程图",
+      "充值结算流程图",
+      "充值、结算流程图"
+    ],
+    "knowledge_ids": []
   }
 ]

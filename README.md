@@ -2,7 +2,7 @@
 
 提供 FastAPI + Uvicorn 后端、LangChain Core RAG 链与自带窗口的悬浮客服脚本。Python运行环境使用3.12。正式问答使用 **文档解析 → BGE-M3 语义向量召回 → Qwen3 Reranker 重排 → Qwen3-32B 依据资料回答**。无需 Dify 或单独开发聊天窗口。历史会话与知识版本存入 SQLite，适合单实例、小规模知识库。
 
-首份入库资料为 `knowledge_sources/SmartTITU客户问答.docx`：71 个外部客户问答，按总目录编号2、3、4、5、9、10、11、13、14、15整理；前三问为官网、在线文件、模型清单，第四问为注册认证流程，其余同源连续。保留原图、图片URL、原文PDF链接和出处。Embedding 接收解析后的文本片段，不直接接收 Word 二进制，也不会训练或修改模型权重。旧 `data/knowledge.jsonl` 仅用于兼容模式和离线原型，**默认语义问答不读取它**。
+首份入库资料为 `knowledge_sources/SmartTITU客户问答.docx`：73 个外部客户问答，按总目录编号2、3、4、5、9、10、11、13、14、15整理；前三问为官网、在线文件、模型清单，第四至六问为企业注册与认证、开发票、充值与结算流程，其余同源连续。保留原图、图片URL、原文PDF链接和出处。Embedding 接收解析后的文本片段，不直接接收 Word 二进制，也不会训练或修改模型权重。旧 `data/knowledge.jsonl` 仅用于兼容模式和离线原型，**默认语义问答不读取它**。
 
 ## 服务器上最快启动
 
@@ -51,7 +51,7 @@ python manage.py serve
 
 辅助脚本从 `qwen3-reranker-4b` 的本机 Docker 配置读取密钥和当前容器 IP，仅写入本机 `.env`，不打印密钥，不重启模型。若该容器没有配置可读取的密钥，请找服务管理员；不能用聊天模型的 `not-empty` 代替。容器 IP 改变后重新运行辅助脚本并确认配置；Embedding 端点变更会要求重建索引。
 
-`check` 不调用模型，仅校验配置和索引数量。第一次入库前知识数为 0；`ingest` 成功后本份 Word 应产生 71 个片段。首次入库需要实际调用 Embedding。`serve` 自动读取 `.env`，系统环境变量优先，修改配置后需重启进程。默认数据库为 `var/assistant.db` 和 `var/rag.sqlite3`。
+`check` 不调用模型，仅校验配置和索引数量。第一次入库前知识数为 0；`ingest` 成功后本份 Word 应产生 73 个片段。首次入库需要实际调用 Embedding。`serve` 自动读取 `.env`，系统环境变量优先，修改配置后需重启进程。默认数据库为 `var/assistant.db` 和 `var/rag.sqlite3`。
 
 另开终端，在项目内使用同一虚拟环境：
 
@@ -168,7 +168,7 @@ python -m unittest discover -s tests -v
 
 ## 2026年10月23日外部资料整理
 
-唯一入库文件仍为 `knowledge_sources/SmartTITU客户问答.docx`（v3，71问、71个默认片段、30张引用图片（已登记并发布））。在线PPT实际核对30页；第5及第14份资料第26页标为仅供内部讨论，未收入外部答案。图片文件和原PDF是附件资源，不要复制到knowledge_sources重复入库。历史JSONL仅作兼容；本次外部范围使用默认semantic模式。
+唯一入库文件仍为 `knowledge_sources/SmartTITU客户问答.docx`（v4，73问、73个默认片段、32张引用图片（已登记并发布））。在线PPT实际核对30页；第5及第14份资料第26页标为仅供内部讨论，未收入外部答案。图片文件和原PDF是附件资源，不要复制到knowledge_sources重复入库。历史JSONL仅作兼容；本次外部范围使用默认semantic模式。
 
 已移除旧知识Markdown副本、206条草稿和旧19问生成脚本，后续直接维护Word。Word内原文和图片HTTPS链接指向本仓库main分支附件；下载需要能访问GitHub。部署后客服图片本身从本服务 `/media/` 返回。
 
@@ -177,16 +177,16 @@ python -m unittest discover -s tests -v
 
 独立聊天地址为 `/chatbot`，生产地址如 `https://assistant.example.com/chatbot`。配置 `.env` 的 `FRAME_ORIGINS=https://console.example.com` 后重启，再将链接交给前端嵌入。悬浮入口推荐加载 `/iframe.js`，自动创建 iframe；登录凭证由业务站同源接口提供，不能放到 iframe URL。完整代码、身份桥接和代理配置见 [iframe 接入说明](docs/悬浮弹窗接入.md)。原 `/widget/demo` 和 `/widget.js` 保留兼容。
 
-本次采用用户删改后的71问版本，原编号保留；Word文件名或文内仍标v3/77问的字样不代表实际数量，入库数量以正文解析为准。标题解析兼容Word/WPS数字样式，避免保存后问答被混合切分。删除的条目在重新入库后停止参与后续检索；已保存的历史消息仍会保留。
+本次采用业务流程更新后的v4版，共73问。问题4为企业注册与认证流程，问题5为开发票流程，问题6为充值、结算流程；原问题6及后续编号顺延一位，原已删除内容不恢复。入库数量以正文解析为准。标题解析兼容Word/WPS数字样式，避免保存后问答被混合切分。删除的条目在重新入库后停止参与后续检索；已保存的历史消息仍会保留。
 
 本次首次更新请执行 `python manage.py ingest --rebuild`，重新建立兼容标题解析的索引；后续一般文档更新继续使用 `ingest`。
 
 
 ## 代码和知识资料分别更新
 
-本次Git更新仅发布代码、示例配置和开发部署说明，不发布新整理的Word和原始PDF；当前71问引用的30张知识配图及data/media.json已另行发布。仓库历史中已有的旧示例Word与图片保持原样，不代表最新业务知识。部署时请从自己的编辑副本单独覆盖 `knowledge_sources/SmartTITU客户问答.docx`，不要重复放两份Word。当前71问引用的配图和图片登记表由git pull同步，不需要手动上传。后续新增图片需同时更新图片文件和登记表。原始PDF需要提供可点击下载时另行配置受控地址，GitHub新附件链接不会生效。
+本次Git更新仅发布代码、示例配置和开发部署说明，不发布新整理的Word和原始PDF；当前73问引用的32张知识配图及data/media.json已另行发布。仓库历史中已有的旧示例Word与图片保持原样，不代表最新业务知识。部署时请从自己的编辑副本单独覆盖 `knowledge_sources/SmartTITU客户问答.docx`，不要重复放两份Word。当前73问引用的配图和图片登记表由git pull同步，不需要手动上传。后续新增图片需同时更新图片文件和登记表。原始PDF需要提供可点击下载时另行配置受控地址，GitHub新附件链接不会生效。
 
-本次代码升级首次执行 `python manage.py ingest --rebuild`，然后重启；后续仅修改或删除Word文字条目可执行 `ingest`，无需每次重建。私有文档的71问和配图核对测试默认跳过；资料就绪后设置 `RUN_PRIVATE_KNOWLEDGE_TESTS=1` 可开启。通用解析、鉴权、语义检索、会话与iframe测试仍正常执行。
+本次代码升级首次执行 `python manage.py ingest --rebuild`，然后重启；后续仅修改或删除Word文字条目可执行 `ingest`，无需每次重建。私有文档的73问和配图核对测试默认跳过；资料就绪后设置 `RUN_PRIVATE_KNOWLEDGE_TESTS=1` 可开启。通用解析、鉴权、语义检索、会话与iframe测试仍正常执行。
 
 
 ## 平台式演示页与内网访问
@@ -202,7 +202,7 @@ API层已迁移FastAPI及Pydantic，Uvicorn运行ASGI服务，接口地址和响
 
 RAG使用LangChain Core的BaseRetriever、Document、ChatPromptTemplate、MessagesPlaceholder与RunnableSequence（LCEL）；原有BGE-M3、Reranker、受控模型HTTP客户端和引用校验继续复用。默认禁用LangSmith云端追踪，不需要LangSmith密钥。生成链包括提示组装、模型调用与引用校验；检索报告按每次请求隔离。
 
-既有Word、71条知识索引、历史会话及模型目录保持原样。这次未改变切分版本或Embedding配置，无需重新ingest。Docker构建安装已锁定的requirements.lock；不能只restart旧镜像：
+既有Word、知识索引、历史会话及模型目录保持原样。这次未改变切分版本或Embedding配置，无需重新ingest。Docker构建安装已锁定的requirements.lock；不能只restart旧镜像：
 
 ```bash
 cd ~/ai_customer
@@ -221,3 +221,8 @@ sh scripts/docker-host.sh exec assistant python manage.py check
 ## 检索准确率改进
 
 当前语义RAG增加BM25和RRF混合召回、章节完整标题优先，以及去除链接噪声的检索文本。普通同义问法仍使用向量召回，不要求字面完全相同。首次更新需要 `ingest --rebuild` 后重启，Word无需重写；已完成FastAPI升级的镜像不用重新构建。新增 `manage.py retrieve --query '问题'` 可在服务器检查召回、重排与配图，默认不调用聊天模型、不打印密钥。详见 [检索准确率排查](docs/检索准确率排查.md)。
+
+
+### 业务流程资料更新
+
+v4新增开发票流程、充值与结算流程，均先列文字步骤，再附原始流程图。`data/media.json`及两张流程图由Git同步，Word仍由维护者单独上传并覆盖`knowledge_sources/SmartTITU客户问答.docx`，不要把长文件名副本也放进入库目录。上传后执行`python manage.py ingest`再重启服务；本次未改变Embedding配置，无需全量重建。正常应为73条活动知识。问题编号用于文档阅读，引用和配图绑定仍由知识ID及图片ID管理。
