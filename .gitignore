@@ -13,11 +13,15 @@ __pycache__/
 
 /models/
 
-# Private knowledge and source attachments are copied to deployments separately.
+# Private Word and original PDF attachments are copied separately.
 /knowledge_sources/*.docx
 /knowledge_sources/*.pdf
 /docs/sources/*.pdf
-/app/static/media/hub-*.png
-/app/static/media/ppt-*.png
-/app/static/media/product-*.png
-/app/static/media/smarttitu-brochure.jpg
+
+# Illustrations belonging to the six questions removed from the current Word.
+/app/static/media/ppt-01.png
+/app/static/media/ppt-05.png
+/app/static/media/ppt-11.png
+/app/static/media/ppt-18.png
+/app/static/media/ppt-22.png
+/app/static/media/ppt-24.png

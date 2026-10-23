@@ -1,26 +1,251 @@
 [
   {
-    "id": "smarttitu-logo",
-    "title": "SmartTITU 产品标识",
-    "alt": "SmartTITU 产品 Logo",
-    "url": "/media/smarttitu-logo.png",
+    "id": "enterprise-register",
+    "title": "企业注册与认证流程",
+    "alt": "企业注册与认证流程",
+    "url": "/media/enterprise-register.png",
     "keywords": [
-      "logo",
-      "产品标识",
-      "品牌标识",
-      "产品商标"
+      "企业注册流程图",
+      "企业认证流程图"
     ],
     "knowledge_ids": []
   },
   {
-    "id": "enterprise-register",
-    "title": "企业注册与认证流程图",
-    "alt": "手机号登录、企业注册及在线或线下企业认证流程",
-    "url": "/media/enterprise-register.png",
+    "id": "hub-03",
+    "title": "套餐订购-套餐版本介绍",
+    "alt": "套餐订购-套餐版本介绍",
+    "url": "/media/hub-03.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "hub-05",
+    "title": "模型广场",
+    "alt": "模型广场",
+    "url": "/media/hub-05.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "hub-06",
+    "title": "用量统计与监控",
+    "alt": "用量统计与监控",
+    "url": "/media/hub-06.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "hub-07",
+    "title": "操作审计",
+    "alt": "操作审计",
+    "url": "/media/hub-07.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "hub-08",
+    "title": "安全审计",
+    "alt": "安全审计",
+    "url": "/media/hub-08.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "hub-api",
+    "title": "API 密钥管理",
+    "alt": "API 密钥管理",
+    "url": "/media/hub-api.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "hub-detail",
+    "title": "用量统计与监控",
+    "alt": "用量统计与监控",
+    "url": "/media/hub-detail.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-04",
+    "title": "第4页 SmartTITU服务体系架构",
+    "alt": "第4页 SmartTITU服务体系架构",
+    "url": "/media/ppt-04.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-07",
+    "title": "第7页 TITU Hub功能架构",
+    "alt": "第7页 TITU Hub功能架构",
+    "url": "/media/ppt-07.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-09",
+    "title": "第9页 TITU Hub核心能力-资源管理运营",
+    "alt": "第9页 TITU Hub核心能力-资源管理运营",
+    "url": "/media/ppt-09.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-13",
+    "title": "第13页 TITU Edge功能架构",
+    "alt": "第13页 TITU Edge功能架构",
+    "url": "/media/ppt-13.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-15",
+    "title": "第15页 TITU Edge管理界面",
+    "alt": "第15页 TITU Edge管理界面",
+    "url": "/media/ppt-15.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-20",
+    "title": "第20页 TITU Work核心能力-智能体协同工作站",
+    "alt": "第20页 TITU Work核心能力-智能体协同工作站",
+    "url": "/media/ppt-20.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-25",
+    "title": "第25页 可信云Token聚合服务平台能力测评",
+    "alt": "第25页 可信云Token聚合服务平台能力测评",
+    "url": "/media/ppt-25.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-27",
+    "title": "第27页 平台功能架构",
+    "alt": "第27页 平台功能架构",
+    "url": "/media/ppt-27.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-28",
+    "title": "第28页 全栈安全-可信安全沙箱",
+    "alt": "第28页 全栈安全-可信安全沙箱",
+    "url": "/media/ppt-28.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-29",
+    "title": "第29页 全栈安全-AICC与TEE增强参考架构",
+    "alt": "第29页 全栈安全-AICC与TEE增强参考架构",
+    "url": "/media/ppt-29.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "ppt-30",
+    "title": "第30页 公司官网",
+    "alt": "第30页 公司官网",
+    "url": "/media/ppt-30.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-04",
+    "title": "SmartTITU服务体系架构",
+    "alt": "SmartTITU服务体系架构",
+    "url": "/media/product-04.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-07",
+    "title": "TITU Hub功能架构",
+    "alt": "TITU Hub功能架构",
+    "url": "/media/product-07.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-13",
+    "title": "TITU Edge功能架构",
+    "alt": "TITU Edge功能架构",
+    "url": "/media/product-13.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-15",
+    "title": "TITU Edge管理界面",
+    "alt": "TITU Edge管理界面",
+    "url": "/media/product-15.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-20",
+    "title": "TITU Work核心能力-智能体协同工作站",
+    "alt": "TITU Work核心能力-智能体协同工作站",
+    "url": "/media/product-20.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-25",
+    "title": "可信云Token聚合服务平台能力测评",
+    "alt": "可信云Token聚合服务平台能力测评",
+    "url": "/media/product-25.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-27",
+    "title": "平台功能架构",
+    "alt": "平台功能架构",
+    "url": "/media/product-27.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-28",
+    "title": "全栈安全-可信安全沙箱",
+    "alt": "全栈安全-可信安全沙箱",
+    "url": "/media/product-28.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "product-29",
+    "title": "全栈安全-AICC与TEE增强参考架构",
+    "alt": "全栈安全-AICC与TEE增强参考架构",
+    "url": "/media/product-29.png",
+    "keywords": [],
+    "knowledge_ids": []
+  },
+  {
+    "id": "smarttitu-brochure",
+    "title": "产品介绍单页",
+    "alt": "产品介绍单页",
+    "url": "/media/smarttitu-brochure.jpg",
     "keywords": [
-      "企业注册流程图",
-      "企业认证流程图",
-      "注册示意图"
+      "产品介绍单页",
+      "宣传单页"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "smarttitu-logo",
+    "title": "产品logo图片档案",
+    "alt": "产品logo图片档案",
+    "url": "/media/smarttitu-logo.png",
+    "keywords": [
+      "logo",
+      "产品标识",
+      "品牌标识"
     ],
     "knowledge_ids": []
   }

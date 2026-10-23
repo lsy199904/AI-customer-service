@@ -168,7 +168,7 @@ python -m unittest discover -s tests -v
 
 ## 2026年10月23日外部资料整理
 
-唯一入库文件仍为 `knowledge_sources/SmartTITU客户问答.docx`（v3，71问、71个默认片段、30张引用图片（登记目录仍保留36张））。在线PPT实际核对30页；第5及第14份资料第26页标为仅供内部讨论，未收入外部答案。图片文件和原PDF是附件资源，不要复制到knowledge_sources重复入库。历史JSONL仅作兼容；本次外部范围使用默认semantic模式。
+唯一入库文件仍为 `knowledge_sources/SmartTITU客户问答.docx`（v3，71问、71个默认片段、30张引用图片（已登记并发布））。在线PPT实际核对30页；第5及第14份资料第26页标为仅供内部讨论，未收入外部答案。图片文件和原PDF是附件资源，不要复制到knowledge_sources重复入库。历史JSONL仅作兼容；本次外部范围使用默认semantic模式。
 
 已移除旧知识Markdown副本、206条草稿和旧19问生成脚本，后续直接维护Word。Word内原文和图片HTTPS链接指向本仓库main分支附件；下载需要能访问GitHub。部署后客服图片本身从本服务 `/media/` 返回。
 
@@ -184,6 +184,6 @@ python -m unittest discover -s tests -v
 
 ## 代码和知识资料分别更新
 
-本次Git更新仅发布代码、示例配置和开发部署说明，不发布新整理的Word、知识配图和原始PDF。仓库历史中已有的旧示例Word与图片保持原样，不代表最新业务知识。部署时请从自己的编辑副本单独覆盖 `knowledge_sources/SmartTITU客户问答.docx`，不要重复放两份Word。现有主机若已具备本次Word引用的配图和登记表，无需重复复制；缺少时须私下同步 `app/static/media/` 对应图片及 `data/media.json`，这些业务附件不会由本次git pull下发。原始PDF需要提供可点击下载时另行配置受控地址，GitHub新附件链接不会生效。
+本次Git更新仅发布代码、示例配置和开发部署说明，不发布新整理的Word和原始PDF；当前71问引用的30张知识配图及data/media.json已另行发布。仓库历史中已有的旧示例Word与图片保持原样，不代表最新业务知识。部署时请从自己的编辑副本单独覆盖 `knowledge_sources/SmartTITU客户问答.docx`，不要重复放两份Word。当前71问引用的配图和图片登记表由git pull同步，不需要手动上传。后续新增图片需同时更新图片文件和登记表。原始PDF需要提供可点击下载时另行配置受控地址，GitHub新附件链接不会生效。
 
 本次代码升级首次执行 `python manage.py ingest --rebuild`，然后重启；后续仅修改或删除Word文字条目可执行 `ingest`，无需每次重建。私有文档的71问和配图核对测试默认跳过；资料就绪后设置 `RUN_PRIVATE_KNOWLEDGE_TESTS=1` 可开启。通用解析、鉴权、语义检索、会话与iframe测试仍正常执行。
