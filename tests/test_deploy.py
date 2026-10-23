@@ -43,6 +43,10 @@ class DeploymentTests(unittest.TestCase):
    result=subprocess.run(['sh',str(root/'scripts/docker-host.sh'),'up','--build','-d'],cwd='/',env=env,capture_output=True,text=True,check=True)
    self.assertIn('uid='+str(os.getuid()),result.stdout);self.assertIn('gid='+str(os.getgid()),result.stdout)
    self.assertIn(str(root/'compose.host.yaml'),result.stdout);self.assertTrue(result.stdout.endswith('up\n--build\n-d\n'));self.assertTrue((root/'var').is_dir())
+ def test_host_network_binding_is_configurable(self):
+  text=(ROOT/'compose.host.yaml').read_text()
+  self.assertIn('HOST: "${HOST:-127.0.0.1}"',text)
+  self.assertIn('network_mode: host',text)
  def test_host_wrapper_rejects_missing_env(self):
   with tempfile.TemporaryDirectory() as temp:
    root=Path(temp);(root/'scripts').mkdir();(root/'bin').mkdir();shutil.copyfile(ROOT/'scripts/docker-host.sh',root/'scripts/docker-host.sh')

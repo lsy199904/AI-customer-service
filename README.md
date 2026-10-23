@@ -187,3 +187,10 @@ python -m unittest discover -s tests -v
 本次Git更新仅发布代码、示例配置和开发部署说明，不发布新整理的Word和原始PDF；当前71问引用的30张知识配图及data/media.json已另行发布。仓库历史中已有的旧示例Word与图片保持原样，不代表最新业务知识。部署时请从自己的编辑副本单独覆盖 `knowledge_sources/SmartTITU客户问答.docx`，不要重复放两份Word。当前71问引用的配图和图片登记表由git pull同步，不需要手动上传。后续新增图片需同时更新图片文件和登记表。原始PDF需要提供可点击下载时另行配置受控地址，GitHub新附件链接不会生效。
 
 本次代码升级首次执行 `python manage.py ingest --rebuild`，然后重启；后续仅修改或删除Word文字条目可执行 `ingest`，无需每次重建。私有文档的71问和配图核对测试默认跳过；资料就绪后设置 `RUN_PRIVATE_KNOWLEDGE_TESTS=1` 可开启。通用解析、鉴权、语义检索、会话与iframe测试仍正常执行。
+
+
+## 平台式演示页与内网访问
+
+`/widget/demo`按原控制台原型提供SmartTITU平台场景：侧栏、产品卡片、快速开始及右下角客服，凭证在连接弹窗中填写。点击产品或指引可以带入对应问题；页面背景仅作平台场景展示，客服实际连接现有后端。
+
+Linux宿主机网络部署支持读取.env的HOST。需要公司内网其他电脑访问时设 `HOST=0.0.0.0`，执行 `sh scripts/docker-host.sh up -d --force-recreate assistant` 使新环境配置生效，然后访问 `http://10.180.158.23:8000/widget/demo`（该IP为当前目标主机）。也可按所在网段测试 `192.168.100.23`。必须具备相应网络路由及TCP端口访问权限；本次不改知识库，无需重新入库。详见 [容器部署](docs/容器部署.md)。

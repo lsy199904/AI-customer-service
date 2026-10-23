@@ -1,21 +1,41 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SmartTITU · 悬浮客服演示</title><link rel="stylesheet" href="/widget/demo.css"></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SmartTITU 企业控制台 · 智能服务</title><link rel="stylesheet" href="/widget/demo.css"></head>
 <body>
-<main>
-  <div class="eyebrow">SMARTTITU / ASSISTANT MVP</div>
-  <h1>一个入口，<br>解答每一个问题。</h1>
-  <p class="lead">客服按钮与对话窗口由服务自动提供。<br>点击右下角，即可开始体验知识问答。</p>
-  <section class="card">
-    <div class="step">01 / 连接企业身份</div>
-    <h2>输入本地测试凭证</h2>
-    <p>在服务终端使用 <code>python3 manage.py token --tenant demo --user tester</code> 生成短期凭证，然后粘贴到这里。</p>
-    <label for="token">Bearer 凭证（仅保留在本页内存）</label>
-    <textarea id="token" rows="3" autocomplete="off" spellcheck="false" placeholder="粘贴凭证，不需要 Bearer 前缀"></textarea>
-    <button id="connect">连接并打开客服 ↗</button><span id="status" role="status"></span>
-    <p class="hint">问答使用服务端配置的知识库和模型。请先完成知识入库；无需在此页面填写模型密钥。</p>
-  </section>
-  <div class="features"><span>文档语义知识库</span><span>可追溯来源</span><span>人工联系指引</span></div>
-</main>
+<aside class="sidebar">
+  <a class="brand" href="#overview" aria-label="SmartTITU 首页"><span class="brand-symbol">S<span>✦</span></span><span>SmartTITU<small>企业控制台</small></span></a>
+  <div class="nav-label">工作空间</div>
+  <nav aria-label="工作台导航">
+    <a class="nav current" href="#overview"><span class="nav-icon">⊞</span>控制台概览</a>
+    <a class="nav" href="#services"><span class="nav-icon">◇</span>产品与服务</a>
+    <a class="nav" href="#guide"><span class="nav-icon">▤</span>接入指南</a>
+    <button class="nav" type="button" data-ask="如何创建 API 密钥？"><span class="nav-icon">⌘</span>API 密钥指引</button>
+  </nav>
+  <div class="nav-label second-label">帮助与支持</div>
+  <nav aria-label="帮助与支持">
+    <button class="nav" type="button" data-connect><span class="nav-icon">✦</span>智能客服</button>
+    <button class="nav" type="button" data-ask="如何联系人工客服？"><span class="nav-icon">♧</span>联系我们</button>
+  </nav>
+  <div class="sidebar-foot"><span class="online-dot"></span>SmartTITU 智能服务<small>连接模型，让智能触手可及</small></div>
+</aside>
+<div class="workspace">
+  <header class="topbar"><div class="breadcrumb">企业控制台<span>/</span><strong>概览</strong></div><div class="top-actions"><span class="demo-badge">平台演示</span><button class="top-connect" type="button" data-connect>连接客服<span>↗</span></button><span class="profile-avatar" aria-label="演示企业">企</span></div></header>
+  <main id="overview">
+    <section class="welcome"><div><div class="eyebrow">SMARTTITU WORKSPACE</div><h1>欢迎使用 SmartTITU<span class="wave">✦</span></h1><p>从模型接入到企业应用，在这里开启你的智能服务。</p></div><div class="welcome-tag"><span></span>企业智能服务工作台</div></section>
+    <section class="hero"><div class="hero-content"><span class="hero-label">SMARTTITU · 云 · 边 · 端</span><h2>连接优选模型<br>让智能融入每一项业务</h2><p>统一模型接入、企业 Token 管控与智能体协作，<br class="desktop-break">为企业提供灵活、可管理的 AI 服务。</p><button class="primary-button" type="button" data-ask="SmartTITU有哪些产品，分别适合什么场景？">了解产品体系<span>↗</span></button></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="art-center">✦</div><div class="art-node node-hub"><b>H</b><span>TITU Hub<small>云端模型服务</small></span></div><div class="art-node node-edge"><b>E</b><span>TITU Edge<small>企业运营管控</small></span></div><div class="art-node node-work"><b>W</b><span>TITU Work<small>智能体协作</small></span></div><i class="spark spark-one">✧</i><i class="spark spark-two">✦</i></div></section>
+    <section id="services" class="services"><div class="section-heading"><h2>产品与服务</h2><span>覆盖企业 AI 应用的不同阶段</span></div><div class="product-grid">
+      <button class="product-card" type="button" data-ask="TITU Hub有什么功能？"><span class="product-icon hub-icon">H</span><span class="product-title">TITU Hub<span>云端</span></span><span class="product-desc">大模型聚合与运营平台<br>统一入口，便捷接入模型服务</span><span class="card-link">了解 TITU Hub <span>↗</span></span></button>
+      <button class="product-card" type="button" data-ask="TITU Edge适合哪些部署场景，有什么功能？"><span class="product-icon edge-icon">E</span><span class="product-title">TITU Edge<span>企业侧</span></span><span class="product-desc">企业 Token 运营管控平台<br>管理用量、权限与调用资源</span><span class="card-link">了解 TITU Edge <span>↗</span></span></button>
+      <button class="product-card" type="button" data-ask="TITU Work是什么，与SmartTITU有什么关系？"><span class="product-icon work-icon">W</span><span class="product-title">TITU Work<span>应用端</span></span><span class="product-desc">企业智能体统一工作平台<br>连接智能体与企业业务场景</span><span class="card-link">了解 TITU Work <span>↗</span></span></button>
+    </div></section>
+    <section class="lower-grid" id="guide"><div class="getting-started"><div class="section-heading"><h2>快速开始</h2><span>为你的第一次使用提供指引</span></div><div class="guide-list">
+      <button type="button" class="guide-item" data-ask="企业注册与认证流程"><span class="step-number">01</span><span><strong>注册与企业认证</strong><small>查看办理步骤与完整流程图</small></span><span class="guide-arrow">↗</span></button>
+      <button type="button" class="guide-item" data-ask="如何创建 API 密钥？"><span class="step-number">02</span><span><strong>创建 API 密钥</strong><small>了解密钥入口与调用权限</small></span><span class="guide-arrow">↗</span></button>
+      <button type="button" class="guide-item" data-ask="平台如何计费？"><span class="step-number">03</span><span><strong>了解用量与计费</strong><small>查询 Token 计量与服务规则</small></span><span class="guide-arrow">↗</span></button>
+    </div></div><div class="support-card"><div class="support-icon">✦</div><h2>需要帮助？随时问我。</h2><p>产品介绍、接入指引、操作步骤，<br>SmartTITU 智能客服为你解答。</p><button type="button" data-connect>打开智能客服 <span>↗</span></button><div class="support-features"><span>文档来源可追溯</span><span>支持历史对话</span></div></div></section>
+    <footer><span>© SmartTITU · 企业智能服务</span><span>平台布局为演示场景 · 客服连接实际服务</span></footer>
+  </main>
+</div>
+<dialog id="connection-dialog" aria-labelledby="connection-title"><form id="connection-form"><button class="dialog-close" type="button" id="connection-close" aria-label="关闭连接设置">×</button><div class="dialog-icon">✦</div><h2 id="connection-title">连接 SmartTITU 客服</h2><p class="dialog-lead">连接后即可咨询产品、查看流程图并继续历史对话。</p><label for="token">测试访问凭证</label><textarea id="token" rows="3" autocomplete="off" spellcheck="false" placeholder="粘贴短期访问凭证"></textarea><p class="dialog-hint">使用服务器生成的短期凭证。正式接入企业登录后，无需手动填写。</p><button id="connect" class="primary-button" type="submit">连接并打开客服 <span>↗</span></button><p id="status" role="status" aria-live="polite"></p></form></dialog>
 <script src="/widget.js" defer></script><script src="/widget/demo.js" defer></script>
 </body></html>
