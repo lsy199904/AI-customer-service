@@ -2,6 +2,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+import os
 from app.ingestion import parse_document,split_sections
 from app.rag import RAGSettings,SemanticKnowledge,ingest_documents,DocumentStore
 from app.core import Settings,Service
@@ -63,14 +64,43 @@ class DocumentImageTests(unittest.TestCase):
   with self.assertRaises(ValueError):ingest_documents(self.config,embedder=self.embed)
   self.assertEqual(DocumentStore(self.config.index_path).documents(),before)
 
+@unittest.skipUnless(os.getenv('RUN_PRIVATE_KNOWLEDGE_TESTS')=='1', 'Private Word/attachments are supplied separately; set RUN_PRIVATE_KNOWLEDGE_TESTS=1 to verify them')
 class DocumentImageParserTests(unittest.TestCase):
  def test_updated_word(self):
   result=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx')
-  self.assertEqual(len(result.chunks),19);self.assertEqual(result.version,'2026-10-22 v2')
-  bound=[c for c in result.chunks if c['image_ids']];self.assertEqual(len(bound),3)
-  self.assertTrue(all(c['image_ids']==['enterprise-register'] for c in bound))
+  self.assertEqual(len(result.chunks),71)
+  self.assertFalse(any(c['title'].startswith('问题'+str(i)+' ') for c in result.chunks for i in [5,9,15,22,26,28]))
+  self.assertEqual(result.version,'2026-10-23 v3')
+  bound=[c for c in result.chunks if 'enterprise-register' in c['image_ids']];self.assertEqual(len(bound),1)
+  self.assertIn('企业注册与认证流程',bound[0]['title'])
+  self.assertEqual(len(set(k for c in result.chunks for k in c['image_ids'])),30)
   self.assertFalse(any('运营团队预创建' in c['content'] for c in result.chunks))
   self.assertFalse(any('配图:' in c['content'] for c in result.chunks))
+
+ def test_external_source_order(self):
+  rows=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx').chunks
+  for i,name in enumerate(['产品介绍网页','在线文件','模型清单','企业注册与认证流程']):self.assertIn(name,rows[i]['title'])
+  for i,url in enumerate(['https://www.smarttitu.cn','https://doc.smarttitu.cn','https://www.smarttitu.cn/models']):self.assertIn(url,rows[i]['content'])
+  positions={}
+  for i,row in enumerate(rows):
+   ref=row['source_references'][0];positions.setdefault(ref.split('，物理第')[0],[]).append(i)
+  for indexes in positions.values():self.assertEqual(indexes,list(range(min(indexes),max(indexes)+1)))
+  text='\n'.join(str(c['source_references']) for c in rows)
+  for excluded in ['6.AICC','7.SmartTITU销售','8.AI_Token','12.TITU Edge']:self.assertNotIn(excluded,text)
+ def test_online_ppt_preserves_user_deletions(self):
+  import re
+  rows=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx').chunks
+  ppt=[r for r in rows if '5.SmartTITU' in str(r['source_references'])]
+  self.assertEqual([int(re.search(r'第(\d+)页',r['title']).group(1)) for r in ppt],[i for i in range(1,31) if i not in {1,5,11,18,22,24,26}])
+ def test_word_media_and_source_resources_exist(self):
+  import json,urllib.parse
+  from app.conversation import MediaCatalog
+  catalog=MediaCatalog(BASE/'data/media.json',BASE/'app/static/media')
+  rows=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx').chunks
+  for row in rows:
+   for image in row['image_ids']:self.assertIn(image,catalog.rows)
+  for prefix in ['11.','13.','14.','15.']:self.assertEqual(len(list((BASE/'docs/sources').glob(prefix+'*.pdf'))),1)
+  self.assertEqual(len(list((BASE/'knowledge_sources').rglob('*.docx'))),1)
  def test_long_section_keeps_bindings_in_each_chunk(self):
   blocks=[{'text':'流程','heading':True},{'text':'步骤。'*300,'heading':False,'locator':'段落1'},{'text':'配图：enterprise-register','heading':False}]
   chunks=split_sections(blocks,'标题',max_chars=200,overlap=20)

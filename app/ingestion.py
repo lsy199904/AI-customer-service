@@ -8,7 +8,7 @@ import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 
-PIPELINE_VERSION='documents-v1'
+PIPELINE_VERSION='documents-v2'
 MAX_FILE_BYTES=25*1024*1024
 SUPPORTED={'.docx','.pdf','.md','.txt'}
 NS={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
@@ -37,6 +37,14 @@ def _docx(path,raw):
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         if sum(x.file_size for x in archive.infolist())>60*1024*1024:raise ValueError('Word解压体积过大')
         xml=archive.read('word/document.xml')
+        # Word/WPS may rename built-in style IDs to numeric IDs on save.
+        styles={}
+        if 'word/styles.xml' in archive.namelist():
+            style_xml=archive.read('word/styles.xml')
+            if b'<!DOCTYPE' in style_xml:raise ValueError('不接受带DOCTYPE的Word XML')
+            for item in ET.fromstring(style_xml).findall('w:style',NS):
+                name=item.find('w:name',NS)
+                if name is not None:styles[item.get(f"{{{NS['w']}}}styleId",'')]=name.get(f"{{{NS['w']}}}val",'')
     if b'<!DOCTYPE' in xml:raise ValueError('不接受带DOCTYPE的Word XML')
     body=ET.fromstring(xml).find('w:body',NS)
     blocks=[];title=path.stem;version='未标注';paragraph_no=0
@@ -45,6 +53,7 @@ def _docx(path,raw):
             paragraph_no+=1;text=_paragraph(node)
             if not text:continue
             style=node.find('w:pPr/w:pStyle',NS);style=style.get(f"{{{NS['w']}}}val",'') if style is not None else ''
+            style=styles.get(style,style)
             if style.lower()=='title':title=text;continue
             if re.match(r'^版本[:：]',text):version=text.split(':',1)[-1].strip()
             if '\n版本:' in text:version=text.split('\n版本:',1)[1].split('\n',1)[0].strip()

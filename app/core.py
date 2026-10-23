@@ -36,6 +36,7 @@ class Settings:
     model_key: str = field(default_factory=lambda: os.getenv('MODEL_API_KEY', ''))
     model: str = field(default_factory=lambda: os.getenv('MODEL_NAME', ''))
     origins: tuple = field(default_factory=lambda: tuple(x.strip() for x in os.getenv('CORS_ORIGINS', '').split(',') if x.strip()))
+    frame_origins: tuple = field(default_factory=lambda: tuple(x.strip() for x in os.getenv('FRAME_ORIGINS', '').split(',') if x.strip()))
     qr_url: str = field(default_factory=lambda: os.getenv('SUPPORT_QR_URL', ''))
     source_url: str = field(default_factory=lambda: os.getenv('SOURCE_BASE_URL', ''))
     http_origins: tuple = field(default_factory=lambda: tuple(x.strip().rstrip('/') for x in os.getenv('MODEL_HTTP_ORIGINS','').split(',') if x.strip()))
@@ -71,6 +72,12 @@ class Settings:
                 continue
             if url and urllib.parse.urlsplit(url).scheme != 'https':
                 raise ValueError('二维码与来源公开地址必须使用 HTTPS')
+        for origin in self.frame_origins:
+            parsed=urllib.parse.urlsplit(origin)
+            if (not re.fullmatch(r'https?://(?:[A-Za-z0-9.-]+|\[[0-9a-fA-F:]+\])(?::[0-9]{1,5})?',origin) or not parsed.hostname or parsed.username or parsed.password
+                    or parsed.path or parsed.query or parsed.fragment or parsed.netloc!=origin.split('://',1)[-1]
+                    or any(c.isspace() for c in origin)):
+                raise ValueError('FRAME_ORIGINS 必须为准确来源(协议/主机/端口),不支持通配符或路径')
         if '*' in self.origins:
             raise ValueError('CORS_ORIGINS 必须使用明确的前端域名')
 

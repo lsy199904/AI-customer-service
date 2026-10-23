@@ -5,6 +5,8 @@
   let config = {
     apiBase: script?.dataset.apiBase || new URL(script?.src || location.href).origin,
     tokenEndpoint: script?.dataset.authUrl || '/api/assistant/token',
+    layout: 'floating',
+    onClose: null,
     getToken: null
   };
   let host, root, panel, launcher, transcript, input, sendButton, quick, status, sourcePane;
@@ -278,8 +280,10 @@
       }
     }catch(err){if(v===generation)list.textContent=err.message;}
   }
-  function close() {
-    if(!panel) return;opened=false;panel.hidden=true;launcher.setAttribute('aria-expanded','false');clearTimeout(idleTimer);lastFocus?.focus?.();
+  function close(notify=true) {
+    if(!panel) return;
+    if(notify && config.layout==='iframe' && opened && config.onClose){config.onClose();return;}
+    opened=false;panel.hidden=true;launcher.setAttribute('aria-expanded','false');clearTimeout(idleTimer);lastFocus?.focus?.();
   }
   function open() {
     mount();lastFocus=document.activeElement;opened=true;panel.hidden=false;launcher.setAttribute('aria-expanded','true');sourcePane.hidden=true;activity();
@@ -289,12 +293,17 @@
   function reset() {
     generation++;controller?.abort();controller=new AbortController();sessionId=null;initialized=false;retry=null;busy=false;
     if(transcript) transcript.replaceChildren();if(quick) quick.replaceChildren();if(sourcePane) {sourcePane.replaceChildren();sourcePane.hidden=true;}
-    if(input) input.value='';if(status) clearStatus();close();
+    if(input) input.value='';if(status) clearStatus();close(false);
   }
   function mount() {
     if(host) return;
     host=document.createElement('div');host.id='smarttitu-assistant-widget';root=host.attachShadow({mode:'open'});
-    const css=element('style');css.textContent=style;root.append(css);
+    const css=element('style');css.textContent=style;
+    if(config.layout==='iframe')css.textContent+=`
+      .launch{display:none!important}.panel{position:fixed;inset:0;width:100%;height:100dvh;min-height:0;border:0;border-radius:0;box-shadow:none}
+      @media(max-width:500px){.panel{inset:0;width:100%;height:100dvh;min-height:0;border-radius:0}}
+    `;
+    root.append(css);
     launcher=element('button','launch');launcher.type='button';launcher.setAttribute('aria-label','打开智能客服');launcher.setAttribute('aria-expanded','false');launcher.setAttribute('aria-controls','smarttitu-panel');
     launcher.append(element('span','icon','✦'),element('span','','智能客服'));launcher.onclick=()=>opened?close():open();root.append(launcher);
     panel=element('section','panel');panel.id='smarttitu-panel';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','SmartTITU智能客服');
@@ -304,7 +313,7 @@
       if(busy) return;sessionId=null;retry=null;transcript.replaceChildren();message('assistant','新对话已开始。请问有什么可以帮您？');input.focus();
     };
     const historyButton=element('button','ghost','≡');historyButton.title='历史会话';historyButton.setAttribute('aria-label','历史会话');historyButton.onclick=historyPanel;
-    const minimize=element('button','ghost','—');minimize.title='收起';minimize.setAttribute('aria-label','收起客服');minimize.onclick=close;actions.append(fresh,historyButton,minimize);
+    const minimize=element('button','ghost','—');minimize.title='收起';minimize.setAttribute('aria-label','收起客服');minimize.onclick=()=>close();if(config.layout==='iframe'&&!config.onClose)minimize.hidden=true;actions.append(fresh,historyButton,minimize);
     header.append(element('div','avatar','✦'),title,actions);panel.append(header);
     transcript=element('div','body');transcript.setAttribute('role','log');transcript.setAttribute('aria-live','polite');panel.append(transcript);
     const composer=element('div','composer');quick=element('div','quick');status=element('div','notice');status.setAttribute('role','status');status.hidden=true;
@@ -323,7 +332,7 @@
   window.SmartTITUAssistant={
     open,close,reset,
     async ask(text) {await open();await send(text);},
-    configure(options) {reset();config={...config,...options};},
+    configure(options) {reset();const changed=options.layout && options.layout!==config.layout;config={...config,...options};if(changed){host?.remove();host=null;root=null;mount();}},
     destroy() {reset();host?.remove();host=null;root=null;}
   };
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();

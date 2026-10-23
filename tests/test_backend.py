@@ -98,6 +98,22 @@ class HTTPTests(unittest.TestCase):
     self.assertEqual(r.status,200);self.assertIn(kind,r.headers['Content-Type']);self.assertTrue(r.read())
   self.assertEqual(self.req('/v1/sessions','POST',{},headers={'Origin':self.url})[0],201)
   self.assertEqual(self.req('/widget/../../app/core.py',auth=False)[0],401)
+ def test_iframe_routes_and_csp(self):
+  for route,kind in [('/chatbot','text/html'),('/widget/frame.js','javascript'),('/widget/frame.css','text/css'),('/iframe.js','javascript')]:
+   with urllib.request.urlopen(self.url+route) as r:
+    self.assertEqual(r.status,200);self.assertIn(kind,r.headers['Content-Type'])
+    if route=='/chatbot':self.assertIn("frame-ancestors 'self'",r.headers['Content-Security-Policy'])
+  self.s.service.config.frame_origins=('https://console.example.com',)
+  with urllib.request.urlopen(self.url+'/chatbot') as r:
+   self.assertTrue(r.headers['Content-Security-Policy'].endswith("frame-ancestors 'self' https://console.example.com"))
+  with urllib.request.urlopen(self.url+'/widget/demo') as r:
+   self.assertTrue(r.headers['Content-Security-Policy'].endswith("frame-ancestors 'none'"))
+  self.assertEqual(self.req('/widget/config',auth=False)[1]['frame_origins'],['https://console.example.com'])
+  self.assertEqual(self.req('/v1/sessions',auth=False)[0],401)
+ def test_frame_origin_validation(self):
+  for origin in ['*','https://example.com/path',"https://example.com;script-src",'https://example.com\nhttps://evil.test','https://user:pass@example.com']:
+   with self.assertRaises(ValueError):Settings(secret=SECRET,frame_origins=(origin,)).validate()
+  Settings(secret=SECRET,frame_origins=('https://console.example.com','http://localhost:3000')).validate()
  def test_validation(self):
   self.assertEqual(self.req('/v1/sessions','POST',{'tenant_id':'spoof'})[0],400);self.assertEqual(self.req('/missing')[0],404)
 if __name__=='__main__':unittest.main()

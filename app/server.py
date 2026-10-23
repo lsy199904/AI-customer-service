@@ -47,7 +47,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Referrer-Policy','no-referrer')
         self.send_header('Cache-Control','no-cache')
         if content_type.startswith('text/html'):
-            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+            ancestors="'none'"
+            if filename=='frame.html':
+                ancestors="'self'"+''.join(' '+x for x in self.server.service.config.frame_origins)
+            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors "+ancestors)
         self.send_header('Connection','close')
         self.end_headers();self.wfile.write(raw);self.close_connection=True
 
@@ -104,7 +107,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length','0');self.end_headers();return
         if path=='/health' and self.command=='GET':
             return self.send_json(200,{'status':'ok'})
+        if path=='/widget/config' and self.command=='GET':
+            return self.send_json(200,{'frame_origins':list(service.config.frame_origins)})
         assets={
+            '/chatbot':('frame.html','text/html; charset=utf-8'),
+            '/widget/frame.js':('frame.js','application/javascript; charset=utf-8'),
+            '/widget/frame.css':('frame.css','text/css; charset=utf-8'),
+            '/iframe.js':('iframe.js','application/javascript; charset=utf-8'),
             '/widget.js':('widget.js','application/javascript; charset=utf-8'),
             '/widget/demo':('demo.html','text/html; charset=utf-8'),
             '/widget/demo.js':('demo.js','application/javascript; charset=utf-8'),

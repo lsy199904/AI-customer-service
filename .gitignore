@@ -12,3 +12,12 @@ __pycache__/
 .DS_Store
 
 /models/
+
+# Private knowledge and source attachments are copied to deployments separately.
+/knowledge_sources/*.docx
+/knowledge_sources/*.pdf
+/docs/sources/*.pdf
+/app/static/media/hub-*.png
+/app/static/media/ppt-*.png
+/app/static/media/product-*.png
+/app/static/media/smarttitu-brochure.jpg

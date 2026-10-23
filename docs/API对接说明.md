@@ -81,3 +81,6 @@ citations新增document_id、revision、download_url、source_locator、source_r
 文档新增、停用和版本切换仅通过服务端manage.py命令，未开放面向客户的管理接口。
 
 Word章节的配图标记会被保存为知识元数据image_ids；成功回答实际引用该节时，后端自动合并已登记图片到回复images，即使生成模型未选择图片也会附带。拒答和未引用的候选章节不强制附图。images结构保持不变，前端可用url展示缩略图或打开原图；不需要另外识别Word内嵌图片。
+
+
+iframe公开入口：`GET /chatbot`、`GET /iframe.js`、`GET /widget/frame.js`、`GET /widget/frame.css`、`GET /widget/config`（仅返回允许嵌入来源）。仅 `/chatbot` 允许配置域名嵌入，其余HTML保留禁止嵌入。业务接口鉴权不变。详见 [iframe 接入](悬浮弹窗接入.md)。

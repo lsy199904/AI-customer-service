@@ -2,7 +2,7 @@
 
 提供可部署的 Python 后端与自带窗口的悬浮客服脚本。正式问答使用 **文档解析 → BGE-M3 语义向量召回 → Qwen3 Reranker 重排 → Qwen3-32B 依据资料回答**。无需 Dify 或单独开发聊天窗口。历史会话与知识版本存入 SQLite，适合单实例、小规模知识库。
 
-首份入库资料为 `knowledge_sources/SmartTITU客户问答.docx`：19 个经过整理的客户问答，保留原资料出处。Embedding 接收解析后的文本片段，不直接接收 Word 二进制，也不会训练或修改模型权重。旧 `data/knowledge.jsonl` 仅用于兼容模式和离线原型，**默认语义问答不读取它**。
+首份入库资料为 `knowledge_sources/SmartTITU客户问答.docx`：71 个外部客户问答，按总目录编号2、3、4、5、9、10、11、13、14、15整理；前三问为官网、在线文件、模型清单，第四问为注册认证流程，其余同源连续。保留原图、图片URL、原文PDF链接和出处。Embedding 接收解析后的文本片段，不直接接收 Word 二进制，也不会训练或修改模型权重。旧 `data/knowledge.jsonl` 仅用于兼容模式和离线原型，**默认语义问答不读取它**。
 
 ## 服务器上最快启动
 
@@ -51,7 +51,7 @@ python manage.py serve
 
 辅助脚本从 `qwen3-reranker-4b` 的本机 Docker 配置读取密钥和当前容器 IP，仅写入本机 `.env`，不打印密钥，不重启模型。若该容器没有配置可读取的密钥，请找服务管理员；不能用聊天模型的 `not-empty` 代替。容器 IP 改变后重新运行辅助脚本并确认配置；Embedding 端点变更会要求重建索引。
 
-`check` 不调用模型，仅校验配置和索引数量。第一次入库前知识数为 0；`ingest` 成功后本份 Word 应产生 19 个片段。首次入库需要实际调用 Embedding。`serve` 自动读取 `.env`，系统环境变量优先，修改配置后需重启进程。默认数据库为 `var/assistant.db` 和 `var/rag.sqlite3`。
+`check` 不调用模型，仅校验配置和索引数量。第一次入库前知识数为 0；`ingest` 成功后本份 Word 应产生 71 个片段。首次入库需要实际调用 Embedding。`serve` 自动读取 `.env`，系统环境变量优先，修改配置后需重启进程。默认数据库为 `var/assistant.db` 和 `var/rag.sqlite3`。
 
 另开终端，在项目内使用同一虚拟环境：
 
@@ -139,11 +139,11 @@ docker compose -f compose.yaml -f compose.rag-existing.yaml up -d
 业务页面公共布局只需加载：
 
 ```html
-<script src="https://assistant.example.com/widget.js"
+<script src="https://assistant.example.com/iframe.js"
         data-auth-url="/api/assistant/token" defer></script>
 ```
 
-脚本自己创建悬浮按钮和聊天窗。真实域名加入 `CORS_ORIGINS`。`/api/assistant/token` 由已有业务后端校验登录身份后签发短期凭证，禁止接受浏览器自报企业身份直接签发。凭证不是 JWT，Python 可复用 `app.core.issue_token`。退出或切换账号调用 `window.SmartTITUAssistant.reset()`。详见 [悬浮弹窗接入](docs/悬浮弹窗接入.md)。
+脚本自己创建悬浮按钮和 iframe 聊天窗。父页面真实来源加入 `FRAME_ORIGINS`。`/api/assistant/token` 由已有业务后端校验登录身份后签发短期凭证，禁止接受浏览器自报企业身份直接签发。凭证不是 JWT，Python 可复用 `app.core.issue_token`。退出或切换账号调用 `window.SmartTITUEmbed.reset()`。详见 [悬浮弹窗接入](docs/悬浮弹窗接入.md)。
 
 会话按企业和用户隔离保存；支持历史、恢复、分页和删除。模型上下文最多最近 12 条消息；闲置超过 30 分钟不再带入旧上下文，历史仍保留。当前知识库是所有已认证客户共享的公开客服资料，**不能放内部密钥或企业专有文档**；企业私有知识的权限分区尚未实现。
 
@@ -165,3 +165,25 @@ python -m unittest discover -s tests -v
 代码模块：`app/ingestion.py` 负责清洗切分，`app/rag.py` 负责模型客户端、版本与向量索引，`app/core.py` 负责问答和会话，`app/server.py` 提供接口，`app/static/` 提供正式窗口。
 
 更多说明：[API](docs/API对接说明.md)、[OpenAPI](docs/openapi.json)、[验收范围](docs/MVP验收清单.md)、[测试记录](docs/测试结果.md)、[图片与人工联系](docs/图片回复与人工联系.md)。
+
+## 2026年10月23日外部资料整理
+
+唯一入库文件仍为 `knowledge_sources/SmartTITU客户问答.docx`（v3，71问、71个默认片段、30张引用图片（登记目录仍保留36张））。在线PPT实际核对30页；第5及第14份资料第26页标为仅供内部讨论，未收入外部答案。图片文件和原PDF是附件资源，不要复制到knowledge_sources重复入库。历史JSONL仅作兼容；本次外部范围使用默认semantic模式。
+
+已移除旧知识Markdown副本、206条草稿和旧19问生成脚本，后续直接维护Word。Word内原文和图片HTTPS链接指向本仓库main分支附件；下载需要能访问GitHub。部署后客服图片本身从本服务 `/media/` 返回。
+
+
+## iframe 接入更新
+
+独立聊天地址为 `/chatbot`，生产地址如 `https://assistant.example.com/chatbot`。配置 `.env` 的 `FRAME_ORIGINS=https://console.example.com` 后重启，再将链接交给前端嵌入。悬浮入口推荐加载 `/iframe.js`，自动创建 iframe；登录凭证由业务站同源接口提供，不能放到 iframe URL。完整代码、身份桥接和代理配置见 [iframe 接入说明](docs/悬浮弹窗接入.md)。原 `/widget/demo` 和 `/widget.js` 保留兼容。
+
+本次采用用户删改后的71问版本，原编号保留；Word文件名或文内仍标v3/77问的字样不代表实际数量，入库数量以正文解析为准。标题解析兼容Word/WPS数字样式，避免保存后问答被混合切分。删除的条目在重新入库后停止参与后续检索；已保存的历史消息仍会保留。
+
+本次首次更新请执行 `python manage.py ingest --rebuild`，重新建立兼容标题解析的索引；后续一般文档更新继续使用 `ingest`。
+
+
+## 代码和知识资料分别更新
+
+本次Git更新仅发布代码、示例配置和开发部署说明，不发布新整理的Word、知识配图和原始PDF。仓库历史中已有的旧示例Word与图片保持原样，不代表最新业务知识。部署时请从自己的编辑副本单独覆盖 `knowledge_sources/SmartTITU客户问答.docx`，不要重复放两份Word。现有主机若已具备本次Word引用的配图和登记表，无需重复复制；缺少时须私下同步 `app/static/media/` 对应图片及 `data/media.json`，这些业务附件不会由本次git pull下发。原始PDF需要提供可点击下载时另行配置受控地址，GitHub新附件链接不会生效。
+
+本次代码升级首次执行 `python manage.py ingest --rebuild`，然后重启；后续仅修改或删除Word文字条目可执行 `ingest`，无需每次重建。私有文档的71问和配图核对测试默认跳过；资料就绪后设置 `RUN_PRIVATE_KNOWLEDGE_TESTS=1` 可开启。通用解析、鉴权、语义检索、会话与iframe测试仍正常执行。
