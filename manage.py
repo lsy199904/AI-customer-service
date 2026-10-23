@@ -59,6 +59,9 @@ def main():
     token.add_argument('--tenant',required=True);token.add_argument('--user',required=True);token.add_argument('--ttl',type=int,default=3600)
     ingest=sub.add_parser('ingest',help='增量读取Word/PDF/Markdown/TXT,生成语义索引')
     ingest.add_argument('--rebuild',action='store_true',help='模型或切分变化时全量重建')
+    diagnostic=sub.add_parser('retrieve',help='运维检索诊断,不调用聊天模型,不打印密钥')
+    diagnostic.add_argument('--query',required=True)
+    diagnostic.add_argument('--no-rerank',action='store_true')
     sub.add_parser('documents',help='列出文档及当前版本')
     revisions=sub.add_parser('revisions',help='查看文档修订记录');revisions.add_argument('document_id')
     disable=sub.add_parser('deactivate',help='显式停用文档,保留历史引用');disable.add_argument('document_id')
@@ -82,6 +85,15 @@ def main():
             from importlib.metadata import version
             frameworks={name:version(name) for name in ('fastapi','uvicorn','langchain-core')}
             print(json.dumps({'frameworks':frameworks,'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db,'next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))
+        elif args.command=='retrieve':
+            from app.rag import RAGSettings,SemanticKnowledge
+            rag=RAGSettings()
+            if args.no_rerank:rag.rerank_enabled=False
+            report=SemanticKnowledge(rag).assess(args.query,diagnostics=True)
+            selected=[{'id':row['id'],'title':row['title'],'source_file':row['source_file'],
+                       'image_ids':row.get('image_ids',[]),'similarity':similarity,'score':score} for score,row,similarity in report['hits']]
+            print(json.dumps({'query':args.query,'retrieval':{k:v for k,v in report.items() if k not in ('hits','_diagnostics')},
+                'selected':selected,'diagnostics':report.get('_diagnostics',{})},ensure_ascii=False,indent=2))
         elif args.command in ('ingest','documents','revisions','deactivate','activate'):
             from app.rag import RAGSettings,DocumentStore,ingest_documents
             rag=RAGSettings();store=DocumentStore(rag.index_path)

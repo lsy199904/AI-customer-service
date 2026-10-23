@@ -58,7 +58,7 @@ class LifecycleTests(unittest.TestCase):
   class Rank:
    def rank(self,q,docs):return [(1,.9),(0,.1)]
   r=SemanticKnowledge(self.c,self.e,Rank()).assess('start onboarding')
-  self.assertEqual(r['method'],'embedding_rerank');self.assertEqual(r['hits'][0][1]['title'],'计费')
+  self.assertEqual(r['method'],'hybrid_rrf_rerank');self.assertEqual(r['hits'][0][1]['title'],'计费')
  def test_configuration_change_requires_rebuild(self):
   d=self.ingest()['documents'][0];self.c.embedding_revision='v2'
   with self.assertRaises(ValueError):self.ingest()

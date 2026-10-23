@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from .ingestion import PIPELINE_VERSION,SUPPORTED,parse_document
+from .retrieval import TEXT_VERSION,retrieval_text,fuse
 
 BASE=Path(__file__).resolve().parent.parent
 
@@ -53,7 +54,7 @@ class RAGSettings:
 
     @property
     def fingerprint(self):
-        data=[PIPELINE_VERSION,self.embedding_provider,self.embedding_url,self.embedding_model,self.embedding_revision,self.chunk_chars,self.overlap_chars]
+        data=[PIPELINE_VERSION,TEXT_VERSION,self.embedding_provider,self.embedding_url,self.embedding_model,self.embedding_revision,self.chunk_chars,self.overlap_chars]
         return hashlib.sha256(json.dumps(data).encode()).hexdigest()
 
 
@@ -219,7 +220,7 @@ def ingest_documents(config,rebuild=False,embedder=None):
             record={**chunk,'id':chunk_id,'document_id':document_id,'revision':revision,'source_file':parsed.filename,
                     'version':parsed.version,'product':'SmartTITU','audience':'customer','status':'source_based',
                     'download_url':'/v1/documents/'+document_id+'/revisions/'+revision+'/download'}
-            records.append(record);texts.append(chunk['title']+'\n'+chunk['content'])
+            records.append(record);texts.append(retrieval_text(record))
         vectors=[None]*len(texts);missing=[]
         with store.connect() as db:
             for number,text in enumerate(texts):
@@ -263,21 +264,38 @@ class SemanticKnowledge:
     @property
     def rows(self):return {r['id']:r for r,_ in self.store.snapshot()[1]}
     def get(self,key):return self.store.get(key)
-    def assess(self,question):
+    def assess(self,question,diagnostics=False):
         c=self.config;state,rows=self.store.snapshot()
-        report={'matched':False,'hits':[],'method':'embedding_rerank' if c.rerank_enabled else 'embedding','threshold':c.min_similarity,'similarity':None,'generation':state['generation']}
+        report={'matched':False,'hits':[],'method':'hybrid_rrf_rerank' if c.rerank_enabled else 'hybrid_rrf',
+                'threshold':c.min_similarity,'similarity':None,'generation':state['generation']}
         if not rows:report['reason']='index_empty';return report
         if state['fingerprint']!=c.fingerprint:raise RAGError('当前Embedding配置与索引不一致,请先重建')
         query=normalized_vector(self.embedder.embed([question])[0])
         if any(len(vector)!=len(query) for _,vector in rows):raise RAGError('查询向量与索引维度不同,请重建')
         ranked=sorted([(sum(a*b for a,b in zip(query,vector)),record) for record,vector in rows],key=lambda x:x[0],reverse=True)
         report['similarity']=round(ranked[0][0],4)
-        candidates=[(score,record) for score,record in ranked[:c.top_k] if score>=c.min_similarity]
-        if not candidates:return report
+        candidates=fuse(question,ranked,c.min_similarity,c.top_k)
+        if diagnostics:
+            report['_diagnostics']={'dense_top':[{'id':r['id'],'title':r['title'],'score':round(score,6)} for score,r in ranked[:c.top_k]],
+                'candidates':[{'id':s['row']['id'],'title':s['row']['title'],'dense':round(s['dense'],6),
+                               'bm25':round(s['lexical'],6),'rrf':round(s['rrf'],6),'title_match':s['title_match']} for s in candidates]}
+        if not candidates:report['reason']='no_candidates';return report
         if c.rerank_enabled:
-            order=self.reranker.rank(question,[r['title']+'\n'+r['content'] for _,r in candidates])
-            final=[(score,candidates[index]) for index,score in order if score>=c.rerank_min_score][:c.context_k]
-        else:final=[(similarity,(similarity,row)) for similarity,row in candidates[:c.context_k]]
-        report['hits']=[(score,{**record,'_similarity':round(similarity,4),'_rerank_score':score if c.rerank_enabled else None},similarity) for score,(similarity,record) in final]
+            order=self.reranker.rank(question,[retrieval_text(s['row']) for s in candidates])
+            ranked_candidates=[{**candidates[index],'score':score} for index,score in order]
+            eligible=[s for s in ranked_candidates if s['score']>=c.rerank_min_score]
+        else:
+            ranked_candidates=[{**s,'score':s['rrf']} for s in candidates]
+            eligible=ranked_candidates
+        # A complete chapter-title request should not be replaced by related feature sections.
+        # Semantic and lexical candidates still compete normally for all other questions.
+        anchors=[s for s in eligible if s['title_match']]
+        final=(anchors or eligible)[:c.context_k]
+        report['title_matched']=bool(anchors)
+        report['hits']=[(s['score'],{**s['row'],'_similarity':round(s['dense'],4),
+                         '_rerank_score':s['score'] if c.rerank_enabled else None,
+                         '_title_match':s['title_match']},s['dense']) for s in final]
         report['matched']=bool(report['hits'])
+        if diagnostics:report['_diagnostics']['reranked']=[{'id':s['row']['id'],'title':s['row']['title'],
+            'score':s['score'],'title_match':s['title_match'],'selected':s in final} for s in ranked_candidates]
         return report

@@ -216,3 +216,8 @@ sh scripts/docker-host.sh exec assistant python manage.py check
 完成后保持原访问地址，例如 `http://10.180.158.23:8000/widget/demo`。旧镜像在构建阶段仍可继续服务；构建失败时先修复依赖下载，不要强行切换。检查输出现在包含fastapi、uvicorn、langchain-core版本。原管理命令继续使用，原生运行仍为 `python manage.py serve`，内部已启动Uvicorn。开发测试先安装requirements-dev.txt再运行unittest；依赖范围在requirements.txt，部署以requirements.lock为准。
 
 当前是单实例企业部署基础版：多企业/多用户的会话身份隔离和共享外部知识库；SQLite及进程内会话互斥继续使用。不要直接添加多个Uvicorn worker或多个副本；后续横向扩展需一起改造存储、会话锁和限流。企业现有登录系统仍按iframe接入说明提供短期凭证接口。详见 [企业部署与框架](docs/企业部署与框架.md)。
+
+
+## 检索准确率改进
+
+当前语义RAG增加BM25和RRF混合召回、章节完整标题优先，以及去除链接噪声的检索文本。普通同义问法仍使用向量召回，不要求字面完全相同。首次更新需要 `ingest --rebuild` 后重启，Word无需重写；已完成FastAPI升级的镜像不用重新构建。新增 `manage.py retrieve --query '问题'` 可在服务器检查召回、重排与配图，默认不调用聊天模型、不打印密钥。详见 [检索准确率排查](docs/检索准确率排查.md)。

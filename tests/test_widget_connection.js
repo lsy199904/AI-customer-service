@@ -3,6 +3,8 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const source=fs.readFileSync('app/static/widget.js','utf8');
 const code=source.slice(source.indexOf('  async function request('),source.indexOf('  function scroll()'));
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
+const customer={};vm.runInNewContext(source.slice(source.indexOf('  function customerText('),source.indexOf('  function renderText(')),customer);
+assert(!customer.customerText('统一接入（KB-0f567c3f2b830588627d13d2）。').includes('KB-'));
 function setup(override={}){
  const timers=new Map();let number=0;
  const context={AbortController,controller:new AbortController(),token:async()=>'test-only-token',apiURL:path=>'https://assistant.example'+path,

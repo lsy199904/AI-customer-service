@@ -35,7 +35,7 @@ class DocumentImageTests(unittest.TestCase):
    def answer(me,q,h,e,c):return {'answerable':answerable,'answer':'请先使用手机号和验证码登录，按页面完成企业注册。','citation_ids':[e[0]['id']] if answerable else [],'image_ids':[]}
   self.service.config.mode='llm';self.service.model=Fake()
  def test_semantic_paraphrase_attaches_even_when_model_omits_image(self):
-  self.model();r=self.ask();self.assertEqual(r['status'],'answered');self.assertEqual(r['retrieval']['method'],'embedding')
+  self.model();r=self.ask();self.assertEqual(r['status'],'answered');self.assertEqual(r['retrieval']['method'],'hybrid_rrf')
   self.assertEqual(r['images'][0]['id'],'enterprise-register');self.assertTrue(r['citations']);self.assertIn('注册',r['answer'])
   self.assertEqual(self.service.history(ACTOR,self.sid)['items'][-1]['response']['images'],r['images'])
  def test_extractive_answer_also_attaches(self):

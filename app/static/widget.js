@@ -101,7 +101,7 @@
     if (response?.citations?.length) {
       const list = element('div', 'sources');
       response.citations.forEach((source, i) => {
-        const b = element('button', 'source', `参考资料 · ${source.title.replace(/^\d+(?:\.\d+)*\s+/, '')}`);
+        const b = element('button', 'source', `参考资料 · ${source.title.replace(/^问题\s*\d+\s*(?:第\s*\d+\s*页\s*)?/, '').replace(/^\d+(?:\.\d+)*\s+/, '')}`);
         b.type = 'button'; b.addEventListener('click', () => showSource(source)); list.append(b);
       });
       row.append(list);
@@ -111,7 +111,9 @@
   }
   function customerText(text) {
     // Old saved responses keep their original database payload; hide legacy debug prefixes in customer UI.
-    return String(text || '').replace(/^以下为(?:知识库原文摘录|本地知识摘录|知识原文摘录)[（(][^）)]*[）)][：:]?\s*/,'');
+    return String(text || '').replace(/^以下为(?:知识库原文摘录|本地知识摘录|知识原文摘录)[（(][^）)]*[）)][：:]?\s*/,'')
+      .replace(/[（(]\s*(?:KB|DOC)-[a-f0-9]{3,64}\s*[）)]/gi,'')
+      .replace(/\b(?:KB|DOC)-[a-f0-9]{3,64}\b/gi,'');
   }
   function renderText(parent,text) {
     const parts=String(text || '').split(/```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g);
