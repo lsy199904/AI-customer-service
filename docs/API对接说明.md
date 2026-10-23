@@ -84,3 +84,6 @@ Word章节的配图标记会被保存为知识元数据image_ids；成功回答�
 
 
 iframe公开入口：`GET /chatbot`、`GET /iframe.js`、`GET /widget/frame.js`、`GET /widget/frame.css`、`GET /widget/config`（仅返回允许嵌入来源）。仅 `/chatbot` 允许配置域名嵌入，其余HTML保留禁止嵌入。业务接口鉴权不变。详见 [iframe 接入](悬浮弹窗接入.md)。
+
+
+FastAPI升级保持现有业务接口不变。新增GET /ready（应用及数据库就绪）和需Bearer的GET /openapi.json（接口规范）；GET/HEAD /health均支持。响应包含X-Request-ID。Pydantic字段或JSON格式错误维持400；请求体超过16KiB为413，不支持的Content-Type为415；应用并发容量耗尽为503。模型调用在线程池运行，会话和用户鉴权规则不变。

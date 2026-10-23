@@ -1,4 +1,4 @@
-"""MVP domain layer; Python 3.9+, standard library only."""
+"""Customer support domain and LangChain generation; Python 3.12."""
 import base64
 import collections
 import hashlib
@@ -211,12 +211,22 @@ class Model:
         context=dict(context)
         intent=context.pop('_intent','knowledge')
         media=context.pop('_media',[])
-        data = {'model': self.config.model,
-                'messages': [{'role': 'system', 'content': SYSTEM},
-                             *[{'role': h['role'], 'content': h['content']} for h in history[-12:]],
-                             {'role': 'user', 'content': json.dumps({'question': question,
-                              'page_context': context, 'intent':intent, 'evidence': evidence, 'media':[{'id':r['id'],'title':r.get('title','')} for r in media]}, ensure_ascii=False)}],
-                'stream': False}
+        from langchain_core.messages import SystemMessage, convert_to_openai_messages
+        from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+        from langchain_core.runnables import RunnableLambda
+        from langsmith import tracing_context
+        prompt=ChatPromptTemplate.from_messages([
+            SystemMessage(content=SYSTEM),MessagesPlaceholder('history'),('human','{payload}')])
+        payload=json.dumps({'question':question,'page_context':context,'intent':intent,
+            'evidence':evidence,'media':[{'id':r['id'],'title':r.get('title','')} for r in media]},ensure_ascii=False)
+        chain=(prompt
+               | RunnableLambda(lambda value:self.complete(convert_to_openai_messages(value.to_messages())),name='model_completion')
+               | RunnableLambda(lambda text:self.parse_answer(text,evidence,media,intent),name='validate_citations'))
+        with tracing_context(enabled=False):
+            return chain.invoke({'history':[(h['role'],h['content']) for h in history[-12:]],'payload':payload})
+
+    def complete(self,messages):
+        data={'model':self.config.model,'messages':messages,'stream':False}
         req = urllib.request.Request(self.config.model_url.rstrip('/')+'/chat/completions',
               data=json.dumps(data).encode(), headers={'Content-Type': 'application/json',
               'Authorization': 'Bearer '+self.config.model_key}, method='POST')
@@ -228,7 +238,9 @@ class Model:
             raw = response.read(1024*1024+1)
             if len(raw) > 1024*1024:
                 raise ValueError('model response too large')
-        content = json.loads(raw)['choices'][0]['message']['content']
+        return json.loads(raw)['choices'][0]['message']['content']
+
+    def parse_answer(self,content,evidence,media,intent):
         content=re.sub(r'^\s*<think>.*?</think>\s*','',content,flags=re.S).strip()
         if content.startswith('```'):
             content=re.sub(r'^```(?:json)?\s*|\s*```$','',content).strip()
@@ -425,8 +437,9 @@ class Service:
                 if not conversation:
                     try:
                         query=contextual_query(question,history) if self.config.retrieval_backend=='semantic' else retrieval_query(question,history)
-                        retrieval=self.knowledge.assess(query)
-                        evidence=[r for _,r,_ in retrieval['hits']]
+                        from .chains import retrieve
+                        found=retrieve(self.knowledge,query)
+                        retrieval,evidence=found['retrieval'],found['evidence']
                         candidates=self.media.candidates(question,evidence)
                     except Exception:
                         retrieval_failed=True

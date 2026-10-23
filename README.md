@@ -1,6 +1,6 @@
-# SmartTITU 智能客服 一期 MVP
+# SmartTITU 企业客服后端
 
-提供可部署的 Python 后端与自带窗口的悬浮客服脚本。正式问答使用 **文档解析 → BGE-M3 语义向量召回 → Qwen3 Reranker 重排 → Qwen3-32B 依据资料回答**。无需 Dify 或单独开发聊天窗口。历史会话与知识版本存入 SQLite，适合单实例、小规模知识库。
+提供 FastAPI + Uvicorn 后端、LangChain Core RAG 链与自带窗口的悬浮客服脚本。Python运行环境使用3.12。正式问答使用 **文档解析 → BGE-M3 语义向量召回 → Qwen3 Reranker 重排 → Qwen3-32B 依据资料回答**。无需 Dify 或单独开发聊天窗口。历史会话与知识版本存入 SQLite，适合单实例、小规模知识库。
 
 首份入库资料为 `knowledge_sources/SmartTITU客户问答.docx`：71 个外部客户问答，按总目录编号2、3、4、5、9、10、11、13、14、15整理；前三问为官网、在线文件、模型清单，第四问为注册认证流程，其余同源连续。保留原图、图片URL、原文PDF链接和出处。Embedding 接收解析后的文本片段，不直接接收 Word 二进制，也不会训练或修改模型权重。旧 `data/knowledge.jsonl` 仅用于兼容模式和离线原型，**默认语义问答不读取它**。
 
@@ -12,7 +12,7 @@
 cd ~/ai_customer
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.lock
 # 仅首次、没有.env时执行；已有配置不要覆盖
 python manage.py init
 ```
@@ -194,3 +194,25 @@ python -m unittest discover -s tests -v
 `/widget/demo`按原控制台原型提供SmartTITU平台场景：侧栏、产品卡片、快速开始及右下角客服，凭证在连接弹窗中填写。点击产品或指引可以带入对应问题；页面背景仅作平台场景展示，客服实际连接现有后端。
 
 Linux宿主机网络部署支持读取.env的HOST。需要公司内网其他电脑访问时设 `HOST=0.0.0.0`，执行 `sh scripts/docker-host.sh up -d --force-recreate assistant` 使新环境配置生效，然后访问 `http://10.180.158.23:8000/widget/demo`（该IP为当前目标主机）。也可按所在网段测试 `192.168.100.23`。必须具备相应网络路由及TCP端口访问权限；本次不改知识库，无需重新入库。详见 [容器部署](docs/容器部署.md)。
+
+
+## FastAPI Uvicorn LangChain 升级
+
+API层已迁移FastAPI及Pydantic，Uvicorn运行ASGI服务，接口地址和响应结构兼容原浮窗及iframe。业务HTTP接口保留Bearer身份校验，支持请求体限制、请求ID、来源限制和统一错误。同步模型请求在线程池执行，不阻塞ASGI事件循环；默认单worker、最多32个应用并发请求。`/health`为存活检查，`/ready`检查应用与会话数据库就绪，均不调用上游模型；`/openapi.json`需Bearer凭证，可获取接口规范，默认没有公开Swagger页面。请求日志不输出问题、凭证或查询参数。
+
+RAG使用LangChain Core的BaseRetriever、Document、ChatPromptTemplate、MessagesPlaceholder与RunnableSequence（LCEL）；原有BGE-M3、Reranker、受控模型HTTP客户端和引用校验继续复用。默认禁用LangSmith云端追踪，不需要LangSmith密钥。生成链包括提示组装、模型调用与引用校验；检索报告按每次请求隔离。
+
+既有Word、71条知识索引、历史会话及模型目录保持原样。这次未改变切分版本或Embedding配置，无需重新ingest。Docker构建安装已锁定的requirements.lock；不能只restart旧镜像：
+
+```bash
+cd ~/ai_customer
+git pull --ff-only origin main
+sh scripts/docker-host.sh exec assistant python manage.py backup
+sh scripts/docker-host.sh build assistant
+sh scripts/docker-host.sh up -d --force-recreate assistant
+sh scripts/docker-host.sh exec assistant python manage.py check
+```
+
+完成后保持原访问地址，例如 `http://10.180.158.23:8000/widget/demo`。旧镜像在构建阶段仍可继续服务；构建失败时先修复依赖下载，不要强行切换。检查输出现在包含fastapi、uvicorn、langchain-core版本。原管理命令继续使用，原生运行仍为 `python manage.py serve`，内部已启动Uvicorn。开发测试先安装requirements-dev.txt再运行unittest；依赖范围在requirements.txt，部署以requirements.lock为准。
+
+当前是单实例企业部署基础版：多企业/多用户的会话身份隔离和共享外部知识库；SQLite及进程内会话互斥继续使用。不要直接添加多个Uvicorn worker或多个副本；后续横向扩展需一起改造存储、会话锁和限流。企业现有登录系统仍按iframe接入说明提供短期凭证接口。详见 [企业部署与框架](docs/企业部署与框架.md)。

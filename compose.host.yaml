@@ -16,6 +16,7 @@ services:
     volumes:
       - .:/ai_customer
     restart: unless-stopped
+    stop_grace_period: 190s
     healthcheck:
       test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','8000')+'/health', timeout=3)"]
       interval: 30s

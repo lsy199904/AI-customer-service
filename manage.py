@@ -79,7 +79,9 @@ def main():
                 from app.rag import RAGSettings,SemanticKnowledge
                 rag=RAGSettings();rag.validate();kb=SemanticKnowledge(rag)
             else:kb=Knowledge(config.knowledge)
-            print(json.dumps({'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db,'next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))
+            from importlib.metadata import version
+            frameworks={name:version(name) for name in ('fastapi','uvicorn','langchain-core')}
+            print(json.dumps({'frameworks':frameworks,'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db,'next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))
         elif args.command in ('ingest','documents','revisions','deactivate','activate'):
             from app.rag import RAGSettings,DocumentStore,ingest_documents
             rag=RAGSettings();store=DocumentStore(rag.index_path)
@@ -105,6 +107,9 @@ def main():
             serve()
     except Exception as error:
         from app.rag import RAGError
+        from importlib.metadata import PackageNotFoundError
+        if isinstance(error,PackageNotFoundError):
+            parser.exit(2,'缺少新框架依赖，请重新构建镜像，或安装requirements.lock。\n')
         if not isinstance(error,(ValueError,FileExistsError,RAGError)):raise
         parser.exit(2,str(error)+'\n')
 
