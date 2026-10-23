@@ -51,15 +51,41 @@
     return value;
   }
   async function request(path, method = 'GET', body) {
-    const signal=controller?.signal;
-    const auth = await token();
-    const response = await fetch(apiURL(path), {
-      method, headers:{Authorization:'Bearer ' + auth, ...(body ? {'Content-Type':'application/json'} : {})},
-      body:body ? JSON.stringify(body) : undefined, signal, credentials:'omit', cache:'no-store'
+    const parent=controller?.signal,scope=new AbortController();
+    const limit=method==='POST' && /\/messages$/.test(path) ? 120000 : 15000;
+    let timedOut=false,timer;
+    const onAbort=()=>scope.abort();
+    const stopped=new Promise((resolve,reject)=>{
+      scope.signal.addEventListener('abort',()=>reject(new Error(timedOut
+        ? '连接超时，请检查网络后点击重试。'
+        : '请求已取消。')),{once:true});
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message || '连接暂时不可用，请稍后重试');
-    return data;
+    parent?.addEventListener('abort',onAbort,{once:true});
+    if(parent?.aborted)scope.abort();
+    timer=setTimeout(()=>{timedOut=true;scope.abort();},limit);
+    try {
+      return await Promise.race([stopped,(async()=>{
+        const auth=await token();
+        if(scope.signal.aborted)throw new Error('请求已取消。');
+        let response;
+        try {
+          response=await fetch(apiURL(path), {
+            method, headers:{Authorization:'Bearer ' + auth, ...(body ? {'Content-Type':'application/json'} : {})},
+            body:body ? JSON.stringify(body) : undefined, signal:scope.signal, credentials:'omit', cache:'no-store'
+          });
+        } catch(error) {
+          if(scope.signal.aborted)throw error;
+          throw new Error('无法连接客服，请检查网络后点击重试。');
+        }
+        let data;
+        try {data=await response.json();}
+        catch {throw new Error('客服服务返回异常，请稍后重试。');}
+        if(!response.ok)throw new Error(data.error?.message || '连接暂时不可用，请稍后重试');
+        return data;
+      })()]);
+    } finally {
+      clearTimeout(timer);parent?.removeEventListener('abort',onAbort);
+    }
   }
   function scroll() { transcript.scrollTop = transcript.scrollHeight; }
   function activity() {
@@ -157,11 +183,12 @@
       if (version !== generation) return;
       idleSeconds=boot.idle_timeout_seconds || 1800;
       // Restore only the most recent session belonging to the authenticated user, as verified by the backend.
+      transcript.firstChild.textContent='正在加载您的会话…';
       const sessions=await request('/v1/sessions');
       if (version !== generation) return;
       sessionId=sessions.items?.[0]?.session_id || null;
       let history={items:[]};
-      if (sessionId) history=await request(`/v1/sessions/${sessionId}/messages`);
+      if (sessionId) {transcript.firstChild.textContent='正在恢复历史对话…';history=await request(`/v1/sessions/${sessionId}/messages`);}
       if (version !== generation) return;
       transcript.replaceChildren();
       transcript.append(element('div','welcome-label','SMARTTITU · 企业智能服务'));
@@ -170,15 +197,15 @@
       (boot.quick_questions || []).forEach(q => {
         const b=element('button','',q);b.type='button';b.onclick=()=>send(q);quick.append(b);
       });
-      initialized=true;activity();
+      initialized=true;activity();return true;
     } catch (err) {
       if (version !== generation) return;
-      transcript.replaceChildren();notice(err.message,()=>refresh());
+      transcript.replaceChildren();notice(err.message,()=>refresh());return false;
     } finally { if(version === generation) { setBusy(false);input.focus(); } }
   }
   async function refresh() {
     controller?.abort();controller=new AbortController();const v=++generation;
-    await initialize(v);
+    return initialize(v);
   }
   async function send(value, retrying=false) {
     const text=(value ?? input.value).trim();
