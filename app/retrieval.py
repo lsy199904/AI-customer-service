@@ -50,15 +50,36 @@ def terms(value):
     return result
 
 
+def title_matches(question, titles):
+    """Resolve a named procedure to its chapter without widening to shared keywords.
+
+    Exact subjects outrank expanded headings (e.g. a report about that subject).
+    Generic '流程' by itself must never anchor an arbitrary chapter.
+    """
+    subject=topic(question,question=True)
+    procedure=re.sub(r'(?:流程|步骤|操作方法|使用方法)$','',subject)
+    procedural=procedure!=subject and len(procedure)>=4
+    scores=[]
+    for title in titles:
+        target=topic(title)
+        score=3 if len(subject)>=4 and subject==target else 0
+        if procedural and not score:
+            if procedure==target:score=2
+            elif target.startswith(procedure):score=1
+        scores.append(score)
+    best=max(scores,default=0)
+    return [best>0 and score==best for score in scores]
+
+
 def lexical_ranking(question,rows):
-    query=set(terms(question));subject=topic(question,question=True)
+    query=set(terms(question))
+    matches=title_matches(question,[row['title'] for _,row in rows])
     counts=[Counter(terms(title_text(row['title']))*3+terms(clean_content(row['content']))) for _,row in rows]
     df=Counter(t for counter in counts for t in counter)
     avg=sum(sum(counter.values()) for counter in counts)/max(len(counts),1) or 1
     result=[]
-    for (dense,row),counter in zip(rows,counts):
+    for (dense,row),counter,matched in zip(rows,counts,matches):
         overlap=query & counter.keys();coverage=len(overlap)/max(len(query),1)
-        matched=len(subject)>=4 and subject==topic(row['title'])
         length=sum(counter.values())
         score=sum(math.log(1+(len(rows)-df[t]+.5)/(df[t]+.5))*counter[t]*2.2/
                   (counter[t]+1.2*(.25+.75*length/avg)) for t in overlap)

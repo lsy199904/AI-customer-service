@@ -78,10 +78,13 @@ class MediaCatalog:
             self.rows[key]=row
 
     def candidates(self, question, evidence):
-        ids={r['id'] for r in evidence};q=question.lower()
-        bound=self.bound(evidence);seen={r['id'] for r in bound}
-        return (bound+[r for r in self.rows.values() if r['id'] not in seen and (any(k.lower() in q for k in r.get('keywords',[]) if k)
-                or ids.intersection(r.get('knowledge_ids',[])))])[:4]
+        # Knowledge replies use only this turn's document-owned media. A keyword
+        # lookup is reserved for an explicit image request with no bound diagram.
+        bound=self.bound(evidence)
+        if bound or intent_of(question)!='image':return bound
+        q=question.lower()
+        return [r for r in self.rows.values()
+                if any(k.lower() in q for k in r.get('keywords',[]) if k)][:4]
 
     def bound(self,evidence):
         # Stable operator IDs come from document metadata, never from generated URLs.

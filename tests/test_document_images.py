@@ -54,6 +54,41 @@ class DocumentImageTests(unittest.TestCase):
  def test_no_hit_does_not_attach(self):
   self.service.knowledge.assess=lambda q:{'matched':False,'hits':[],'method':'embedding','similarity':0}
   self.model();r=self.ask();self.assertTrue(r['handoff']);self.assertEqual(r['images'],[])
+ def test_uncited_candidate_image_is_filtered_even_if_model_selects_it(self):
+  row=next(iter(self.service.knowledge.rows.values()))
+  plain={**row,'id':'KB-aabbcc','title':'快速使用检查清单总结','image_ids':[]}
+  self.service.knowledge.assess=lambda q:{'matched':True,'hits':[(1,plain,1),(.9,row,.9)],'method':'embedding','similarity':1}
+  class SelectUncited:
+   def answer(me,q,h,e,c):return {'answerable':True,'answer':'按清单操作。','citation_ids':[plain['id']],'image_ids':['enterprise-register']}
+  self.service.config.mode='llm';self.service.model=SelectUncited()
+  self.assertEqual(self.ask()['images'],[])
+ def test_topic_switch_does_not_repeat_previous_turn_images(self):
+  row=next(iter(self.service.knowledge.rows.values()))
+  plain={**row,'id':'KB-aabbcc','title':'快速使用检查清单总结','image_ids':[]}
+  self.service.knowledge.assess=lambda q:{'matched':True,'hits':[(1,row if '注册' in q else plain,1)],'method':'embedding','similarity':1}
+  calls=[]
+  class ReusePrevious:
+   def answer(me,q,h,e,c):
+    calls.append(c['_media'])
+    return {'answerable':True,'answer':'请按当前清单操作。','citation_ids':[e[0]['id']],'image_ids':['enterprise-register']}
+  self.service.config.mode='llm';self.service.model=ReusePrevious()
+  first=self.service.chat(ACTOR,self.sid,{'message':'企业注册流程','request_id':'scope-register'})
+  second=self.service.chat(ACTOR,self.sid,{'message':'快速使用流程','request_id':'scope-start'})
+  self.assertEqual([i['id'] for i in first['images']],['enterprise-register'])
+  self.assertEqual(second['images'],[]);self.assertEqual(calls[-1],[])
+  saved=self.service.history(ACTOR,self.sid)['items']
+  self.assertEqual(saved[-1]['response']['images'],[])
+  self.assertEqual(saved[-3]['response']['images'],first['images'])
+ def test_general_question_does_not_search_global_image_keywords(self):
+  self.service.media.rows['enterprise-register']['keywords']=['使用']
+  self.assertEqual(self.service.media.candidates('快速使用流程',[]),[])
+ def test_image_only_answer_cannot_bypass_current_evidence_citations(self):
+  import json
+  from app.core import Model
+  result={'answerable':True,'answer':'看这张图。','citation_ids':[],'image_ids':['enterprise-register']}
+  row=next(iter(self.service.knowledge.rows.values()))
+  with self.assertRaises(ValueError):
+   Model(self.service.config).parse_answer(json.dumps(result),[row],self.service.media.bound([row]),'knowledge')
  def test_revision_changes_without_rebinding_image(self):
   before=next(iter(self.service.knowledge.rows));self.file.write_text(self.file.read_text()+'\n来源：修订后的注册流程。\n',encoding='utf-8')
   calls=len(self.embed.calls);ingest_documents(self.config,embedder=self.embed)

@@ -26,6 +26,24 @@ class HybridRetrievalTests(unittest.TestCase):
   self.rank=AdverseReranker();self.config.rerank_enabled=True;self.config.rerank_url='http://127.0.0.1:11434/v1/rerank'
   self.k=SemanticKnowledge(self.config,self.embed,self.rank)
  def tearDown(self):self.temp.cleanup()
+ def test_audit_procedure_excludes_sandbox_even_with_adverse_reranking(self):
+  path=self.sources/'audit.md'
+  path.write_text('# 操作审计\n管理员打开操作审计，查看操作记录。\n# 安全审计\n打开安全审计菜单，查看报告。\n# 全栈安全-可信安全沙箱\n提供链路加密、隔离和操作审计。\n',encoding='utf-8')
+  ingest_documents(self.config,embedder=self.embed)
+  r=self.k.assess('安全审计流程')
+  self.assertTrue(r['title_matched'])
+  self.assertEqual([row['title'] for _,row,_ in r['hits']],['安全审计'])
+ def test_quick_start_procedure_does_not_select_deployment_or_audit(self):
+  (self.sources/'start.md').write_text('# 快速使用检查清单总结\n注册、认证、订购套餐、创建密钥。\n# 快速部署-执行部署\n部署容器。\n# 安全审计\n查看审计记录。\n',encoding='utf-8')
+  ingest_documents(self.config,embedder=self.embed)
+  r=self.k.assess('快速使用流程')
+  self.assertEqual([row['title'] for _,row,_ in r['hits']],['快速使用检查清单总结'])
+ def test_procedure_matching_does_not_capture_comparisons_or_generic_flow(self):
+  from app.retrieval import title_matches
+  titles=['安全审计','安全审计报告内容','全栈安全-可信安全沙箱']
+  self.assertEqual(title_matches('安全审计流程',titles),[True,False,False])
+  self.assertEqual(title_matches('流程',titles),[False,False,False])
+  self.assertEqual(title_matches('安全审计与沙箱有什么区别',titles),[False,False,False])
  def test_registration_question_recovers_below_dense_threshold_and_returns_diagram(self):
   # Its vector scores zero against the query, mimicking the reported recall failure.
   class Query:
