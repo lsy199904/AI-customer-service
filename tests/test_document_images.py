@@ -103,16 +103,19 @@ class DocumentImageTests(unittest.TestCase):
 class DocumentImageParserTests(unittest.TestCase):
  def test_updated_word(self):
   result=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx')
-  self.assertEqual(len(result.chunks),51)
+  self.assertEqual(len(result.chunks),50)
   import re
   numbers=[int(re.match(r'问题(\d+)',c['title']).group(1)) for c in result.chunks]
-  self.assertEqual(numbers,list(range(1,52)))
+  self.assertEqual(numbers,list(range(1,51)))
   from app.retrieval import title_text
-  self.assertEqual(len({title_text(c['title']) for c in result.chunks}),51)
+  self.assertEqual(len({title_text(c['title']) for c in result.chunks}),50)
   self.assertEqual([c['title'] for c in result.chunks[3:6]],['问题4 企业注册与认证流程','问题5 开发票流程','问题6 充值、结算流程'])
   self.assertEqual(result.chunks[4]['image_ids'],['billing-invoice-flow'])
   self.assertEqual(result.chunks[5]['image_ids'],['recharge-balance-flow'])
   self.assertEqual(result.version,'2026-10-23 v4')
+  self.assertEqual(result.chunks[7]['title'],'问题8 SmartTITU服务体系与架构')
+  self.assertEqual(result.chunks[7]['image_ids'],['product-04'])
+  self.assertEqual(len(result.chunks[7]['source_references']),4)
   bound=[c for c in result.chunks if 'enterprise-register' in c['image_ids']];self.assertEqual(len(bound),1)
   self.assertIn('企业注册与认证流程',bound[0]['title'])
   self.assertEqual(len(set(k for c in result.chunks for k in c['image_ids'])),23)
@@ -133,7 +136,7 @@ class DocumentImageParserTests(unittest.TestCase):
   import re
   rows=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx').chunks
   ppt=[r for r in rows if '5.SmartTITU' in str(r['source_references'])]
-  self.assertEqual([int(re.search(r'物理第(\d+)页',next(ref for ref in r['source_references'] if '5.SmartTITU' in ref)).group(1)) for r in ppt],[i for i in range(1,31) if i not in {1,5,11,18,22,24,26}])
+  self.assertEqual([int(re.search(r'物理第(\d+)页',ref).group(1)) for r in ppt for ref in r['source_references'] if '5.SmartTITU' in ref],[i for i in range(1,31) if i not in {1,5,11,18,22,24,26}])
  def test_word_media_and_source_resources_exist(self):
   import json,urllib.parse
   from app.conversation import MediaCatalog
