@@ -132,7 +132,8 @@
     if (response?.citations?.length) {
       const list = element('div', 'sources');
       response.citations.forEach((source, i) => {
-        const b = element('button', 'source', `参考资料 · ${source.title.replace(/^问题\s*\d+\s*(?:第\s*\d+\s*页\s*)?/, '').replace(/^\d+(?:\.\d+)*\s+/, '')}`);
+        const b = element('button', 'source', source.display_title || ('用户手册-'+(source.section_title || '相关资料')));
+        b.title=source.title || '查看参考资料';
         b.type = 'button'; b.addEventListener('click', () => showSource(source)); list.append(b);
       });
       row.append(list);

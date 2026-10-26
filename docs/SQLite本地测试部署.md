@@ -74,3 +74,22 @@ sh scripts/enterprise.sh start
 另使用实际Compose中的环境覆盖值，配合临时SQLite及合成资料执行语义RAG接口集成测试，验证企业.env不会覆盖空DATABASE_URL、未连接Milvus、答案附来源、ready接口以及关闭重启后的历史持久化。模型向量和生成使用测试替身，不调用生产模型。
 
 本地没有Docker守护进程，未声明已经执行真实容器启动；服务器仍需按上文验证本地镜像、模型连通性和实际知识内容。
+
+## v5业务流程及章节来源更新
+
+本次业务流程按注册、登录、企业认证、在线签约、服务订购、星级评定、客户交付、客户充值、账单支付、在线开票整理为10个独立问题（问题4至13）。其余章节保留并连续编号，新Word共57问，独立流程配图由data/media.json登记并随代码同步。私有Word、原始PDF和drawio不推送。
+
+Word标题1作为章节，标题2作为问题。入库片段保存section_title；API在原问题title之外提供display_title，例如用户手册-常用外部链接、用户手册-业务流程。浮窗、iframe共用此展示名，具体来源仍按知识ID打开原问题，不按章节合并正文或把同章节所有配图一并返回。历史中旧版回复缺少章节字段时使用用户手册-相关资料。
+
+解析版本更新为documents-v3，需要一次全量重建。上传v5时覆盖已登记的原Word路径，保留旧文件名即可，不要在knowledge_sources同时保留v4、v5两个文件。当前测试机登记的路径为SmartTITU外部客户知识库_20261023_v4_去重版.docx；文件内部版本会正确读取为2026-10-26 v5。请先将旧Word备份到knowledge_sources之外，再覆盖。
+
+```bash
+cd ~/ai_customer/ai_customer_test
+git pull --ff-only origin sqlite-local-testing &&
+sh scripts/sqlite.sh exec assistant python manage.py ingest --rebuild &&
+sh scripts/sqlite.sh start &&
+sh scripts/sqlite.sh check &&
+sh scripts/sqlite.sh doctor
+```
+
+本次151项回归：150项通过，1项可选PostgreSQL测试跳过。核对10个流程问题顺序和各自配图、57问唯一性及原章节保留；验证Word/WPS标题层级、长片段元数据继承、入库后重启的来源查询、章节显示和原问题路由。Word使用内置LibreOffice及临时中文字体配置完成39页渲染和逐页检查。未调用用户服务器的真实模型，不据此声明真实问法的准确率。

@@ -473,7 +473,9 @@ class Service:
             document_url=self.config.source_url.rstrip('/')+'/'+urllib.parse.quote(row['source_file'])
             if row.get('source_pages'):
                 document_url += '#page='+str(row['source_pages'][0])
-        return {'id':row['id'],'title':row['title'],'source_file':row['source_file'],
+        section=re.sub(r'^\s*\d+(?:\.\d+)*[、.．\s]+','',row.get('section_title','')).strip()
+        display_title='用户手册-'+(section or '相关资料')
+        return {'id':row['id'],'title':row['title'],'display_title':display_title,'section_title':section,'source_file':row['source_file'],
                 'pages':row.get('source_pages',[]),'version':row.get('version'),
                 'url':url,'document_url':document_url,'download_url':row.get('download_url'),'document_id':row.get('document_id'),'revision':row.get('revision'),'source_locator':row.get('source_locator'),'source_references':row.get('source_references',[])}
 

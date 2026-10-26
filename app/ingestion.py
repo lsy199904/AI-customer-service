@@ -8,7 +8,7 @@ import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 
-PIPELINE_VERSION='documents-v2'
+PIPELINE_VERSION='documents-v3'
 MAX_FILE_BYTES=25*1024*1024
 SUPPORTED={'.docx','.pdf','.md','.txt'}
 NS={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
@@ -57,8 +57,8 @@ def _docx(path,raw):
             if style.lower()=='title':title=text;continue
             if re.match(r'^版本[:：]',text):version=text.split(':',1)[-1].strip()
             if '\n版本:' in text:version=text.split('\n版本:',1)[1].split('\n',1)[0].strip()
-            heading=bool(re.match(r'^(Heading|标题)[ _-]?[1-6]$',style,re.I))
-            blocks.append({'text':text,'heading':heading,'page':None,'locator':'段落 '+str(paragraph_no)})
+            heading=re.match(r'^(Heading|标题)[ _-]?([1-6])$',style,re.I)
+            blocks.append({'text':text,'heading':bool(heading),'level':int(heading.group(2)) if heading else None,'page':None,'locator':'段落 '+str(paragraph_no)})
         elif node.tag==f"{{{NS['w']}}}tbl":
             rows=[]
             for row in node.findall('w:tr',NS):
@@ -93,19 +93,20 @@ def _plain(path,raw):
         line=clean_text(line)
         if not line:continue
         heading=bool(re.match(r'^#{1,6}\s+',line))
-        blocks.append({'text':re.sub(r'^#{1,6}\s+','',line),'heading':heading,'page':None,'locator':'文本章节'})
+        blocks.append({'text':re.sub(r'^#{1,6}\s+','',line),'heading':heading,'level':len(line.split()[0]) if heading else None,'page':None,'locator':'文本章节'})
     return path.stem,'未标注',blocks
 
 
 def split_sections(blocks,title,max_chars=1000,overlap=100):
     if max_chars<200 or overlap<0 or overlap>=max_chars:raise ValueError('切分参数无效')
     has_headings=any(b['heading'] for b in blocks)
-    sections=[];current=None
+    sections=[];current=None;chapter=title
     for block in blocks:
         if block['heading']:
-            current={'title':block['text'],'blocks':[],'refs':[],'image_ids':[]};sections.append(current)
+            if block.get('level')==1:chapter=block['text']
+            current={'title':block['text'],'chapter':chapter,'blocks':[],'refs':[],'image_ids':[]};sections.append(current)
         elif current is None and not has_headings:
-            current={'title':title,'blocks':[],'refs':[],'image_ids':[]};sections.append(current)
+            current={'title':title,'chapter':chapter,'blocks':[],'refs':[],'image_ids':[]};sections.append(current)
         if current is not None and not block['heading']:
             if re.match(r'^来源[:：]',block['text']):current['refs'].append(block['text']);continue
             if re.match(r'^配图[:：]',block['text']):
@@ -126,7 +127,7 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
                 if boundary>start:end=boundary+1
             content=text[start:end].strip()
             if content:
-                chunks.append({'title':section['title'],'content':content,'source_pages':pages,
+                chunks.append({'title':section['title'],'section_title':section['chapter'],'content':content,'source_pages':pages,
                                'source_locator':section['title']+' / '+(', '.join(dict.fromkeys(b['locator'] for b in section['blocks']))),
                                'source_references':section['refs'],'image_ids':section['image_ids']})
             if end==len(text):break
