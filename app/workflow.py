@@ -96,7 +96,8 @@ class SupportWorkflow:
         try:
             query=contextual_query(state['question'],state['history']) if self.service.config.retrieval_backend=='semantic' else retrieval_query(state['question'],state['history'])
             from .chains import retrieve
-            found=retrieve(self.service.knowledge,query)
+            from .deadlines import run
+            found=run(lambda:retrieve(self.service.knowledge,query),self.service.config.retrieval_timeout)
             runtime.context.check()
             evidence=found['evidence'];candidates=self.service.media.candidates(state['question'],evidence)
             values={'retrieval':found['retrieval'],'evidence':evidence,'candidates':candidates}
@@ -104,7 +105,12 @@ class SupportWorkflow:
                 values['answer']=NO_ANSWER
             return values
         except RequestCancelled:raise
-        except Exception:
+        except Exception as error:
+            from .deadlines import RetrievalTimeout
+            if isinstance(error,RetrievalTimeout):
+                self.service.observe('retrieval_timeout',0)
+                return {'reason':'retrieval_timeout','answer':'资料查询超时了，请稍后重试，也可以试试下面的问题。',
+                    'retrieval_failed':True,'retrieval':{'matched':False,'method':self.service.config.retrieval_backend,'reason':'retrieval_timeout','timeout_seconds':self.service.config.retrieval_timeout,'similarity':None}}
             self.service.observe('retrieval_failed',0)
             return {'reason':'retrieval_unavailable','answer':'资料查询暂时不可用，请稍后再试，也可以试试下面的问题。',
                 'retrieval_failed':True,'retrieval':{'matched':False,'method':self.service.config.retrieval_backend,'reason':'retrieval_unavailable','similarity':None}}
@@ -154,7 +160,7 @@ class SupportWorkflow:
         values={'images':images,'suggestions':[],'actions':[]}
         if not state['success'] and state['intent']!='handoff':
             values.update(images=[],selected=[],suggestions=recommended_questions(s.knowledge,state['question'],
-                state['evidence'],sensitive=state['intent']=='sensitive',
+                state['evidence'],sensitive=state['intent']=='sensitive' or state['retrieval_failed'],
                 related_titles=state['retrieval'].get('_suggestion_titles',[])),
                 actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
             if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
@@ -171,8 +177,13 @@ class SupportWorkflow:
             previous=self.graph.get_state(config)
             if previous.values:
                 if previous.values.get('question')!=state['question']:raise WorkflowConflict('工作流请求编号冲突')
+                if any(h.get('created_at',0)<self.service.cutoff() for h in previous.values.get('history',[])):
+                    # A resumed request must never reintroduce expired conversation text.
+                    self.saver.delete_thread(key)
+                    previous=self.graph.get_state(config)
                 # Resume only the same authorized request; checkpoints never override identity checks.
-                result=self.graph.invoke(None,config,context=context) if previous.next else previous.values
+                result=(self.graph.invoke(state,config,context=context) if not previous.values else
+                        self.graph.invoke(None,config,context=context) if previous.next else previous.values)
             else:result=self.graph.invoke(state,config,context=context)
         return result,key
 

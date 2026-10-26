@@ -142,10 +142,31 @@ def create_app(config=None,model=None,service=None):
     async def lifespan(app):
         anyio.to_thread.current_default_thread_limiter().total_tokens=32
         app.state.service=service or Service(config,model=model)
+        async def cleanup():
+            while True:
+                try:
+                    future=asyncio.get_running_loop().run_in_executor(None,app.state.service.prune_sessions)
+                    try:report=await asyncio.shield(future)
+                    except asyncio.CancelledError:
+                        # Finish the current database cleanup before closing its connections.
+                        try:await future
+                        except Exception:LOG.error('session retention cleanup failed during shutdown')
+                        raise
+                    if report['batch_full'] and not report['skipped_busy']:
+                        await asyncio.sleep(.05);continue
+                except asyncio.CancelledError:raise
+                except Exception:LOG.error('session retention cleanup failed')
+                await asyncio.sleep(config.cleanup_interval)
+        cleanup_task=asyncio.create_task(cleanup())
         app.state.ready=True
         try:yield
         finally:
             app.state.ready=False
+            cleanup_task.cancel()
+            try:await cleanup_task
+            except asyncio.CancelledError:pass
+            from .deadlines import close as close_retrieval
+            close_retrieval()
             app.state.service.close()
             from .storage import close_knowledge_pools
             close_knowledge_pools()
@@ -211,7 +232,6 @@ def create_app(config=None,model=None,service=None):
 
     @app.post('/v1/sessions',status_code=201,tags=['sessions'])
     def create(body:SessionBody,user=Depends(actor),service=Depends(current_service)):
-        service.rate(user)
         return service.create(user,body.model_dump())
 
     @app.get('/v1/sessions/{sid}/messages',tags=['sessions'])

@@ -16,16 +16,18 @@ def client():
 
 
 def post_json(url,payload,key='',timeout=60,max_bytes=8*1024*1024):
+    from .deadlines import remaining,check
+    timeout=remaining(timeout)
     headers={'Content-Type':'application/json'}
     if key:headers['Authorization']='Bearer '+key
     with client().stream('POST',url,json=payload,headers=headers,
-                         timeout=httpx.Timeout(timeout,connect=5,pool=5)) as response:
+                         timeout=httpx.Timeout(timeout,connect=min(5,timeout),pool=min(5,timeout))) as response:
         response.raise_for_status();raw=bytearray()
         for chunk in response.iter_bytes():
-            raw.extend(chunk)
+            check();raw.extend(chunk)
             if len(raw)>max_bytes:raise ValueError('模型响应超过大小限制')
         import json
-        return json.loads(raw)
+        check();return json.loads(raw)
 
 
 def close():

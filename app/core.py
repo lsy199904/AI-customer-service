@@ -44,10 +44,18 @@ class Settings:
     media_path: str = field(default_factory=lambda: os.getenv('MEDIA_PATH',str(BASE/'data/media.json')))
     min_similarity: float = field(default_factory=lambda: float(os.getenv('RETRIEVAL_MIN_SIMILARITY','0.14')))
     retrieval_backend: str = field(default_factory=lambda: os.getenv('RETRIEVAL_BACKEND','semantic'))
-    idle_seconds: int = 1800
-    requests_per_minute: int = 30
+    idle_seconds: int = field(default_factory=lambda:int(os.getenv('SESSION_IDLE_SECONDS','1800')))
+    retention_days: int = field(default_factory=lambda:int(os.getenv('SESSION_RETENTION_DAYS','7')))
+    context_rounds: int = field(default_factory=lambda:int(os.getenv('SESSION_CONTEXT_ROUNDS','20')))
+    requests_per_minute: int = field(default_factory=lambda:int(os.getenv('TENANT_MESSAGES_PER_MINUTE','20')))
+    retrieval_timeout: float = field(default_factory=lambda:float(os.getenv('RETRIEVAL_TIMEOUT_SECONDS','15')))
+    cleanup_interval: int = field(default_factory=lambda:int(os.getenv('SESSION_CLEANUP_INTERVAL_SECONDS','300')))
 
     def validate(self):
+        if not 1<=self.retention_days<=365 or not 1<=self.context_rounds<=1000:raise ValueError('会话保留天数须为1至365，上下文轮数须为1至1000')
+        if not 1<=self.requests_per_minute<=10000:raise ValueError('企业每分钟消息额度须为1至10000')
+        if not math.isfinite(self.retrieval_timeout) or not .01<=self.retrieval_timeout<=300:raise ValueError('检索总超时须为0.01至300秒')
+        if not 1<=self.idle_seconds<=86400 or not 1<=self.cleanup_interval<=86400:raise ValueError('空闲时间与清理间隔须为1至86400秒')
         if len(self.secret.encode()) < 32:
             raise ValueError('AUTH_SECRET 必须至少 32 字节,请使用随机密钥')
         if self.database_url and urllib.parse.urlsplit(self.database_url).scheme not in ('postgres','postgresql'):raise ValueError('DATABASE_URL必须为PostgreSQL地址')
@@ -230,7 +238,7 @@ class Model:
                | RunnableLambda(lambda value:self.complete(convert_to_openai_messages(value.to_messages())),name='model_completion')
                | RunnableLambda(lambda text:self.parse_answer(text,evidence,media,intent),name='validate_citations'))
         with tracing_context(enabled=False):
-            return chain.invoke({'history':[(h['role'],h['content']) for h in history[-12:]],'payload':payload})
+            return chain.invoke({'history':[(h['role'],h['content']) for h in history[-2*self.config.context_rounds:]],'payload':payload})
 
     def complete(self,messages):
         from langchain.chat_models import init_chat_model
@@ -308,6 +316,9 @@ class Service:
                 payload TEXT NOT NULL, created REAL NOT NULL);
             CREATE UNIQUE INDEX IF NOT EXISTS message_request ON messages(session,request_id,role);
             CREATE TABLE IF NOT EXISTS rate_limits(owner TEXT PRIMARY KEY, window INTEGER, count INTEGER);
+            CREATE TABLE IF NOT EXISTS tenant_message_limits(owner TEXT PRIMARY KEY, events TEXT NOT NULL, updated REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS message_retention ON messages(created);
+            CREATE INDEX IF NOT EXISTS session_retention ON sessions(updated);
             CREATE TABLE IF NOT EXISTS workflow_runs(id TEXT PRIMARY KEY, session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, request_id TEXT NOT NULL, status TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL);
             ''')
             if config.database_url:
@@ -323,22 +334,35 @@ class Service:
         return {'name': 'SmartTITU 智能客服', 'welcome': WELCOME,
                 'quick_questions': list(QUICK_QUESTIONS),
                 'idle_timeout_seconds': self.config.idle_seconds, 'contact': self.contact(),
+                'policies':self.policies(),
                 'answer_mode': self.config.mode, 'knowledge_count': len(self.knowledge.rows), 'retrieval_backend':self.config.retrieval_backend,
                 'capabilities': {'text_chat': True, 'history': True, 'citations': True,
                                  'reply_images': True, 'streaming': True, 'workflow': 'langgraph', 'upload': False, 'business_tools': self.tools.available(), 'proactive_messages': False}}
 
+    def policies(self):
+        return {'session_retention_days':self.config.retention_days,'session_context_rounds':self.config.context_rounds,
+                'tenant_messages_per_minute':self.config.requests_per_minute,'rate_window_seconds':60,
+                'rate_scope':'tenant','retrieval_timeout_seconds':self.config.retrieval_timeout}
+
     def rate(self, actor):
-        owner = hashlib.sha256(json.dumps([actor['tenant_id'],actor['sub']]).encode()).hexdigest()
-        window = int(time.time())//60
-        with self.lock, self.db:
-            row=self.db.execute('INSERT INTO rate_limits(owner,window,count) VALUES(?,?,1) ON CONFLICT(owner) DO UPDATE SET window=excluded.window,count=CASE WHEN rate_limits.window=excluded.window THEN rate_limits.count+1 ELSE 1 END RETURNING count',(owner,window)).fetchone()
-            if row['count']>self.config.requests_per_minute:
-                raise APIError(429,'rate_limited','请求过于频繁,请稍后再试')
+        # One rolling 60-second quota shared by every user/session in a tenant.
+        owner=hashlib.sha256(('tenant-message-v1:'+actor['tenant_id']).encode()).hexdigest()
+        now=time.time()
+        with self.lock,self.db:
+            self.db.execute('INSERT INTO tenant_message_limits VALUES(?,?,?) ON CONFLICT(owner) DO NOTHING',(owner,'[]',now))
+            suffix=' FOR UPDATE' if self.config.database_url else ''
+            row=self.db.execute('SELECT events FROM tenant_message_limits WHERE owner=?'+suffix,(owner,)).fetchone()
+            events=[t for t in json.loads(row['events']) if t>now-60]
+            if len(events)>=self.config.requests_per_minute:raise APIError(429,'tenant_rate_limited','当前企业提问较多，请稍后再试')
+            events.append(now)
+            self.db.execute('UPDATE tenant_message_limits SET events=?,updated=? WHERE owner=?',(json.dumps(events),now,owner))
+
+    def cutoff(self):return time.time()-self.config.retention_days*86400
 
 
     def owned(self, actor, sid):
-        row = self.db.execute('SELECT * FROM sessions WHERE id=? AND tenant=? AND user=?',
-                            (sid, actor['tenant_id'], actor['sub'])).fetchone()
+        row = self.db.execute('SELECT * FROM sessions WHERE id=? AND tenant=? AND user=? AND updated>=?',
+                            (sid, actor['tenant_id'], actor['sub'],self.cutoff())).fetchone()
         if row is None:
             raise APIError(404, 'not_found', '会话不存在')
         return dict(row)
@@ -359,8 +383,8 @@ class Service:
 
     def sessions(self, actor):
         with self.lock:
-            rows = self.db.execute('SELECT id,created,updated,context FROM sessions WHERE tenant=? AND user=? ORDER BY updated DESC LIMIT 100',
-                             (actor['tenant_id'],actor['sub'])).fetchall()
+            rows = self.db.execute('SELECT id,created,updated,context FROM sessions WHERE tenant=? AND user=? AND updated>=? ORDER BY updated DESC LIMIT 100',
+                             (actor['tenant_id'],actor['sub'],self.cutoff())).fetchall()
         return {'items':[{'session_id':r['id'],'created_at':r['created'],'updated_at':r['updated'],
                          'context':json.loads(r['context']), 'idle':time.time()-r['updated']>self.config.idle_seconds} for r in rows]}
 
@@ -368,16 +392,66 @@ class Service:
         with self.lock:
             self.owned(actor,sid)
             if before:
-                boundary = self.db.execute('SELECT rowid FROM messages WHERE session=? AND id=?',(sid,before)).fetchone()
+                boundary = self.db.execute('SELECT rowid FROM messages WHERE session=? AND id=? AND created>=?',(sid,before,self.cutoff())).fetchone()
                 if boundary is None:
                     raise APIError(400,'invalid_cursor','无效的历史游标')
-                rows=self.db.execute('SELECT * FROM messages WHERE session=? AND rowid<? ORDER BY rowid DESC LIMIT 101',(sid,boundary[0])).fetchall()
+                rows=self.db.execute('SELECT * FROM messages WHERE session=? AND rowid<? AND created>=? ORDER BY rowid DESC LIMIT 101',(sid,boundary[0],self.cutoff())).fetchall()
             else:
-                rows=self.db.execute('SELECT * FROM messages WHERE session=? ORDER BY rowid DESC LIMIT 101',(sid,)).fetchall()
+                rows=self.db.execute('SELECT * FROM messages WHERE session=? AND created>=? ORDER BY rowid DESC LIMIT 101',(sid,self.cutoff())).fetchall()
         page=list(reversed(rows[:100]))
         return {'session_id':sid,'items':[{'message_id':r['id'],'role':r['role'],'content':r['content'],
                  'created_at':r['created'],'response':json.loads(r['payload']) if r['role']=='assistant' else None} for r in page],
                 'next_before':page[0]['id'] if len(rows)>100 else None}
+
+    def context_history(self,actor,sid):
+        with self.lock:
+            self.owned(actor,sid)
+            rows=self.db.execute('SELECT * FROM messages WHERE session=? AND created>=? ORDER BY rowid DESC LIMIT ?',
+                (sid,self.cutoff(),2*self.config.context_rounds)).fetchall()
+        items=[{'role':r['role'],'content':r['content'],'created_at':r['created'],
+                'response':json.loads(r['payload']) if r['role']=='assistant' else None} for r in reversed(rows)]
+        # An idle gap starts a new context segment, even on the second post-idle turn.
+        start=0
+        for i in range(1,len(items)):
+            if items[i]['created_at']-items[i-1]['created_at']>self.config.idle_seconds:start=i
+        return items[start:]
+
+    def prune_sessions(self,batch_size=200):
+        from contextlib import nullcontext
+        from .storage import BusySession
+        result={'deleted_sessions':0,'deleted_messages':0,'deleted_checkpoints':0,'skipped_busy':0}
+        cutoff=self.cutoff()
+        guard=self.db.session_lock('__maintenance_sessions__') if self.config.database_url else nullcontext()
+        try:
+            with guard:
+                with self.lock:
+                    rows=self.db.execute('SELECT s.id FROM sessions s WHERE s.updated<? OR EXISTS(SELECT 1 FROM messages m WHERE m.session=s.id AND m.created<?) OR EXISTS(SELECT 1 FROM workflow_runs w WHERE w.session=s.id AND w.updated<?) LIMIT ?',
+                        (cutoff,cutoff,cutoff,batch_size)).fetchall()
+                for row in rows:
+                    sid=row['id'];lock=self.db.session_lock(sid) if self.config.database_url else nullcontext()
+                    try:
+                        with lock,self.lock:
+                            if sid in self.active:result['skipped_busy']+=1;continue
+                            session=self.db.execute('SELECT updated FROM sessions WHERE id=?',(sid,)).fetchone()
+                            if session is None:continue
+                            old_count=self.db.execute('SELECT COUNT(*) FROM messages WHERE session=? AND created<?',(sid,cutoff)).fetchone()[0]
+                            expired=session['updated']<cutoff
+                            runs=self.db.execute('SELECT id FROM workflow_runs WHERE session=?'+('' if expired or old_count else ' AND updated<?'),(sid,) if expired or old_count else (sid,cutoff)).fetchall()
+                            if runs:
+                                from .workflow import SupportWorkflow
+                                if self._workflow is None:self._workflow=SupportWorkflow(self)
+                                for run in runs:self._workflow.saver.delete_thread(run['id']);result['deleted_checkpoints']+=1
+                            with self.db:
+                                for run in runs:self.db.execute('DELETE FROM workflow_runs WHERE id=?',(run['id'],))
+                                if expired:
+                                    result['deleted_messages']+=self.db.execute('SELECT COUNT(*) FROM messages WHERE session=?',(sid,)).fetchone()[0]
+                                    self.db.execute('DELETE FROM sessions WHERE id=?',(sid,));result['deleted_sessions']+=1
+                                else:
+                                    self.db.execute('DELETE FROM messages WHERE session=? AND created<?',(sid,cutoff));result['deleted_messages']+=old_count
+                    except BusySession:result['skipped_busy']+=1
+                result['batch_full']=len(rows)==batch_size
+        except BusySession:result['skipped_busy']+=1;result['batch_full']=False
+        return result
 
     def _delete(self, actor, sid):
         with self.lock, self.db:
@@ -427,8 +501,9 @@ class Service:
             raise APIError(400,'invalid_request_id','request_id 须为8至80位字母、数字、下划线或连字符')
         with self.lock:
             session=self.owned(actor,sid)
-            cached=self.db.execute("SELECT payload FROM messages WHERE session=? AND request_id=? AND role='assistant'",(sid,rid)).fetchone()
+            cached=self.db.execute("SELECT payload,created FROM messages WHERE session=? AND request_id=? AND role='assistant'",(sid,rid)).fetchone()
             if cached:
+                if cached['created']<self.cutoff():raise APIError(409,'request_expired','该请求已过期，请使用新的request_id重试')
                 prev=self.db.execute("SELECT content FROM messages WHERE session=? AND request_id=? AND role='user'",(sid,rid)).fetchone()
                 if prev['content']!=question.strip():
                     raise APIError(409,'request_id_conflict','相同request_id不能用于不同问题')
@@ -438,7 +513,7 @@ class Service:
             self.active.add(sid)
         try:
             self.rate(actor)
-            history=self.history(actor,sid)['items']
+            history=self.context_history(actor,sid)
             question=question.strip()
             # Resolve short follow-ups with previous user question; idle sessions resume without old context.
             idle=time.time()-session['updated']>self.config.idle_seconds
@@ -467,6 +542,8 @@ class Service:
                     (result['message_id'],sid,rid,'assistant',answer,json.dumps(result,ensure_ascii=False),result['created_at']))
                 self.db.execute('UPDATE sessions SET updated=? WHERE id=?',(result['created_at'],sid))
                 self.db.execute('INSERT INTO workflow_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated=excluded.updated',(key,sid,rid,'complete',result['created_at'],result['created_at']))
+            try:self._workflow.saver.delete_thread(key)
+            except Exception:self.observe('checkpoint_cleanup_failed',0)
             return result
         finally:
             with self.lock:

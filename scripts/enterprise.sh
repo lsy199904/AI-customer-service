@@ -11,6 +11,7 @@ compose() { docker compose --project-directory "$ROOT" -f "$ROOT/compose.enterpr
 command=${1:-help}
 case "$command" in
   configure) python3 scripts/configure_enterprise.py ;;
+  policies) python3 scripts/configure_policies.py ;;
   build) compose build assistant ;;
   infrastructure) compose up -d --wait postgres etcd minio milvus ;;
   migrate)

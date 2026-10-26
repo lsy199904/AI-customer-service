@@ -34,6 +34,9 @@ def main():
         'MILVUS_URI':'http://127.0.0.1:19530','MILVUS_COLLECTION':'smarttitu_knowledge',
         'OPERATIONS_TOKEN':secrets.token_urlsafe(40),'APP_WORKERS':'1',
         'MODEL_DISABLE_THINKING':'true','MODEL_MAX_TOKENS':'2048',
+        'SEMANTIC_MIN_SIMILARITY':'0.75','SESSION_RETENTION_DAYS':'7',
+        'SESSION_CONTEXT_ROUNDS':'20','TENANT_MESSAGES_PER_MINUTE':'20',
+        'RETRIEVAL_TIMEOUT_SECONDS':'15',
     }
     added={key:value for key,value in defaults.items() if not values.get(key)}
     values.update(added)

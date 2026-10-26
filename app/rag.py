@@ -38,16 +38,18 @@ class RAGSettings:
     rerank_key: str=field(default_factory=lambda:os.getenv('RERANK_API_KEY',''))
     rerank_enabled: bool=field(default_factory=lambda:os.getenv('RERANK_ENABLED','true').lower()=='true')
     http_origins: tuple=field(default_factory=lambda:tuple(v.strip().rstrip('/') for v in os.getenv('MODEL_HTTP_ORIGINS','').split(',') if v.strip()))
-    min_similarity: float=field(default_factory=lambda:float(os.getenv('SEMANTIC_MIN_SIMILARITY','0.45')))
+    min_similarity: float=field(default_factory=lambda:float(os.getenv('SEMANTIC_MIN_SIMILARITY','0.75')))
     rerank_min_score: float=field(default_factory=lambda:float(os.getenv('RERANK_MIN_SCORE','0')))
     top_k: int=field(default_factory=lambda:int(os.getenv('RAG_TOP_K','12')))
     context_k: int=field(default_factory=lambda:int(os.getenv('RAG_CONTEXT_K','3')))
     embedding_timeout: float=field(default_factory=lambda:float(os.getenv('EMBEDDING_TIMEOUT','30')))
     rerank_timeout: float=field(default_factory=lambda:float(os.getenv('RERANK_TIMEOUT','30')))
+    retrieval_timeout: float=field(default_factory=lambda:float(os.getenv('RETRIEVAL_TIMEOUT_SECONDS','15')))
     chunk_chars: int=1000
     overlap_chars: int=100
 
     def validate(self):
+        if not math.isfinite(self.retrieval_timeout) or not .01<=self.retrieval_timeout<=300:raise ValueError('检索总超时须为0.01至300秒')
         if not all(math.isfinite(v) and 1<=v<=120 for v in (self.embedding_timeout,self.rerank_timeout)):raise ValueError('模型超时须为1至120秒')
         if self.vector_backend not in ('sqlite','milvus'):raise ValueError('VECTOR_BACKEND仅支持sqlite/milvus')
         if self.vector_backend=='milvus' and not self.milvus_token:raise ValueError('Milvus部署必须设置MILVUS_TOKEN')
@@ -285,12 +287,18 @@ class SemanticKnowledge:
     def rows(self):return {r['id']:r for r,_ in self.store.snapshot(include_vectors=False)[1]}
     def get(self,key):return self.store.get(key)
     def assess(self,question,diagnostics=False):
+        from .deadlines import run
+        return run(lambda:self._assess(question,diagnostics),self.config.retrieval_timeout)
+    def _assess(self,question,diagnostics=False):
+        from .deadlines import check
+        check()
         c=self.config;state,rows=self.store.snapshot(include_vectors=self.vectors is None)
         report={'matched':False,'hits':[],'method':'hybrid_rrf_rerank' if c.rerank_enabled else 'hybrid_rrf',
                 'threshold':c.min_similarity,'similarity':None,'generation':state['generation']}
         if not rows:report['reason']='index_empty';return report
         if state['fingerprint']!=c.fingerprint:raise RAGError('当前Embedding配置与索引不一致,请先重建')
-        query=normalized_vector(self.embedder.embed([question])[0])
+        check()
+        query=normalized_vector(self.embedder.embed([question])[0]);check()
         if self.vectors is None:
             if any(len(vector)!=len(query) for _,vector in rows):raise RAGError('查询向量与索引维度不同,请重建')
             ranked=sorted([(sum(a*b for a,b in zip(query,vector)),record) for record,vector in rows],key=lambda x:x[0],reverse=True)
@@ -302,7 +310,8 @@ class SemanticKnowledge:
         # This never marks them as matched evidence or lowers the answer threshold.
         report['_suggestion_titles']=[record['title'] for score,record in ranked[:3]
                                       if score>=max(.2,c.min_similarity-.15)]
-        candidates=fuse(question,ranked,c.min_similarity,c.top_k)
+        check()
+        candidates=fuse(question,ranked,c.min_similarity,c.top_k);check()
         if diagnostics:
             report['_diagnostics']={'dense_top':[{'id':r['id'],'title':r['title'],'score':round(score,6)} for score,r in ranked[:c.top_k]],
                 'candidates':[{'id':s['row']['id'],'title':s['row']['title'],'dense':round(s['dense'],6),
@@ -310,6 +319,7 @@ class SemanticKnowledge:
         if not candidates:report['reason']='no_candidates';return report
         if c.rerank_enabled:
             order=self.reranker.rank(question,[retrieval_text(s['row']) for s in candidates])
+            check()
             ranked_candidates=[{**candidates[index],'score':score} for index,score in order]
             eligible=[s for s in ranked_candidates if s['score']>=c.rerank_min_score]
         else:

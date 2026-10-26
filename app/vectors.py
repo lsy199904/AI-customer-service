@@ -18,7 +18,8 @@ class MilvusVectors:
         with self.lock:
             if self._client is None:
                 from pymilvus import MilvusClient
-                self._client=MilvusClient(uri=self.config.milvus_uri,token=self.config.milvus_token,timeout=15)
+                from .deadlines import remaining
+                self._client=MilvusClient(uri=self.config.milvus_uri,token=self.config.milvus_token,timeout=remaining(15))
             return self._client
 
     def ensure(self,dimension):
@@ -52,12 +53,15 @@ class MilvusVectors:
         return ' or '.join('(document_id == '+json.dumps(d)+' and revision == '+json.dumps(v)+')' for d,v in pairs)
 
     def search(self,vector,records,limit):
+        from .deadlines import remaining,check
+        check()
         if not records:return {}
-        if not self.client.has_collection(self.collection):raise ValueError('Milvus索引尚未同步，请执行sync-vectors')
+        if not self.client.has_collection(self.collection,timeout=remaining(15)):raise ValueError('Milvus索引尚未同步，请执行sync-vectors')
         # Strong consistency + active revision filters prevents newly inserted/stale data leaking.
         result=self.client.search(collection_name=self.collection,data=[vector],limit=min(limit,len(records)),
             filter=self.active_filter(records),output_fields=['id'],
-            search_params={'metric_type':'COSINE','params':{'ef':max(64,limit*2)}},consistency_level='Strong',timeout=15)
+            search_params={'metric_type':'COSINE','params':{'ef':max(64,limit*2)}},consistency_level='Strong',timeout=remaining(15))
+        check()
         allowed={r['id'] for r in records}
         return {hit['id']:float(hit['distance']) for hit in result[0] if hit['id'] in allowed}
 

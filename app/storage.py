@@ -65,14 +65,17 @@ class PostgresDB:
             finally:c.execute('SELECT pg_advisory_unlock(%s)',(key,))
         def configure(c):
             c.execute('SET search_path TO '+schema+', public')
-            c.execute("SET statement_timeout TO '15000ms'")
+            from .deadlines import remaining
+            milliseconds=max(1,int(remaining(15)*1000))
+            c.execute("SET statement_timeout TO '"+str(milliseconds)+"ms'")
             c.execute("SET lock_timeout TO '5000ms'")
         # Configure every borrowed connection; no reliance on persistent search_path.
         self.configure=configure
 
     @contextmanager
     def connection(self):
-        with self.pool.connection() as c:
+        from .deadlines import remaining
+        with self.pool.connection(timeout=remaining(10)) as c:
             self.configure(c)
             yield c
 
@@ -138,7 +141,10 @@ def document_connection(path,url=''):
             db=_knowledge_pools[url]
         with db:yield db
     else:
-        db=sqlite3.connect(str(path),timeout=30);db.row_factory=sqlite3.Row
+        from .deadlines import remaining,current
+        db=sqlite3.connect(str(path),timeout=remaining(30));db.row_factory=sqlite3.Row
+        deadline=current()
+        if deadline is not None:db.set_progress_handler(lambda:int(deadline.cancelled.is_set() or __import__('time').monotonic()>=deadline.end),1000)
         try:
             with db:yield db
         finally:db.close()

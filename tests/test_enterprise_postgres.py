@@ -66,11 +66,23 @@ class PostgresIntegration(unittest.TestCase):
       self.assertEqual(error.exception.code,'session_busy')
      finally:release.set()
      self.assertEqual(future.result(timeout=5)['status'],'answered')
+    # Tenant quota must be atomic across independent Service/database pools.
+    def rate_attempt(i):
+     try:(a if i%2 else b).rate({'tenant_id':'rate-company','sub':str(i)});return True
+     except APIError as error:
+      self.assertEqual(error.status,429);return False
+    with ThreadPoolExecutor(max_workers=8) as executor:self.assertEqual(sum(executor.map(rate_attempt,range(30))),20)
     export_sqlite(config,root/'export')
     restored=Service(Settings(retrieval_backend='lexical',secret=config.secret,db=str(root/'export/assistant.db')))
     self.assertEqual(len(restored.history(actor,sid)['items']),4);restored.close()
     self.assertEqual(DocumentStore(root/'export/rag.sqlite3','').download(doc['id'],doc['current_revision']),original)
     b.delete(actor,sid);self.assertEqual(b.db.execute('SELECT COUNT(*) FROM workflow_runs').fetchone()[0],0)
+    import time
+    expired=b.create(actor,{})['session_id']
+    with b.db:b.db.execute('UPDATE sessions SET updated=? WHERE id=?',(time.time()-8*86400,expired))
+    self.assertEqual(a.prune_sessions()['deleted_sessions'],1)
+    with self.assertRaises(APIError):b.history(actor,expired)
+
   finally:
    for service in services:service.close()
    close_knowledge_pools()

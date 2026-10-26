@@ -80,6 +80,7 @@ def main():
     export.add_argument('--output-dir',required=True)
     prune=sub.add_parser('prune-checkpoints',help='清理过期工作流检查点，保留聊天消息')
     prune.add_argument('--days',type=int,default=30)
+    sub.add_parser('prune-sessions',help='按会话保留期限清理在线历史及检查点')
     sub.add_parser('check',help='校验配置和知识,不发送外网请求')
     backup=sub.add_parser('backup',help='一致性备份SQLite,默认写入backups目录')
     backup.add_argument('--output')
@@ -100,6 +101,9 @@ def main():
             frameworks={name:version(name) for name in ('fastapi','uvicorn','langchain','langchain-core','langgraph')}
             print(json.dumps({'frameworks':frameworks,'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db if not config.database_url else 'postgresql',
                 'vector_backend':rag.vector_backend if config.retrieval_backend=='semantic' else 'lexical',
+                'policies':{'semantic_min_similarity':rag.min_similarity if config.retrieval_backend=='semantic' else None,
+                    'session_retention_days':config.retention_days,'session_context_rounds':config.context_rounds,
+                    'tenant_messages_per_minute':config.requests_per_minute,'retrieval_timeout_seconds':config.retrieval_timeout},
                 'workflow':'langgraph','next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))
         elif args.command=='prepare-evaluation':
             from app.evaluation import prepare
@@ -146,6 +150,17 @@ def main():
                         RerankerClient(rag).rank('如何注册企业账号',['使用手机号注册企业账号。','查询账单。']);result['reranker']='ok'
                     if config.mode=='llm':Model(config).answer('你好',[],[],{'_intent':'greeting'});result['chat_model']='ok'
                 print(json.dumps(result,ensure_ascii=False,indent=2))
+            finally:service.close()
+        elif args.command=='prune-sessions':
+            from app.core import Service
+            service=Service(config)
+            try:
+                totals={'deleted_sessions':0,'deleted_messages':0,'deleted_checkpoints':0,'skipped_busy':0}
+                while True:
+                    result=service.prune_sessions()
+                    for key in totals:totals[key]+=result[key]
+                    if not result['batch_full'] or result['skipped_busy']:break
+                print(json.dumps(totals,ensure_ascii=False,indent=2))
             finally:service.close()
         elif args.command=='prune-checkpoints':
             if args.days<1:raise ValueError('至少保留1天检查点')
