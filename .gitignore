@@ -25,3 +25,7 @@ __pycache__/
 /app/static/media/ppt-18.png
 /app/static/media/ppt-22.png
 /app/static/media/ppt-24.png
+
+# Generated infrastructure credentials and private evaluation datasets.
+/deploy/generated/
+/evaluation/private/

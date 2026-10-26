@@ -35,6 +35,7 @@ def topic(value,question=False):
         for _ in range(2):
             text=re.sub(r'(?:是什么|是干什么的|是做什么的|是怎样的|是怎么样的|有哪些|介绍一下|介绍下|的介绍|介绍|呢|吗)[？?！!。.,，\s]*$','',text)
         text=re.sub(r'(流程|架构)(?:示意图|图)$',r'\1',text)
+    text=re.sub(r'是什么[？?！!。.,，\s]*$','',text)
     text=re.sub(r'[^a-z0-9\u3400-\u9fff]+','',text).replace('的','')
     return re.sub(r'(?:概况|概述|简介|介绍)$','',text)
 

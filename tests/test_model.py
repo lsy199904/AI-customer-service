@@ -7,14 +7,13 @@ class ModelContractTests(unittest.TestCase):
  def invoke(self,result,context=None):
   self.sent=None
   outer=self
-  class Response:
-   def __enter__(self):return self
-   def __exit__(self,*args):pass
-   def read(self,n):return json.dumps({'choices':[{'message':{'content':json.dumps(result)}}]}).encode()
-  class Opener:
-   def open(self,req,timeout):outer.sent=json.loads(req.data);return Response()
+  import httpx
+  def handler(request):
+   outer.sent=json.loads(request.content)
+   return httpx.Response(200,json={'id':'mock-completion','object':'chat.completion','created':0,'model':'test-model','choices':[{'index':0,'finish_reason':'stop','message':{'role':'assistant','content':json.dumps(result)}}]})
+  client=httpx.Client(transport=httpx.MockTransport(handler))
   c=Settings(retrieval_backend='lexical',model='test-model',model_key='test-key')
-  with patch('urllib.request.build_opener',return_value=Opener()):
+  with client,patch('app.transport.client',return_value=client):
    return Model(c).answer('如何计费',[],[{'id':'KB-001','content':'按量计费'}],context or {})
  def test_success(self):
   r=self.invoke({'answerable':True,'answer':'按量计费','citation_ids':['KB-001']})

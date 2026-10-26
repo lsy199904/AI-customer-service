@@ -1,6 +1,4 @@
-"""Semantic RAG clients and small-corpus persistent vector/document registry.
-SQLite stores normalized embeddings; cosine search has no keyword overlap gate.
-"""
+"""Versioned RAG metadata in PostgreSQL/SQLite; indexed Milvus or local cosine search."""
 from dataclasses import dataclass,field
 from pathlib import Path
 import hashlib
@@ -23,6 +21,11 @@ class RAGError(Exception):pass
 
 @dataclass
 class RAGSettings:
+    database_url: str=field(default_factory=lambda:os.getenv('DATABASE_URL',''))
+    vector_backend: str=field(default_factory=lambda:os.getenv('VECTOR_BACKEND','sqlite'))
+    milvus_uri: str=field(default_factory=lambda:os.getenv('MILVUS_URI','http://127.0.0.1:19530'))
+    milvus_token: str=field(default_factory=lambda:os.getenv('MILVUS_TOKEN',''))
+    milvus_collection: str=field(default_factory=lambda:os.getenv('MILVUS_COLLECTION','smarttitu_knowledge'))
     index_path: str=field(default_factory=lambda:os.getenv('RAG_INDEX_PATH',str(BASE/'var/rag.sqlite3')))
     source_dir: str=field(default_factory=lambda:os.getenv('KNOWLEDGE_SOURCE_DIR',str(BASE/'knowledge_sources')))
     embedding_url: str=field(default_factory=lambda:os.getenv('EMBEDDING_URL','http://127.0.0.1:11434/api/embed'))
@@ -39,10 +42,15 @@ class RAGSettings:
     rerank_min_score: float=field(default_factory=lambda:float(os.getenv('RERANK_MIN_SCORE','0')))
     top_k: int=field(default_factory=lambda:int(os.getenv('RAG_TOP_K','12')))
     context_k: int=field(default_factory=lambda:int(os.getenv('RAG_CONTEXT_K','3')))
+    embedding_timeout: float=field(default_factory=lambda:float(os.getenv('EMBEDDING_TIMEOUT','30')))
+    rerank_timeout: float=field(default_factory=lambda:float(os.getenv('RERANK_TIMEOUT','30')))
     chunk_chars: int=1000
     overlap_chars: int=100
 
     def validate(self):
+        if not all(math.isfinite(v) and 1<=v<=120 for v in (self.embedding_timeout,self.rerank_timeout)):raise ValueError('模型超时须为1至120秒')
+        if self.vector_backend not in ('sqlite','milvus'):raise ValueError('VECTOR_BACKEND仅支持sqlite/milvus')
+        if self.vector_backend=='milvus' and not self.milvus_token:raise ValueError('Milvus部署必须设置MILVUS_TOKEN')
         if self.embedding_provider not in ('ollama','openai'):raise ValueError('EMBEDDING_PROVIDER仅支持ollama/openai')
         if not self.embedding_model:raise ValueError('请设置EMBEDDING_MODEL')
         if not -1<=self.min_similarity<=1 or not math.isfinite(self.rerank_min_score):raise ValueError('语义或重排门槛无效')
@@ -69,18 +77,12 @@ def validate_endpoint(url,allowed):
 
 
 def post_json(url,payload,key,timeout=60):
-    headers={'Content-Type':'application/json'}
-    if key:headers['Authorization']='Bearer '+key
-    request=urllib.request.Request(url,data=json.dumps(payload,ensure_ascii=False).encode(),headers=headers,method='POST')
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self,*args,**kwargs):return None
-    try:
-        with urllib.request.build_opener(NoRedirect).open(request,timeout=timeout) as response:
-            raw=response.read(8*1024*1024+1)
-        if len(raw)>8*1024*1024:raise RAGError('模型接口响应过大')
-        return json.loads(raw)
-    except urllib.error.HTTPError as error:raise RAGError('模型接口返回HTTP '+str(error.code)) from None
-    except (urllib.error.URLError,TimeoutError,ValueError):raise RAGError('模型接口连接或JSON响应异常') from None
+    from .transport import post_json as request_json
+    try:return request_json(url,payload,key,timeout)
+    except Exception as error:
+        import httpx
+        if isinstance(error,httpx.HTTPStatusError):raise RAGError('模型接口返回HTTP '+str(error.response.status_code)) from None
+        raise RAGError('模型接口连接或JSON响应异常') from None
 
 
 def normalized_vector(values):
@@ -96,7 +98,7 @@ class EmbeddingClient:
         c=self.config
         payload={'model':c.embedding_model,'input':texts}
         if c.embedding_provider=='ollama':payload['truncate']=False
-        data=post_json(c.embedding_url,payload,c.embedding_key)
+        data=post_json(c.embedding_url,payload,c.embedding_key,timeout=c.embedding_timeout)
         if c.embedding_provider=='ollama':values=data.get('embeddings')
         else:
             items=data.get('data',[])
@@ -111,7 +113,7 @@ class RerankerClient:
     def __init__(self,config):self.config=config
     def rank(self,question,documents):
         c=self.config
-        data=post_json(c.rerank_url,{'model':c.rerank_model,'query':question,'documents':documents,'top_n':len(documents)},c.rerank_key)
+        data=post_json(c.rerank_url,{'model':c.rerank_model,'query':question,'documents':documents,'top_n':len(documents)},c.rerank_key,timeout=c.rerank_timeout)
         results=data.get('results');seen=set();ranked=[]
         if not isinstance(results,list):raise RAGError('Reranker没有返回results数组')
         for row in results:
@@ -136,15 +138,16 @@ CREATE TABLE IF NOT EXISTS rag_embedding_cache(fingerprint TEXT,text_hash TEXT,v
 '''
 
 class DocumentStore:
-    def __init__(self,path):
-        self.path=str(path);Path(path).parent.mkdir(parents=True,exist_ok=True)
-        with self.connect() as db:db.executescript(SCHEMA)
+    def __init__(self,path,database_url=None):
+        self.path=str(path);self.database_url=os.getenv('DATABASE_URL','') if database_url is None else database_url
+        Path(path).parent.mkdir(parents=True,exist_ok=True)
+        with self.connect() as db:
+            if self.database_url:db.execute('SELECT pg_advisory_xact_lock(?)',(729630043,))
+            db.executescript(SCHEMA)
     @contextmanager
     def connect(self):
-        db=sqlite3.connect(self.path,timeout=30);db.row_factory=sqlite3.Row
-        try:
-            with db:yield db
-        finally:db.close()
+        from .storage import document_connection
+        with document_connection(self.path,self.database_url) as db:yield db
     def documents(self):
         with self.connect() as db:return [dict(r) for r in db.execute('SELECT * FROM rag_documents ORDER BY path')]
     def revisions(self,document_id):
@@ -165,25 +168,31 @@ class DocumentStore:
             db.execute('UPDATE rag_documents SET active=0,updated=? WHERE id=?',(time.time(),document_id))
             db.execute('UPDATE rag_state SET generation=generation+1 WHERE id=1')
             db.execute('INSERT INTO rag_events(document_id,action,revision,created) VALUES(?,?,?,?)',(document_id,'deactivate',row['current_revision'],time.time()))
-    def activate(self,document_id,revision):
+    def activate(self,document_id,revision,vector_index=None):
         with self.connect() as db:
             row=db.execute('SELECT metadata FROM rag_revisions WHERE document_id=? AND revision=?',(document_id,revision)).fetchone()
             if not row:raise ValueError('文档修订不存在')
             fingerprint=db.execute('SELECT fingerprint FROM rag_state WHERE id=1').fetchone()[0]
             if json.loads(row['metadata'])['fingerprint']!=fingerprint:raise ValueError('旧修订使用不同Embedding配置,不能混用向量,请恢复原文件后重建')
+            if vector_index is not None:
+                if vector_index.config.fingerprint!=fingerprint:raise ValueError('激活版本与当前Embedding配置不一致')
+                chunks=db.execute('SELECT record,vector FROM rag_chunks WHERE document_id=? AND revision=?',(document_id,revision)).fetchall()
+                vector_index.upsert([(json.loads(r['record']),json.loads(r['vector'])) for r in chunks])
             db.execute('UPDATE rag_documents SET current_revision=?,active=1,updated=? WHERE id=?',(revision,time.time(),document_id))
             db.execute('UPDATE rag_state SET generation=generation+1 WHERE id=1')
             db.execute('INSERT INTO rag_events(document_id,action,revision,created) VALUES(?,?,?,?)',(document_id,'activate',revision,time.time()))
-    def snapshot(self):
+    def snapshot(self,include_vectors=True):
         with self.connect() as db:
             db.execute('BEGIN')
+            if self.database_url:db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
             state=dict(db.execute('SELECT * FROM rag_state WHERE id=1').fetchone())
-            rows=db.execute('SELECT c.record,c.vector FROM rag_chunks c JOIN rag_documents d ON d.id=c.document_id AND d.current_revision=c.revision WHERE d.active=1').fetchall()
-            return state,[(json.loads(r['record']),json.loads(r['vector'])) for r in rows]
+            columns='c.record,c.vector' if include_vectors else 'c.record'
+            rows=db.execute('SELECT '+columns+' FROM rag_chunks c JOIN rag_documents d ON d.id=c.document_id AND d.current_revision=c.revision WHERE d.active=1').fetchall()
+            return state,[(json.loads(r['record']),json.loads(r['vector']) if include_vectors else None) for r in rows]
 
 
 def ingest_documents(config,rebuild=False,embedder=None):
-    config.validate();store=DocumentStore(config.index_path);embedder=embedder or EmbeddingClient(config)
+    config.validate();store=DocumentStore(config.index_path,config.database_url);embedder=embedder or EmbeddingClient(config)
     root=Path(config.source_dir)
     if root.is_symlink():raise ValueError('来源根目录不接受符号链接')
     if not root.is_dir():raise ValueError('文档目录不存在:'+str(root))
@@ -233,7 +242,7 @@ def ingest_documents(config,rebuild=False,embedder=None):
             with store.connect() as db:
                 for number,vector in zip(batch,fresh):
                     vector=normalized_vector(vector);vectors[number]=vector
-                    db.execute('INSERT OR REPLACE INTO rag_embedding_cache VALUES(?,?,?)',(config.fingerprint,hashlib.sha256(texts[number].encode()).hexdigest(),json.dumps(vector)))
+                    db.execute('INSERT INTO rag_embedding_cache VALUES(?,?,?) ON CONFLICT(fingerprint,text_hash) DO UPDATE SET vector=excluded.vector',(config.fingerprint,hashlib.sha256(texts[number].encode()).hexdigest(),json.dumps(vector)))
         dimensions.update(len(v) for v in vectors)
         staged.append((document_id,relative,revision,parsed,records,vectors))
     if len(dimensions)>1:raise RAGError('本次文档向量维度不一致,未发布新版本')
@@ -242,10 +251,17 @@ def ingest_documents(config,rebuild=False,embedder=None):
         _,old_chunks=store.snapshot()
         if old_chunks:dimensions.update(len(v) for _,v in old_chunks)
         if len(dimensions)>1:raise RAGError('向量维度与既有索引不同,请更换EMBEDDING_REVISION并全量重建')
+    # Publish staged vectors before the relational revision pointer. Until the pointer
+    # commits, Milvus active filters continue selecting the previous revision.
+    if config.vector_backend=='milvus':
+        from .vectors import MilvusVectors
+        index=MilvusVectors(config)
+        try:index.upsert([(r,v) for _,_,_,_,records,vectors in staged for r,v in zip(records,vectors)])
+        finally:index.close()
     # All extraction and external inference succeeded before publishing any current revision.
     with store.connect() as db:
         db.execute('BEGIN IMMEDIATE')
-        generation=db.execute('SELECT generation FROM rag_state WHERE id=1').fetchone()[0]
+        generation=db.execute('SELECT generation FROM rag_state WHERE id=1'+(' FOR UPDATE' if config.database_url else '')).fetchone()[0]
         if generation!=state['generation']:raise RAGError('入库期间索引被其他命令更新,本次未发布,请重试')
         for doc_id,path,revision,parsed,records,vectors in staged:
             metadata=json.dumps({'sha256':parsed.sha256,'fingerprint':config.fingerprint,'version':parsed.version,'chunks':len(records),'title':parsed.title},ensure_ascii=False)
@@ -259,20 +275,28 @@ def ingest_documents(config,rebuild=False,embedder=None):
 
 class SemanticKnowledge:
     def __init__(self,config,embedder=None,reranker=None):
-        config.validate();self.config=config;self.store=DocumentStore(config.index_path)
+        config.validate();self.config=config;self.store=DocumentStore(config.index_path,config.database_url)
         self.embedder=embedder or EmbeddingClient(config);self.reranker=reranker or RerankerClient(config)
+        self.vectors=None
+        if config.vector_backend=='milvus':
+            from .vectors import MilvusVectors
+            self.vectors=MilvusVectors(config)
     @property
-    def rows(self):return {r['id']:r for r,_ in self.store.snapshot()[1]}
+    def rows(self):return {r['id']:r for r,_ in self.store.snapshot(include_vectors=False)[1]}
     def get(self,key):return self.store.get(key)
     def assess(self,question,diagnostics=False):
-        c=self.config;state,rows=self.store.snapshot()
+        c=self.config;state,rows=self.store.snapshot(include_vectors=self.vectors is None)
         report={'matched':False,'hits':[],'method':'hybrid_rrf_rerank' if c.rerank_enabled else 'hybrid_rrf',
                 'threshold':c.min_similarity,'similarity':None,'generation':state['generation']}
         if not rows:report['reason']='index_empty';return report
         if state['fingerprint']!=c.fingerprint:raise RAGError('当前Embedding配置与索引不一致,请先重建')
         query=normalized_vector(self.embedder.embed([question])[0])
-        if any(len(vector)!=len(query) for _,vector in rows):raise RAGError('查询向量与索引维度不同,请重建')
-        ranked=sorted([(sum(a*b for a,b in zip(query,vector)),record) for record,vector in rows],key=lambda x:x[0],reverse=True)
+        if self.vectors is None:
+            if any(len(vector)!=len(query) for _,vector in rows):raise RAGError('查询向量与索引维度不同,请重建')
+            ranked=sorted([(sum(a*b for a,b in zip(query,vector)),record) for record,vector in rows],key=lambda x:x[0],reverse=True)
+        else:
+            scores=self.vectors.search(query,[r for r,_ in rows],c.top_k)
+            ranked=sorted([(scores.get(record['id'],-1.0),record) for record,_ in rows],key=lambda x:x[0],reverse=True)
         report['similarity']=round(ranked[0][0],4)
         candidates=fuse(question,ranked,c.min_similarity,c.top_k)
         if diagnostics:
@@ -299,3 +323,16 @@ class SemanticKnowledge:
         if diagnostics:report['_diagnostics']['reranked']=[{'id':s['row']['id'],'title':s['row']['title'],
             'score':s['score'],'title_match':s['title_match'],'selected':s in final} for s in ranked_candidates]
         return report
+
+
+def sync_vectors(config):
+    """Reuse existing embeddings when moving from SQLite to Milvus; no model calls."""
+    config.validate()
+    if config.vector_backend!='milvus':raise ValueError('sync-vectors需要VECTOR_BACKEND=milvus')
+    from .vectors import MilvusVectors
+    state,rows=DocumentStore(config.index_path,config.database_url).snapshot()
+    if state['fingerprint']!=config.fingerprint:raise ValueError('Embedding配置与已有索引不一致，请先重建')
+    index=MilvusVectors(config)
+    try:count=index.upsert(rows)
+    finally:index.close()
+    return {'synced_vectors':count,'collection':index.collection,'embedding_calls':0}

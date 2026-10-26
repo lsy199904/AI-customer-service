@@ -52,7 +52,7 @@
   }
   async function request(path, method = 'GET', body) {
     const parent=controller?.signal,scope=new AbortController();
-    const limit=method==='POST' && /\/messages$/.test(path) ? 120000 : 15000;
+    const limit=method==='POST' && /\/messages$/.test(path) ? 180000 : 15000;
     let timedOut=false,timer;
     const onAbort=()=>scope.abort();
     const stopped=new Promise((resolve,reject)=>{
@@ -86,6 +86,36 @@
     } finally {
       clearTimeout(timer);parent?.removeEventListener('abort',onAbort);
     }
+  }
+  async function streamReply(path,body,onStage) {
+    const scope=new AbortController(),parent=controller?.signal;
+    const abort=()=>scope.abort();parent?.addEventListener('abort',abort,{once:true});
+    if(parent?.aborted)scope.abort();
+    const timer=setTimeout(abort,180000);
+    try {
+      const stopped=new Promise((resolve,reject)=>scope.signal.addEventListener('abort',()=>reject(new Error('请求已取消或超时，请稍后重试')),{once:true}));
+      if(scope.signal.aborted)throw new Error('请求已取消');
+      const auth=await Promise.race([token(),stopped]);
+      if(scope.signal.aborted)throw new Error('请求已取消');
+      const response=await fetch(apiURL(path+'/stream'),{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':'application/json'},body:JSON.stringify(body),signal:scope.signal,credentials:'omit',cache:'no-store'});
+      if(!response.ok){const data=await response.json();throw new Error(data.error?.message || '客服连接失败');}
+      if(!response.body)throw new Error('浏览器不支持流式响应');
+      const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',result=null;
+      while(true){
+        const part=await reader.read();buffer+=decoder.decode(part.value || new Uint8Array(),{stream:!part.done});
+        let boundary;
+        while((boundary=buffer.indexOf('\n\n'))>=0){
+          const frame=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);
+          const kind=frame.split('\n').find(line=>line.startsWith('event: '))?.slice(7);
+          const raw=frame.split('\n').filter(line=>line.startsWith('data: ')).map(line=>line.slice(6)).join('\n');
+          if(raw){const payload=JSON.parse(raw);if(kind==='status')onStage(payload.stage);if(kind==='complete')result=payload;if(kind==='error')throw new Error(payload.message || '服务暂时不可用');}
+        }
+        if(buffer.length>1000000)throw new Error('客服响应过大');
+        if(part.done)break;
+      }
+      if(!result)throw new Error('回答传输中断，请重试');return result;
+    } catch(error){if(scope.signal.aborted)throw new Error('请求已取消或超时，请稍后重试');if(error instanceof TypeError)throw new Error('无法连接客服，请检查网络后点击重试。');throw error;}
+    finally{clearTimeout(timer);parent?.removeEventListener('abort',abort);}
   }
   function scroll() { transcript.scrollTop = transcript.scrollHeight; }
   function activity() {
@@ -182,6 +212,7 @@
     transcript.append(element('div','loading','正在连接客服…'));
     try {
       const boot=await request('/v1/bootstrap');
+      config.streaming=boot.capabilities?.streaming===true;
       if (version !== generation) return;
       idleSeconds=boot.idle_timeout_seconds || 1800;
       // Restore only the most recent session belonging to the authenticated user, as verified by the backend.
@@ -224,7 +255,12 @@
         const created=await request('/v1/sessions','POST',{context:{page_path:location.pathname.slice(0,200),page_title:document.title.slice(0,200)}});
         if (v!==generation) return;sessionId=created.session_id;
       }
-      const r=await request(`/v1/sessions/${sessionId}/messages`,'POST',{message:text,request_id:rid});
+      const path=`/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
+      const r=config.streaming ? await streamReply(path,payload,stage=>{
+        if(v!==generation)return;
+        const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',validating:'正在核对答案与配图…',business:'正在查询业务信息…'};
+        loading.textContent=labels[stage] || '正在为您解答…';
+      }) : await request(path,'POST',payload);
       if (v!==generation) return;
       message('assistant',r.answer,r);retry=null;activity();
     } catch(err) {

@@ -10,3 +10,7 @@ backups
 prototype
 knowledge
 models
+deploy/generated
+evaluation/private
+
+knowledge_sources

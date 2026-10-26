@@ -1,5 +1,7 @@
 # HTTP接口约定
 
+企业版 PostgreSQL + Milvus 部署、迁移与日常命令请先看 [企业升级与迁移](企业升级与迁移.md)。下文原容器/SQLite命令保留作兼容参考，企业升级后使用 enterprise.sh。
+
 除GET /health及公开组件静态文件外,业务接口全部需要 `Authorization: Bearer <短期凭证>`。POST使用application/json,请求体最大16KiB。统一失败结构:`{"error":{"code":"...","message":"..."}}`。错误码包括400输入错误、401登录失效、403来源不允许、404资源不存在、409会话忙/幂等冲突、413请求过大、415媒体类型错误、429限流、500内部异常。模型异常作为正常HTTP200的handoff结果返回,reason=model_unavailable。
 
 |方法|路径|用途|
@@ -87,3 +89,10 @@ iframe公开入口：`GET /chatbot`、`GET /iframe.js`、`GET /widget/frame.js`�
 
 
 FastAPI升级保持现有业务接口不变。新增GET /ready（应用及数据库就绪）和需Bearer的GET /openapi.json（接口规范）；GET/HEAD /health均支持。响应包含X-Request-ID。Pydantic字段或JSON格式错误维持400；请求体超过16KiB为413，不支持的Content-Type为415；应用并发容量耗尽为503。模型调用在线程池运行，会话和用户鉴权规则不变。
+
+
+## 流式响应与运维检查
+
+POST /v1/sessions/{sid}/messages/stream 与原 messages 使用相同Bearer、message和request_id；返回 text/event-stream。事件包括 status（stage）、delta（已校验答案的text）、complete（与原JSON接口相同的完整响应）、error（code/message）。HTTP鉴权/归属失败在SSE头之前返回；流内失败以error事件返回，客户端不能只检查HTTP200。断线后重用同一个request_id重试，避免重复消息。
+
+GET /ready 检查关系库、非空活动知识和Milvus当前集合；GET /metrics 需要独立 X-Operations-Token，不使用浏览器登录token。模型协议通过 manage.py doctor --models 检查。iframe、原JSON接口及来源下载路径保持兼容。

@@ -1,26 +1,38 @@
-# SmartTITU 企业客服后端
+# SmartTITU 企业智能客服
 
-提供 FastAPI + Uvicorn 后端、LangChain Core RAG 链与自带窗口的悬浮客服脚本。Python运行环境使用3.12。正式问答使用 **文档解析 → BGE-M3 语义向量召回 → Qwen3 Reranker 重排 → Qwen3-32B 依据资料回答**。无需 Dify 或单独开发聊天窗口。历史会话与知识版本存入 SQLite，适合单实例、小规模知识库。
+FastAPI + Uvicorn 提供接口，LangChain 连接模型与检索器，LangGraph 编排并持久化问答流程。企业部署使用 PostgreSQL 保存聊天、知识版本和工作流检查点，Milvus 提供向量索引；保留 SQLite 单实例兼容和回退能力。
 
-首份入库资料为 `knowledge_sources/SmartTITU客户问答.docx`：50 个外部客户问答，按总目录编号2、3、4、5、9、10、11、13、14、15整理；前三问为官网、在线文件、模型清单，第四至六问为企业注册与认证、开发票、充值与结算流程，其余同源连续。保留原图、图片URL、原文PDF链接和出处。Embedding 接收解析后的文本片段，不直接接收 Word 二进制，也不会训练或修改模型权重。旧 `data/knowledge.jsonl` 仅用于兼容模式和离线原型，**默认语义问答不读取它**。
+默认问答链路为：Word/PDF解析 → BGE-M3向量 → Milvus + BM25 混合召回 → RRF融合 → Qwen3-Reranker-4B重排 → Qwen3-32B基于资料生成 → 引用/图片校验 → 保存历史。iframe、自带浮窗和直接API共用同一套会话及权限逻辑，无需 Dify。
 
-## 服务器上最快启动
+## 现有服务器升级
 
-以下操作在已验证 Embedding 和 Reranker 的 `cnglus065` 主机、`~/ai_customer` 目录执行。复用现有模型服务，不重新下载模型，不额外启动 GPU 模型副本。
+完整操作、自检、备份、恢复、回退和质量评测见 [企业升级与迁移](docs/企业升级与迁移.md)；架构见 [企业客服框架](docs/企业部署与框架.md)。以下在 Linux 模型主机 ~/ai_customer 执行。先在旧服务备份，再更新代码；已经拉取新代码时可继续，迁移工具也会保存一致性SQLite副本。
 
 ```bash
 cd ~/ai_customer
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.lock
-# 仅首次、没有.env时执行；已有配置不要覆盖
-python manage.py init
+# 尚未拉取时先用旧服务备份
+sh scripts/docker-host.sh exec assistant python manage.py backup &&
+git pull --ff-only origin main
+
+sh scripts/enterprise.sh configure &&
+sh scripts/enterprise.sh build &&
+sh scripts/enterprise.sh infrastructure
+# 下列步骤进入维护窗口，停止旧客服并迁移数据
+sh scripts/enterprise.sh migrate &&
+sh scripts/enterprise.sh start &&
+sh scripts/enterprise.sh doctor
 ```
 
-`.env` 至少确认：
+不要删除 .env、var/、models/、knowledge_sources/。configure 保留原 AUTH_SECRET 和三个模型配置，生成本机数据库凭证；新镜像构建成功后才进入维护迁移。已有向量直接同步，不重复下载模型或调用Embedding。迁移不自动把旧 Word 换成新 Word，知识数量以实际活动版本为准。新容器依赖必须 build，restart 不会安装依赖。
+
+默认复用已运行的 Ollama/vLLM 服务，不另起 GPU 模型副本。基础设施额外启动 PostgreSQL、etcd、MinIO、Milvus，关系库和向量服务只绑定宿主机回环端口。模型复制目录仍留在 models/，不提交Git。
+
+## 模型与身份配置
+
+Python使用3.12，安装 requirements.lock 中的锁定依赖；requirements.txt仅描述直接依赖范围。容器通过 env_file 读取 .env，原生 manage.py 自动读取，不需要 source。
 
 ```dotenv
-AUTH_SECRET=初始化时自动生成的原值
+AUTH_SECRET=保留你已经生成的至少32字节随机密钥
 ANSWER_MODE=llm
 RETRIEVAL_BACKEND=semantic
 MODEL_BASE_URL=http://10.180.158.23:18080/v1
@@ -34,199 +46,93 @@ EMBEDDING_REVISION=v1
 RERANK_ENABLED=true
 RERANK_URL=http://172.19.0.2:8001/v1/rerank
 RERANK_MODEL=Qwen3-Reranker-4B
-RERANK_API_KEY=真实重排密钥
-SUPPORT_QR_URL=
+RERANK_API_KEY=已有重排服务的真实密钥
 HOST=127.0.0.1
 PORT=8000
 ```
 
-上面的中文说明不能作为实际密钥。保留原 `AUTH_SECRET`；首次 `init` 会自动生成。现有 Reranker 密钥不知道时，在有 Docker 访问权限的模型主机执行：
+中文说明不要当作实际密钥填写。现有服务器上重排密钥不知道时，可运行 python3 scripts/configure_existing_services.py 从本机获授权的Docker配置读取并写入.env，不打印密钥、不重启模型。重排密钥不能用not-empty代替。容器IP变更后需要更新地址，重新创建客服容器读取配置；不要重启其他人的模型服务。
+
+DATABASE_URL、MILVUS_TOKEN、OPERATIONS_TOKEN 等企业配置由 enterprise.sh configure 生成，保存在本机，不交给前端。二维码暂无真实地址时 SUPPORT_QR_URL 留空，不展示占位码。Qwen3默认关闭思考输出；若你的服务不支持该模板参数，设置 MODEL_DISABLE_THINKING=false 后重新创建容器。
+
+## 知识文档更新
+
+私有最新版 Word 由维护者**单独上传**，统一覆盖 knowledge_sources/SmartTITU客户问答.docx。仓库历史中的旧种子Word不代表最新业务知识；新镜像不复制来源Word/PDF，部署读取挂载目录。当前维护版为v4去重版，50个主题，包括前三个资源链接、企业注册/认证、开发票、充值结算，以及合并的服务体系与架构。原文及历史引用保留，内部资料不放入这个共享外部客户知识库。
 
 ```bash
-python scripts/configure_existing_services.py
-python manage.py check
-python manage.py ingest
-python manage.py serve
+sh scripts/enterprise.sh exec assistant python manage.py documents
+sh scripts/enterprise.sh exec assistant python manage.py ingest &&
+sh scripts/enterprise.sh restart assistant &&
+sh scripts/enterprise.sh doctor
 ```
 
-辅助脚本从 `qwen3-reranker-4b` 的本机 Docker 配置读取密钥和当前容器 IP，仅写入本机 `.env`，不打印密钥，不重启模型。若该容器没有配置可读取的密钥，请找服务管理员；不能用聊天模型的 `not-empty` 代替。容器 IP 改变后重新运行辅助脚本并确认配置；Embedding 端点变更会要求重建索引。
+同一份Word不要同时保留长文件名和固定文件名两个副本。文件改名不自动识别为替换；用 documents 核对并显式 deactivate 不再使用的旧文档ID。普通正文/条目增删用 ingest；模型、Embedding处理版本或切分配置改变才 ingest --rebuild。全量重建遇到缺失活动文件会停止，不擅自删除知识。
 
-`check` 不调用模型，仅校验配置和索引数量。第一次入库前知识数为 0；`ingest` 成功后本份 Word 应产生 50 个片段。首次入库需要实际调用 Embedding。`serve` 自动读取 `.env`，系统环境变量优先，修改配置后需重启进程。默认数据库为 `var/assistant.db` 和 `var/rag.sqlite3`。
+支持 docx、文本型pdf、md、txt；扫描PDF需先OCR，不支持旧doc格式。Embedding接收解析切分后的文本，不直接接收Word二进制，不训练或修改模型。短问答按标题保留完整，长段按1000字符/100重叠切分，来源版本和页码随片段保存。
 
-另开终端，在项目内使用同一虚拟环境：
+图片必须登记在 data/media.json 并提供对应 app/static/media/ 文件，Word使用“配图：图片ID”绑定当前章节。已发布的23张当前配图随代码同步，历史登记图片保留以支持旧消息。新增图片需同步登记和资源，不能只粘贴进Word。回答附本轮实际引用章节的图，最多4张，不沿用上一题配图。原始PDF不上传公开仓库；需要客户下载时使用受控地址或认证的版本下载接口。
+
+## 页面与API接入
+
+- **iframe**：独立窗口地址 /chatbot，或通过 /iframe.js 自动创建悬浮iframe。
+- **自带浮窗**：加载 /widget.js，由脚本创建按钮和完整窗口。
+- **直接API**：前端已有聊天界面时调用 /v1/bootstrap、/v1/sessions、messages、sources 等接口。
+
+接入示例、iframe登录桥接和来源配置见 [悬浮弹窗接入](docs/悬浮弹窗接入.md)，接口见 [API说明](docs/API对接说明.md) 和 [OpenAPI](docs/openapi.json)。GET /openapi.json 需要Bearer凭证，默认不公开Swagger。
+
+三种方式统一使用平台后端签发的租户/用户短期凭证。业务后端必须先验证真实平台登录态，从可信服务端会话取得企业ID和用户ID，再调用 issue_token；不能由浏览器自报企业身份。AUTH_SECRET只留可信后端，token不放iframe URL。真实平台的登录凭证接口、登出联动和权限联调需要接入你现有网站，仓库不包含那个平台的账号系统。
+
+联调页 /widget/demo 提供平台背景和可用客服浮窗，凭证可通过以下命令生成：
 
 ```bash
-python manage.py token --tenant demo-company --user demo-user
+sh scripts/enterprise.sh exec assistant python manage.py token --tenant demo --user tester
 ```
 
-打开 `http://127.0.0.1:8000/widget/demo`，填入输出的短期凭证。凭证默认一小时有效，是登录身份凭证，不是模型 API Key。远程访问可使用获准的 SSH 隧道或 HTTPS 反向代理，默认端口只监听回环地址。
+填入的是短期登录凭证，不是模型API Key，默认一小时有效。HOST=127.0.0.1仅本机访问；获准内网访问设HOST=0.0.0.0并执行 enterprise.sh start，当前目标主机地址为 http://10.180.158.23:8000/widget/demo。正式网站应使用HTTPS代理，联调页禁止对公众开放。配置 FRAME_ORIGINS 为iframe父页面精确来源；CORS_ORIGINS 为浏览器API来源，二者不能替代登录身份校验。
 
-## 文档日常维护
+## 对话流程与准确率
 
-日常只维护 `knowledge_sources/`；新增 Word/PDF/Markdown/TXT 后执行：
+问候直接用模型友好回应，不检索知识；业务知识问题先检索，有足够证据才生成，无有效知识或无法回答时引导人工。二维码没配置就不显示。历史按企业和用户隔离，重启后保留；默认携带最近12条消息，空闲30分钟后保留历史但不携带旧上下文。明确指代追问可参考前一个问题，切换主题不叠加旧图片。
+
+默认向量余弦起始门槛0.45，每路top12、融合最多24、最终最多3段证据；BM25和章节主题保护能补候选漏召回，不要求用户逐字命中，更没有把50个问题写成固定答案分支。Reranker默认门槛0只作排序，两个分数都不是准确率。需要用真实语义问法、知识外负例和答案审阅校准。
+
+诊断命令不调用聊天模型：
 
 ```bash
-python manage.py ingest
-python manage.py documents
+sh scripts/enterprise.sh exec assistant python manage.py retrieve --query '企业注册与认证流程是什么'
 ```
 
-修改文档时覆盖原路径。文件未变化会跳过推理；正文片段未变化会复用已有向量。新版本准备完整后一次发布，新问题立即使用新索引，无需重启客服。解析或模型请求失败时保留之前的可用版本。首份 Word 可继续修改，也可新增独立主题文件。
+完整 [语义评测步骤](docs/企业升级与迁移.md) 支持为全部主题生成多样问法、人工审阅后分别统计召回、选中文档、引用、关键事实、图片与耗时；私有数据集和报告不推Git。自动测试通过不等于目标模型业务准确率通过，也不承诺任意问法100%正确。
+
+SSE接口 /v1/sessions/{sid}/messages/stream 先推处理进度与心跳，完整答案通过校验后发送delta和complete；原JSON接口保持兼容。相同request_id重试返回已保存结果，不重复写聊天；更换问题必须换请求ID。
+
+## 运维与测试
 
 ```bash
-# 把实际文档ID替换下列占位符，documents可查
-python manage.py revisions DOC-实际ID
-python manage.py deactivate DOC-实际ID
-python manage.py activate DOC-实际ID --revision 实际完整修订哈希
+sh scripts/enterprise.sh ps
+sh scripts/enterprise.sh exec assistant python manage.py check
+sh scripts/enterprise.sh doctor
+sh scripts/enterprise.sh backup
+sh scripts/enterprise.sh logs --tail=60 assistant
 ```
 
-停用后不会参与新回答，批量入库不会自动恢复。误删文件不会自动删除知识；需要主动停用。恢复旧修订不改磁盘文件，下次入库会以磁盘文件内容为准。改名视为新文档，需停用旧条目。历史引用保留对应版本的文档快照，下载需要登录凭证。
+/health检查存活；/ready检查关系库、活动知识和当前向量集合；doctor --models实测Embedding、重排和聊天协议。/metrics使用独立X-Operations-Token，输出进程级计数和耗时。PostgreSQL备份包含检查点、原文版本和向量副本，Milvus可从关系库重建。恢复与无损回退按 [迁移文档](docs/企业升级与迁移.md) 执行，不删卷、不覆盖旧SQLite。需定期备份来源、媒体、.env并演练恢复。
 
-更换 Embedding 模型、同名模型权重、版本或切分方式后，全量重建：
+本地开发验证：
 
 ```bash
-# 同名模型权重变化时，先修改.env中的EMBEDDING_REVISION
-python manage.py ingest --rebuild
-```
-
-详细格式、更新规则、备份与限制见 [知识文档管理](docs/知识文档管理.md)。这些是服务端管理命令；本期没有公开上传入口或管理后台。
-
-## 接入大模型与检索参数
-
-`.env.example` 包含完整配置。聊天模型兼容非流式 Chat Completions，`MODEL_BASE_URL` 包含 `/v1`，不含 `/chat/completions`。本次使用用户已验证的 Qwen 接口。模型输出经过 JSON 与引用校验，依据不足或异常会引导人工。客户窗口不展示“未调用大模型”等内部诊断。
-
-- Embedding：默认 Ollama `/api/embed`；也支持 `EMBEDDING_PROVIDER=openai` 与兼容的 `/v1/embeddings` 完整地址。模型名和向量维度必须与索引一致。
-- Reranker：兼容本次已验证的 `/v1/rerank`，返回 `results[index,relevance_score]`。可显式设置 `RERANK_ENABLED=false` 只用向量召回。
-- 内网 HTTP 必须在 `MODEL_HTTP_ORIGINS` 中列出准确来源，不含路径；HTTPS 可直接配置。密钥只在可信后端保存。
-- `SEMANTIC_MIN_SIMILARITY=0.45` 是待真实问题校准的初始余弦门槛，不代表 45% 正确率。`RAG_TOP_K=12`、`RAG_CONTEXT_K=3` 控制候选和最终证据数量。
-- `RERANK_MIN_SCORE=0` 默认只重排，不把重排分数当置信度。你之前测试中无关资料也有约 0.81 的分数，不能直接设置 0.8 为可信命中线。要同时检查实际召回和最终模型的依据判断。
-
-问候、身份、致谢等先做意图分流，无需查知识；业务咨询用语义检索。未过门槛、模型认为资料不足、检索异常或用户主动转人工，都显示人工联系卡片。未提供企业微信二维码时保持 `SUPPORT_QR_URL` 为空，只展示电话和邮箱。
-
-`ANSWER_MODE=extractive` 可作为运维对照，仍使用配置的语义召回，但直接返回资料正文。仅在明确设置 `RETRIEVAL_BACKEND=lexical` 时使用旧 JSONL 与词法检索；语义服务异常不会悄悄降级为词法检索。
-
-## Docker 部署
-
-当前这台 Linux 模型主机可直接把整个 `~/ai_customer` 挂载到容器 `/ai_customer`，保留原有模型、会话和知识文件。使用宿主机网络，无需改变Ollama的回环监听：
-
-```bash
-cd ~/ai_customer
-python3 scripts/configure_existing_services.py
-# 确认.env中ANSWER_MODE=llm；停止原来占用8000端口的Python客服后执行
-sh scripts/docker-host.sh up --build -d
-sh scripts/docker-host.sh exec assistant python manage.py ingest
-sh scripts/docker-host.sh exec assistant python manage.py check
-```
-
-依赖在镜像构建时自动安装；宿主机不用pip安装。当前方案通过 `compose.host.yaml` 整目录挂载，不创建新的数据卷。详细日志、凭证、更新和备份命令见 [容器部署](docs/容器部署.md)。以下桥接网络方式为另一种部署选择，选定一种后保持使用同一套配置。
-
-先准备 `.env`。普通 `compose.yaml` 需要填容器可访问的模型地址，容器中的 `127.0.0.1` 是容器自己。在用户当前模型主机上，可使用复用模型网络的叠加配置：
-
-```bash
-docker compose -f compose.yaml -f compose.rag-existing.yaml build
-docker compose -f compose.yaml -f compose.rag-existing.yaml run --rm assistant python manage.py check
-docker compose -f compose.yaml -f compose.rag-existing.yaml run --rm assistant python manage.py ingest
-docker compose -f compose.yaml -f compose.rag-existing.yaml up -d
-```
-
-叠加配置使用 `host.docker.internal:11434` 访问现有 Ollama，用同一 `model-serving_model-net` 内的 `qwen3-reranker-4b:8001` 访问重排。Ollama 必须监听容器可访问的宿主机地址；若只监听宿主机回环，应先由运维配置可达地址并限定网络权限，或直接采用上面的原生 Python 方式。不要为了本应用重启其他人使用的模型。网络名不同可设置 `MODEL_NETWORK`。
-
-后续命令保持相同的两个 `-f` 参数，才能使用同一服务配置。日常更新文档可以执行 `exec assistant python manage.py ingest`；启动前用 `run --rm`。知识目录只读挂载，两个数据库存入同一持久化卷。不要 `down -v`。更换 Compose 项目名会改变默认卷名。
-
-提供 [Nginx 模板](deploy/nginx.conf.example)，替换域名和证书后由运维加载。公网使用 HTTPS；联调页应限制访问。容器、GPU 服务和目标主机的真实问答还需要在部署环境验收，本机没有 Docker，未实测容器构建。
-
-## 悬浮窗口与历史记录
-
-业务页面公共布局只需加载：
-
-```html
-<script src="https://assistant.example.com/iframe.js"
-        data-auth-url="/api/assistant/token" defer></script>
-```
-
-脚本自己创建悬浮按钮和 iframe 聊天窗。父页面真实来源加入 `FRAME_ORIGINS`。`/api/assistant/token` 由已有业务后端校验登录身份后签发短期凭证，禁止接受浏览器自报企业身份直接签发。凭证不是 JWT，Python 可复用 `app.core.issue_token`。退出或切换账号调用 `window.SmartTITUEmbed.reset()`。详见 [悬浮弹窗接入](docs/悬浮弹窗接入.md)。
-
-会话按企业和用户隔离保存；支持历史、恢复、分页和删除。模型上下文最多最近 12 条消息；闲置超过 30 分钟不再带入旧上下文，历史仍保留。当前知识库是所有已认证客户共享的公开客服资料，**不能放内部密钥或企业专有文档**；企业私有知识的权限分区尚未实现。
-
-独立 `prototype/SmartTITU_功能原型.html` 可双击预览窗口交互，使用旧知识快照和本地词法检索，无真实模型、持久化或新 Word 语义检索。真实效果请使用 `/widget/demo`。
-
-## 备份 验证与交付范围
-
-```bash
-python manage.py backup
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
 
-备份同时导出会话库和知识库，后者含向量、版本及原文快照。源目录、`.env` 和部署配置也需单独备份；模型文件在 `models/`，不会打包或提交 Git。恢复和迁移见 [部署运维说明](docs/部署运维说明.md)。
+私有Word核对测试默认跳过；本地资料就绪可设置 RUN_PRIVATE_KNOWLEDGE_TESTS=1。真实PostgreSQL集成测试使用 SMARTTITU_TEST_POSTGRES_URL，必须指向有CREATEDB及CREATEROLE权限的测试服务器；测试只创建和删除独立随机测试库。测试不使用生产凭证、不依赖真实模型。
 
-本次自动测试覆盖文档解析、增量更新、失败保留旧版本、停用和恢复、语义客户端协议、认证下载、会话隔离及原有模型约束。模拟向量能验证调用链与生命周期，不能代替目标主机的真实语义效果验收。
+SQLite兼容部署不设置DATABASE_URL，VECTOR_BACKEND=sqlite、APP_WORKERS=1；原生 manage.py init（仅首次）、配置.env、ingest、serve，或使用原 compose.host.yaml / docker-host.sh。容器企业升级后统一使用enterprise.sh，避免混用。原生serve自动读取.env，直接 python -m app.server 需要已设置环境。
 
-当前按单实例 SQLite + 小知识库直接计算余弦相似度实现，无需另起向量数据库。规模扩大后可替换向量存储。暂未交付多实例高可用、容量承诺、自动历史清理、在线真人接管、业务工具查询、图片上传/OCR或管理后台。图片回复支持登记过的资料图片；Word章节可通过“配图：图片ID”固定关联流程图，回答实际引用该章节时自动附图，并可打开原图。
+## 已交付范围与后续集成
 
-代码模块：`app/ingestion.py` 负责清洗切分，`app/rag.py` 负责模型客户端、版本与向量索引，`app/core.py` 负责问答和会话，`app/server.py` 提供接口，`app/static/` 提供正式窗口。
+PostgreSQL模式提供共享会话锁、幂等消息、持久化工作流，可在容量允许时使用2至4worker；默认1。线程和worker数不能替代模型并发能力，需要目标主机压测。当前Compose是单机基础设施，尚未交付多机高可用或具体QPS承诺。
 
-更多说明：[API](docs/API对接说明.md)、[OpenAPI](docs/openapi.json)、[验收范围](docs/MVP验收清单.md)、[测试记录](docs/测试结果.md)、[图片与人工联系](docs/图片回复与人工联系.md)。
-
-## 2026年10月23日外部资料整理
-
-唯一入库文件仍为 `knowledge_sources/SmartTITU客户问答.docx`（v4，50问、51个默认片段、23张引用图片（已登记并发布））。在线PPT实际核对30页；第5及第14份资料第26页标为仅供内部讨论，未收入外部答案。图片文件和原PDF是附件资源，不要复制到knowledge_sources重复入库。历史JSONL仅作兼容；本次外部范围使用默认semantic模式。
-
-已移除旧知识Markdown副本、206条草稿和旧19问生成脚本，后续直接维护Word。Word内原文和图片HTTPS链接指向本仓库main分支附件；下载需要能访问GitHub。部署后客服图片本身从本服务 `/media/` 返回。
-
-
-## iframe 接入更新
-
-独立聊天地址为 `/chatbot`，生产地址如 `https://assistant.example.com/chatbot`。配置 `.env` 的 `FRAME_ORIGINS=https://console.example.com` 后重启，再将链接交给前端嵌入。悬浮入口推荐加载 `/iframe.js`，自动创建 iframe；登录凭证由业务站同源接口提供，不能放到 iframe URL。完整代码、身份桥接和代理配置见 [iframe 接入说明](docs/悬浮弹窗接入.md)。原 `/widget/demo` 和 `/widget.js` 保留兼容。
-
-本次采用业务流程更新后的v4版，共50问。问题4为企业注册与认证流程，问题5为开发票流程，问题6为充值、结算流程；产品介绍PPT与PDF中22组同主题重复问题已合并为一题，补充信息和两份来源均保留；问题编号连续为1至50，原已删除内容不恢复。入库数量以正文解析为准。标题解析兼容Word/WPS数字样式，避免保存后问答被混合切分。删除的条目在重新入库后停止参与后续检索；已保存的历史消息仍会保留。
-
-本次首次更新请执行 `python manage.py ingest --rebuild`，重新建立兼容标题解析的索引；后续一般文档更新继续使用 `ingest`。
-
-
-## 代码和知识资料分别更新
-
-本次Git更新仅发布代码、示例配置和开发部署说明，不发布新整理的Word和原始PDF；当前50问引用的23张知识配图及data/media.json已另行发布。仓库历史中已有的旧示例Word与图片保持原样，不代表最新业务知识。部署时请从自己的编辑副本单独覆盖 `knowledge_sources/SmartTITU客户问答.docx`，不要重复放两份Word。当前50问引用的配图和图片登记表由git pull同步，不需要手动上传。后续新增图片需同时更新图片文件和登记表。原始PDF需要提供可点击下载时另行配置受控地址，GitHub新附件链接不会生效。
-
-本次代码升级首次执行 `python manage.py ingest --rebuild`，然后重启；后续仅修改或删除Word文字条目可执行 `ingest`，无需每次重建。私有文档的50问和配图核对测试默认跳过；资料就绪后设置 `RUN_PRIVATE_KNOWLEDGE_TESTS=1` 可开启。通用解析、鉴权、语义检索、会话与iframe测试仍正常执行。
-
-
-## 平台式演示页与内网访问
-
-`/widget/demo`按原控制台原型提供SmartTITU平台场景：侧栏、产品卡片、快速开始及右下角客服，凭证在连接弹窗中填写。点击产品或指引可以带入对应问题；页面背景仅作平台场景展示，客服实际连接现有后端。
-
-Linux宿主机网络部署支持读取.env的HOST。需要公司内网其他电脑访问时设 `HOST=0.0.0.0`，执行 `sh scripts/docker-host.sh up -d --force-recreate assistant` 使新环境配置生效，然后访问 `http://10.180.158.23:8000/widget/demo`（该IP为当前目标主机）。也可按所在网段测试 `192.168.100.23`。必须具备相应网络路由及TCP端口访问权限；本次不改知识库，无需重新入库。详见 [容器部署](docs/容器部署.md)。
-
-
-## FastAPI Uvicorn LangChain 升级
-
-API层已迁移FastAPI及Pydantic，Uvicorn运行ASGI服务，接口地址和响应结构兼容原浮窗及iframe。业务HTTP接口保留Bearer身份校验，支持请求体限制、请求ID、来源限制和统一错误。同步模型请求在线程池执行，不阻塞ASGI事件循环；默认单worker、最多32个应用并发请求。`/health`为存活检查，`/ready`检查应用与会话数据库就绪，均不调用上游模型；`/openapi.json`需Bearer凭证，可获取接口规范，默认没有公开Swagger页面。请求日志不输出问题、凭证或查询参数。
-
-RAG使用LangChain Core的BaseRetriever、Document、ChatPromptTemplate、MessagesPlaceholder与RunnableSequence（LCEL）；原有BGE-M3、Reranker、受控模型HTTP客户端和引用校验继续复用。默认禁用LangSmith云端追踪，不需要LangSmith密钥。生成链包括提示组装、模型调用与引用校验；检索报告按每次请求隔离。
-
-既有Word、知识索引、历史会话及模型目录保持原样。这次未改变切分版本或Embedding配置，无需重新ingest。Docker构建安装已锁定的requirements.lock；不能只restart旧镜像：
-
-```bash
-cd ~/ai_customer
-git pull --ff-only origin main
-sh scripts/docker-host.sh exec assistant python manage.py backup
-sh scripts/docker-host.sh build assistant
-sh scripts/docker-host.sh up -d --force-recreate assistant
-sh scripts/docker-host.sh exec assistant python manage.py check
-```
-
-完成后保持原访问地址，例如 `http://10.180.158.23:8000/widget/demo`。旧镜像在构建阶段仍可继续服务；构建失败时先修复依赖下载，不要强行切换。检查输出现在包含fastapi、uvicorn、langchain-core版本。原管理命令继续使用，原生运行仍为 `python manage.py serve`，内部已启动Uvicorn。开发测试先安装requirements-dev.txt再运行unittest；依赖范围在requirements.txt，部署以requirements.lock为准。
-
-当前是单实例企业部署基础版：多企业/多用户的会话身份隔离和共享外部知识库；SQLite及进程内会话互斥继续使用。不要直接添加多个Uvicorn worker或多个副本；后续横向扩展需一起改造存储、会话锁和限流。企业现有登录系统仍按iframe接入说明提供短期凭证接口。详见 [企业部署与框架](docs/企业部署与框架.md)。
-
-
-## 检索准确率改进
-
-当前语义RAG增加BM25和RRF混合召回、章节完整标题优先，以及去除链接噪声的检索文本。普通同义问法仍使用向量召回，不要求字面完全相同。首次更新需要 `ingest --rebuild` 后重启，Word无需重写；已完成FastAPI升级的镜像不用重新构建。新增 `manage.py retrieve --query '问题'` 可在服务器检查召回、重排与配图，默认不调用聊天模型、不打印密钥。详见 [检索准确率排查](docs/检索准确率排查.md)。
-
-
-### 业务流程资料更新
-
-v4新增开发票流程、充值与结算流程，均先列文字步骤，再附原始流程图。`data/media.json`及两张流程图由Git同步，Word仍由维护者单独上传并覆盖`knowledge_sources/SmartTITU客户问答.docx`，不要把长文件名副本也放进入库目录。上传后执行`python manage.py ingest`再重启服务；本次未改变Embedding配置，无需全量重建。正常应为50条活动知识。问题编号用于文档阅读，引用和配图绑定仍由知识ID及图片ID管理。
-
-当前维护副本为v4去重版，共50问。同内容配图优先采用较新产品PDF的图，PPT独有配图保留，共引用23张图片；登记表和历史配图仍保留，以支持历史消息查看。更新Word后运行普通`ingest`再重启，无需修改Embedding配置。
-
-业务知识调整：服务体系说明与服务体系架构图已合并为问题8「SmartTITU服务体系与架构」，保留第3、4页来源及架构配图，当前共50问。
+只读业务工具注册边界已提供，租户权限来自后端；真实余额、订单、工单接口未接入时明确提示人工，不伪造业务数据。写入工具仍禁用，接入确认、审计与幂等后才能开放。尚无在线人工工作台、文件上传/OCR、管理后台、跨会话用户画像或企业私有知识分区。共享外部资料与内部资料需分开治理。

@@ -66,6 +66,20 @@ def main():
     revisions=sub.add_parser('revisions',help='查看文档修订记录');revisions.add_argument('document_id')
     disable=sub.add_parser('deactivate',help='显式停用文档,保留历史引用');disable.add_argument('document_id')
     activate=sub.add_parser('activate',help='切换已保存修订,保留原文件');activate.add_argument('document_id');activate.add_argument('--revision',required=True)
+    evaluation=sub.add_parser('evaluate',help='使用本地私有评测集评估语义召回、引用与图片')
+    evaluation.add_argument('--dataset',required=True);evaluation.add_argument('--output',required=True)
+    evaluation.add_argument('--answers',action='store_true');evaluation.add_argument('--allow-unreviewed',action='store_true')
+    preparation=sub.add_parser('prepare-evaluation',help='为全部知识生成待人工审阅的多样问法，不进入客户检索逻辑')
+    preparation.add_argument('--output',required=True);preparation.add_argument('--variants',type=int,default=5)
+    sub.add_parser('sync-vectors',help='将已有活动向量同步到Milvus，不调用Embedding')
+    doctor=sub.add_parser('doctor',help='检查实际数据库与向量服务；可选检查模型')
+    doctor.add_argument('--models',action='store_true')
+    migrate=sub.add_parser('migrate-storage',help='停止旧服务后将SQLite历史和知识版本迁移到PostgreSQL')
+    migrate.add_argument('--chat');migrate.add_argument('--knowledge');migrate.add_argument('--backup-dir')
+    export=sub.add_parser('export-storage',help='维护窗口内将PostgreSQL聊天及知识导出至新SQLite文件供回退')
+    export.add_argument('--output-dir',required=True)
+    prune=sub.add_parser('prune-checkpoints',help='清理过期工作流检查点，保留聊天消息')
+    prune.add_argument('--days',type=int,default=30)
     sub.add_parser('check',help='校验配置和知识,不发送外网请求')
     backup=sub.add_parser('backup',help='一致性备份SQLite,默认写入backups目录')
     backup.add_argument('--output')
@@ -83,8 +97,74 @@ def main():
                 rag=RAGSettings();rag.validate();kb=SemanticKnowledge(rag)
             else:kb=Knowledge(config.knowledge)
             from importlib.metadata import version
-            frameworks={name:version(name) for name in ('fastapi','uvicorn','langchain-core')}
-            print(json.dumps({'frameworks':frameworks,'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db,'next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))
+            frameworks={name:version(name) for name in ('fastapi','uvicorn','langchain','langchain-core','langgraph')}
+            print(json.dumps({'frameworks':frameworks,'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db if not config.database_url else 'postgresql',
+                'vector_backend':rag.vector_backend if config.retrieval_backend=='semantic' else 'lexical',
+                'workflow':'langgraph','next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))
+        elif args.command=='prepare-evaluation':
+            from app.evaluation import prepare
+            print(json.dumps(prepare(config,args.output,args.variants),ensure_ascii=False,indent=2))
+        elif args.command=='evaluate':
+            from app.evaluation import evaluate
+            result=evaluate(config,args.dataset,args.output,args.answers,args.allow_unreviewed)
+            print(json.dumps(result,ensure_ascii=False,indent=2))
+            if result['failed']:parser.exit(1,'评测存在失败，请查看本地报告。\n')
+        elif args.command=='sync-vectors':
+            from app.rag import RAGSettings,sync_vectors
+            print(json.dumps(sync_vectors(RAGSettings()),ensure_ascii=False,indent=2))
+        elif args.command=='migrate-storage':
+            from app.migration import migrate
+            from app.rag import RAGSettings
+            result=migrate(config,args.chat or config.db,args.knowledge or RAGSettings().index_path,
+                args.backup_dir or str(BASE/'backups'/('migration-'+datetime.now().strftime('%Y%m%d-%H%M%S'))))
+            print(json.dumps(result,ensure_ascii=False,indent=2))
+        elif args.command=='export-storage':
+            from app.migration import export_sqlite
+            print(json.dumps(export_sqlite(config,args.output_dir),ensure_ascii=False,indent=2))
+        elif args.command=='doctor':
+            from app.core import Service,Model
+            from app.rag import RAGSettings,EmbeddingClient,RerankerClient
+            service=Service(config)
+            try:
+                service.db.execute('SELECT 1').fetchone()
+                result={'database':'ok','workflow':'langgraph','knowledge_count':len(service.knowledge.rows)}
+                from app.workflow import SupportWorkflow
+                service._workflow=SupportWorkflow(service)
+                result['checkpoints']='persistent'
+                if config.retrieval_backend=='semantic' and getattr(service.knowledge,'vectors',None):
+                    vector=service.knowledge.vectors
+                    if not vector.client.has_collection(vector.collection):raise ValueError('Milvus尚无当前索引，请先sync-vectors或ingest')
+                    result['milvus']='ok'
+                if not result['knowledge_count']:raise ValueError('活动知识为空，请先入库')
+                if args.models and config.retrieval_backend=='semantic':
+                    rag=RAGSettings();vectors=EmbeddingClient(rag).embed(['连接检查'])
+                    result['embedding_dimensions']=len(vectors[0])
+                    if getattr(service.knowledge,'vectors',None):
+                        vector.search(vectors[0],list(service.knowledge.rows.values()),1)
+                        result['vector_search']='ok'
+                    if rag.rerank_enabled:
+                        RerankerClient(rag).rank('如何注册企业账号',['使用手机号注册企业账号。','查询账单。']);result['reranker']='ok'
+                    if config.mode=='llm':Model(config).answer('你好',[],[],{'_intent':'greeting'});result['chat_model']='ok'
+                print(json.dumps(result,ensure_ascii=False,indent=2))
+            finally:service.close()
+        elif args.command=='prune-checkpoints':
+            if args.days<1:raise ValueError('至少保留1天检查点')
+            from app.core import Service
+            from app.workflow import SupportWorkflow
+            import time
+            service=Service(config);count=0
+            try:
+                service._workflow=SupportWorkflow(service)
+                rows=service.db.execute('SELECT id,session FROM workflow_runs WHERE updated<?',(time.time()-args.days*86400,)).fetchall()
+                from contextlib import nullcontext
+                for row in rows:
+                    lock=service.db.session_lock(row['session']) if config.database_url else nullcontext()
+                    with lock:
+                        service._workflow.saver.delete_thread(row['id'])
+                        with service.db:service.db.execute('DELETE FROM workflow_runs WHERE id=?',(row['id'],))
+                        count+=1
+                print(json.dumps({'pruned_checkpoints':count,'chat_messages':'preserved'}))
+            finally:service.close()
         elif args.command=='retrieve':
             from app.rag import RAGSettings,SemanticKnowledge
             rag=RAGSettings()
@@ -96,15 +176,22 @@ def main():
                 'selected':selected,'diagnostics':report.get('_diagnostics',{})},ensure_ascii=False,indent=2))
         elif args.command in ('ingest','documents','revisions','deactivate','activate'):
             from app.rag import RAGSettings,DocumentStore,ingest_documents
-            rag=RAGSettings();store=DocumentStore(rag.index_path)
+            rag=RAGSettings();store=DocumentStore(rag.index_path,rag.database_url)
             if args.command=='ingest':result=ingest_documents(rag,rebuild=args.rebuild)
             elif args.command=='documents':result=store.documents()
             elif args.command=='revisions':result=store.revisions(args.document_id)
-            elif args.command=='activate':store.activate(args.document_id,args.revision);result={'activated':args.document_id,'revision':args.revision}
+            elif args.command=='activate':
+                from app.vectors import MilvusVectors
+                vector=MilvusVectors(rag) if rag.vector_backend=='milvus' else None
+                try:store.activate(args.document_id,args.revision,vector)
+                finally:
+                    if vector is not None:vector.close()
+                result={'activated':args.document_id,'revision':args.revision}
             else:store.deactivate(args.document_id);result={'deactivated':args.document_id}
             print(json.dumps(result,ensure_ascii=False,indent=2))
         elif args.command=='token':print(issue_token(config.secret,args.tenant,args.user,args.ttl))
         elif args.command=='backup':
+            if config.database_url:raise ValueError('PostgreSQL模式请使用 sh scripts/enterprise.sh backup，备份包含工作流检查点')
             output=args.output or str(BASE/'backups'/('assistant-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'.sqlite3'))
             print('会话备份已校验:'+str(backup_database(config.db,output)))
             from app.rag import RAGSettings
@@ -122,6 +209,12 @@ def main():
         from importlib.metadata import PackageNotFoundError
         if isinstance(error,PackageNotFoundError):
             parser.exit(2,'缺少新框架依赖，请重新构建镜像，或安装requirements.lock。\n')
+        import httpx
+        import psycopg
+        from psycopg_pool import PoolTimeout
+        from pymilvus.exceptions import MilvusException
+        if isinstance(error,(httpx.HTTPError,psycopg.Error,PoolTimeout,MilvusException)):
+            parser.exit(2,'数据库、向量服务或模型连接失败；请检查服务状态及本机配置（凭证未输出）。\n')
         if not isinstance(error,(ValueError,FileExistsError,RAGError)):raise
         parser.exit(2,str(error)+'\n')
 

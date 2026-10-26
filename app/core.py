@@ -28,6 +28,7 @@ class APIError(Exception):
 
 @dataclass
 class Settings:
+    database_url: str = field(default_factory=lambda: os.getenv('DATABASE_URL',''))
     db: str = field(default_factory=lambda: os.getenv('DATABASE_PATH', str(BASE / 'var' / 'assistant.db')))
     knowledge: str = field(default_factory=lambda: os.getenv('KNOWLEDGE_PATH', str(BASE / 'data' / 'knowledge.jsonl')))
     secret: str = field(default_factory=lambda: os.getenv('AUTH_SECRET', ''))
@@ -49,6 +50,7 @@ class Settings:
     def validate(self):
         if len(self.secret.encode()) < 32:
             raise ValueError('AUTH_SECRET 必须至少 32 字节,请使用随机密钥')
+        if self.database_url and urllib.parse.urlsplit(self.database_url).scheme not in ('postgres','postgresql'):raise ValueError('DATABASE_URL必须为PostgreSQL地址')
         if self.retrieval_backend not in ('semantic','lexical'):
             raise ValueError('RETRIEVAL_BACKEND仅支持semantic/lexical')
         if self.mode not in ('extractive', 'llm'):
@@ -231,19 +233,18 @@ class Model:
             return chain.invoke({'history':[(h['role'],h['content']) for h in history[-12:]],'payload':payload})
 
     def complete(self,messages):
-        data={'model':self.config.model,'messages':messages,'stream':False}
-        req = urllib.request.Request(self.config.model_url.rstrip('/')+'/chat/completions',
-              data=json.dumps(data).encode(), headers={'Content-Type': 'application/json',
-              'Authorization': 'Bearer '+self.config.model_key}, method='POST')
-        # Never follow redirects with an Authorization header.
-        class NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self, *args, **kwargs):
-                return None
-        with urllib.request.build_opener(NoRedirect).open(req, timeout=45) as response:
-            raw = response.read(1024*1024+1)
-            if len(raw) > 1024*1024:
-                raise ValueError('model response too large')
-        return json.loads(raw)['choices'][0]['message']['content']
+        from langchain.chat_models import init_chat_model
+        from .transport import client,async_client
+        options={}
+        if 'qwen3' in self.config.model.lower() and os.getenv('MODEL_DISABLE_THINKING','true').lower()=='true':
+            options['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
+        model=init_chat_model(self.config.model,model_provider='openai',base_url=self.config.model_url,
+            api_key=self.config.model_key,http_client=client(),http_async_client=async_client(),timeout=45,max_retries=0,
+            max_tokens=int(os.getenv('MODEL_MAX_TOKENS','2048')),temperature=0.1,http_socket_options=(),**options)
+        from langsmith import tracing_context
+        with tracing_context(enabled=False):response=model.invoke(messages)
+        if not isinstance(response.content,str) or len(response.content.encode())>1024*1024:raise ValueError('模型响应无效或过大')
+        return response.content
 
     def parse_answer(self,content,evidence,media,intent):
         content=re.sub(r'^\s*<think>.*?</think>\s*','',content,flags=re.S).strip()
@@ -277,7 +278,7 @@ class Service:
         self.config = config
         if config.retrieval_backend=='semantic':
             from .rag import SemanticKnowledge,RAGSettings
-            self.knowledge=SemanticKnowledge(RAGSettings())
+            self.knowledge=SemanticKnowledge(RAGSettings(database_url=config.database_url))
         else:
             self.knowledge=Knowledge(config.knowledge,config.min_similarity)
         self.model = model or Model(config)
@@ -287,21 +288,30 @@ class Service:
         self.lock = threading.RLock()
         self.active = set()
         Path(config.db).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(config.db, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.executescript('''PRAGMA journal_mode=WAL;
-        PRAGMA foreign_keys=ON;
-        CREATE TABLE IF NOT EXISTS sessions(
-            id TEXT PRIMARY KEY, tenant TEXT NOT NULL, user TEXT NOT NULL,
-            context TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL);
-        CREATE INDEX IF NOT EXISTS session_owner ON sessions(tenant,user,updated);
-        CREATE TABLE IF NOT EXISTS messages(
-            id TEXT PRIMARY KEY, session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-            request_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
-            payload TEXT NOT NULL, created REAL NOT NULL);
-        CREATE UNIQUE INDEX IF NOT EXISTS message_request ON messages(session,request_id,role);
-        CREATE TABLE IF NOT EXISTS rate_limits(owner TEXT PRIMARY KEY, window INTEGER, count INTEGER);
-        ''')
+        from .storage import open_database
+        self.db = open_database(config.db,config.database_url)
+        from .tools import ToolRegistry
+        self.tools=ToolRegistry()
+        self._workflow=None
+        self.metrics=collections.Counter()
+        from contextlib import nullcontext
+        with (self.db.schema_lock() if config.database_url else nullcontext()):
+            self.db.executescript('''PRAGMA journal_mode=WAL;
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE IF NOT EXISTS sessions(
+                id TEXT PRIMARY KEY, tenant TEXT NOT NULL, user TEXT NOT NULL,
+                context TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS session_owner ON sessions(tenant,user,updated);
+            CREATE TABLE IF NOT EXISTS messages(
+                id TEXT PRIMARY KEY, session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                request_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
+                payload TEXT NOT NULL, created REAL NOT NULL);
+            CREATE UNIQUE INDEX IF NOT EXISTS message_request ON messages(session,request_id,role);
+            CREATE TABLE IF NOT EXISTS rate_limits(owner TEXT PRIMARY KEY, window INTEGER, count INTEGER);
+            CREATE TABLE IF NOT EXISTS workflow_runs(id TEXT PRIMARY KEY, session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, request_id TEXT NOT NULL, status TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL);
+            ''')
+            if config.database_url:
+                self.db.execute('ALTER TABLE messages ADD COLUMN IF NOT EXISTS seq BIGSERIAL UNIQUE')
 
     def contact(self):
         return {'phone': '4008841883', 'email': 'help@china-entercom.net',
@@ -315,17 +325,16 @@ class Service:
                 'idle_timeout_seconds': self.config.idle_seconds, 'contact': self.contact(),
                 'answer_mode': self.config.mode, 'knowledge_count': len(self.knowledge.rows), 'retrieval_backend':self.config.retrieval_backend,
                 'capabilities': {'text_chat': True, 'history': True, 'citations': True,
-                                 'reply_images': True, 'upload': False, 'business_tools': False, 'proactive_messages': False}}
+                                 'reply_images': True, 'streaming': True, 'workflow': 'langgraph', 'upload': False, 'business_tools': self.tools.available(), 'proactive_messages': False}}
 
     def rate(self, actor):
-        owner = actor['tenant_id']+'\0'+actor['sub']
+        owner = hashlib.sha256(json.dumps([actor['tenant_id'],actor['sub']]).encode()).hexdigest()
         window = int(time.time())//60
         with self.lock, self.db:
-            row = self.db.execute('SELECT * FROM rate_limits WHERE owner=?', (owner,)).fetchone()
-            count = row['count']+1 if row and row['window']==window else 1
-            if count > self.config.requests_per_minute:
-                raise APIError(429, 'rate_limited', '请求过于频繁,请稍后再试')
-            self.db.execute('INSERT OR REPLACE INTO rate_limits VALUES(?,?,?)', (owner,window,count))
+            row=self.db.execute('INSERT INTO rate_limits(owner,window,count) VALUES(?,?,1) ON CONFLICT(owner) DO UPDATE SET window=excluded.window,count=CASE WHEN rate_limits.window=excluded.window THEN rate_limits.count+1 ELSE 1 END RETURNING count',(owner,window)).fetchone()
+            if row['count']>self.config.requests_per_minute:
+                raise APIError(429,'rate_limited','请求过于频繁,请稍后再试')
+
 
     def owned(self, actor, sid):
         row = self.db.execute('SELECT * FROM sessions WHERE id=? AND tenant=? AND user=?',
@@ -370,11 +379,16 @@ class Service:
                  'created_at':r['created'],'response':json.loads(r['payload']) if r['role']=='assistant' else None} for r in page],
                 'next_before':page[0]['id'] if len(rows)>100 else None}
 
-    def delete(self, actor, sid):
+    def _delete(self, actor, sid):
         with self.lock, self.db:
             self.owned(actor,sid)
             if sid in self.active:
                 raise APIError(409,'session_busy','该会话正在回答,请稍后再试')
+            run_ids=[r[0] for r in self.db.execute('SELECT id FROM workflow_runs WHERE session=?',(sid,)).fetchall()]
+            if run_ids:
+                from .workflow import SupportWorkflow
+                if self._workflow is None:self._workflow=SupportWorkflow(self)
+                for run_id in run_ids:self._workflow.saver.delete_thread(run_id)
             self.db.execute('DELETE FROM sessions WHERE id=?',(sid,))
         return {'deleted': True}
 
@@ -403,7 +417,7 @@ class Service:
         if row is None:raise APIError(404,'not_found','文档版本不存在')
         return row
 
-    def chat(self, actor, sid, body):
+    def _chat(self, actor, sid, body, observer=None, cancelled=None):
         if set(body)-{'message','request_id'}:
             raise APIError(400,'invalid_fields','仅接受 message/request_id')
         question=body.get('message'); rid=body.get('request_id')
@@ -430,75 +444,63 @@ class Service:
             idle=time.time()-session['updated']>self.config.idle_seconds
             if idle:
                 history=[]
-            intent=intent_of(question)
-            fallback='这个问题暂时没有找到足够准确的资料，为了不误导您，建议联系人工客服进一步确认。您可以通过下方电话或邮箱联系我们～'
-            reason='no_knowledge';answer=fallback;selected=[];images=[];success=False;mode=self.config.mode
-            evidence=[];candidates=[];retrieval_failed=False
-            retrieval={'matched':False,'method':'skipped','threshold':self.config.min_similarity,'similarity':None}
-            if intent=='handoff':
-                answer='好的，您可以通过以下方式联系人工客服。';reason='requested_handoff'
-            elif intent=='business':
-                answer='我暂时还无法直接查询企业的实时余额、订单或认证状态，也不能替您创建工单。您可以联系人工客服进一步处理。';reason='business_tool_unavailable'
-            else:
-                conversation=intent in REPLIES
-                if not conversation:
-                    try:
-                        query=contextual_query(question,history) if self.config.retrieval_backend=='semantic' else retrieval_query(question,history)
-                        from .chains import retrieve
-                        found=retrieve(self.knowledge,query)
-                        retrieval,evidence=found['retrieval'],found['evidence']
-                        candidates=self.media.candidates(question,evidence)
-                    except Exception:
-                        retrieval_failed=True
-                        retrieval={'matched':False,'method':self.config.retrieval_backend,'reason':'retrieval_unavailable','similarity':None}
-                # A business question without enough evidence goes directly to handoff.
-                # The generator never gets a chance to invent a missing product answer.
-                if not conversation and not evidence and not candidates:
-                    reason='retrieval_unavailable' if retrieval_failed else 'no_knowledge'
-                    if retrieval_failed:answer='资料查询暂时不可用，您可以稍后再试，或通过下方方式联系人工客服。'
-                    if intent=='image':
-                        answer='暂时没有找到您需要的图片资料。您可以通过下方方式联系人工客服，我们帮您确认并提供合适的资料～'
-                elif mode=='llm':
-                    context={**json.loads(session['context']),'_intent':intent,'_media':candidates}
-                    try:
-                        result=self.model.answer(question,history,evidence,context)
-                        if result['answerable']:
-                            selected=[r for r in evidence if r['id'] in result['citation_ids']]
-                            allowed_media=self.media.bound(selected) if selected else (candidates if intent=='image' else [])
-                            images=[self.media.public(r) for r in allowed_media if r['id'] in result.get('image_ids',[])]
-                            answer=result['answer'];reason=intent;success=True
-                        else:
-                            reason='insufficient_evidence'
-                    except Exception:
-                        if conversation:
-                            answer=REPLIES[intent];success=True;reason='conversation_fallback'
-                        else:
-                            reason='model_unavailable';answer='我这边暂时没能完成回答，您可以稍后重试，或通过以下方式联系人工客服。'
-                elif conversation:
-                    answer=REPLIES[intent];reason=intent;success=True
-                elif candidates and intent=='image':
-                    images=[self.media.public(r) for r in candidates]
-                    answer='找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？';reason='image';success=True
-                elif evidence:
-                    selected=[evidence[0]];answer=selected[0]['content'];reason='extractive';success=True
-            # Attach required diagrams only for evidence actually cited in a successful answer.
-            # Rejected, irrelevant and uncited retrieval candidates must not add images.
-            if success and selected:
-                bound=self.media.bound(selected)
-                images=list({r['id']:r for r in [*[self.media.public(r) for r in bound],*images]}.values())[:4]
-            result_intent=intent
+            from .workflow import SupportWorkflow
+            with self.lock:
+                if self._workflow is None:self._workflow=SupportWorkflow(self)
+            state,key=self._workflow.invoke({'question':question,'history':history,
+                'page_context':json.loads(session['context']),'actor':{'tenant_id':actor['tenant_id'],'sub':actor['sub']},
+                'session_id':sid,'request_id':rid},observer,cancelled)
+            if cancelled is not None and cancelled.is_set():
+                from .workflow import RequestCancelled
+                raise RequestCancelled()
+            success=state['success'];reason=state['reason'];answer=state['answer']
             result={'session_id':sid,'request_id':rid,'message_id':str(uuid.uuid4()),
-                    'answer':answer,'status':'answered' if success else 'handoff','intent':result_intent,'images':images,
-                    'reason':reason,'answer_mode':mode,'retrieval':{k:v for k,v in retrieval.items() if k!='hits'},'citations':[self.citation(r) for r in selected],
-                    'handoff':not success,'contact':self.contact() if not success else None,
-                    'created_at':time.time()}
+                'answer':answer,'status':'answered' if success else 'handoff','intent':state['intent'],'images':state['images'],
+                'reason':reason,'answer_mode':self.config.mode,'retrieval':{k:v for k,v in state['retrieval'].items() if k!='hits'},
+                'citations':[self.citation(r) for r in state['selected']],
+                'handoff':not success,'contact':self.contact() if not success else None,'created_at':time.time()}
             with self.lock, self.db:
-                self.db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?,?)',
+                self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
                     (str(uuid.uuid4()),sid,rid,'user',question,'{}',result['created_at']))
-                self.db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?,?)',
+                self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
                     (result['message_id'],sid,rid,'assistant',answer,json.dumps(result,ensure_ascii=False),result['created_at']))
                 self.db.execute('UPDATE sessions SET updated=? WHERE id=?',(result['created_at'],sid))
+                self.db.execute('INSERT INTO workflow_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated=excluded.updated',(key,sid,rid,'complete',result['created_at'],result['created_at']))
             return result
         finally:
             with self.lock:
                 self.active.discard(sid)
+
+    def observe(self,stage,elapsed):
+        with self.lock:
+            self.metrics[stage+'_count']+=1
+            self.metrics[stage+'_seconds']+=elapsed
+
+    def chat(self,actor,sid,body,observer=None,cancelled=None):
+        from .storage import BusySession
+        from .workflow import WorkflowConflict
+        started=time.monotonic()
+        try:
+            if self.config.database_url:
+                with self.lock:self.owned(actor,sid)
+                with self.db.session_lock(sid):result=self._chat(actor,sid,body,observer,cancelled)
+            else:result=self._chat(actor,sid,body,observer,cancelled)
+            with self.lock:self.metrics['responses_'+result['status']+'_count']+=1
+            return result
+        except BusySession:raise APIError(409,'session_busy','该会话正在回答,请稍后再试') from None
+        except WorkflowConflict:raise APIError(409,'request_id_conflict','相同请求编号不能用于不同问题') from None
+        finally:self.observe('chat',time.monotonic()-started)
+
+    def close(self):
+        if self._workflow is not None:self._workflow.close()
+        if self.config.retrieval_backend=='semantic' and self.knowledge.vectors is not None:self.knowledge.vectors.close()
+        self.db.close()
+
+    def delete(self,actor,sid):
+        from .storage import BusySession
+        if self.config.database_url:
+            with self.lock:self.owned(actor,sid)
+            try:
+                with self.db.session_lock(sid):return self._delete(actor,sid)
+            except BusySession:raise APIError(409,'session_busy','该会话正在回答,请稍后再试') from None
+        return self._delete(actor,sid)

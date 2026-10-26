@@ -1,5 +1,9 @@
 """FastAPI HTTP application, served by Uvicorn; existing widget/API contracts remain stable."""
 import argparse
+import asyncio
+import functools
+import hmac
+import threading
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -13,7 +17,7 @@ from uuid import uuid4
 import anyio
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException
@@ -142,8 +146,13 @@ def create_app(config=None,model=None,service=None):
         try:yield
         finally:
             app.state.ready=False
-            app.state.service.db.close()
-    app=FastAPI(title='SmartTITU Customer Assistant',version='2.0.0',lifespan=lifespan,
+            app.state.service.close()
+            from .storage import close_knowledge_pools
+            close_knowledge_pools()
+            from .transport import close,close_async
+            close()
+            await close_async()
+    app=FastAPI(title='SmartTITU Customer Assistant',version='3.0.0',lifespan=lifespan,
                 docs_url=None,redoc_url=None,openapi_url=None)
     app.state.ready=False
     app.add_middleware(RequestBoundary,config=config)
@@ -168,6 +177,9 @@ def create_app(config=None,model=None,service=None):
     @app.get('/ready',tags=['health'])
     def ready(request:Request,service=Depends(current_service)):
         with service.lock:service.db.execute('SELECT 1').fetchone()
+        if not service.knowledge.rows:raise APIError(503,'index_empty','知识尚未入库')
+        vector=getattr(service.knowledge,'vectors',None) if config.retrieval_backend=='semantic' else None
+        if vector is not None and not vector.client.has_collection(vector.collection):raise APIError(503,'index_unavailable','知识索引尚未同步')
         return {'status':'ready' if request.app.state.ready else 'starting'}
 
     @app.get('/widget/config',include_in_schema=False)
@@ -209,6 +221,55 @@ def create_app(config=None,model=None,service=None):
     @app.post('/v1/sessions/{sid}/messages',tags=['sessions'])
     def chat(sid:str,body:ChatBody,user=Depends(actor),service=Depends(current_service)):
         return service.chat(user,sid,body.model_dump())
+
+    @app.post('/v1/sessions/{sid}/messages/stream',tags=['assistant'],response_class=StreamingResponse,
+              responses={200:{'description':'Authenticated SSE: status, delta, complete, error',
+                              'content':{'text/event-stream':{'schema':{'type':'string'}}}}})
+    async def chat_stream(sid:str,body:ChatBody,request:Request,user=Depends(actor),service=Depends(current_service)):
+        # Ownership errors remain HTTP errors, before SSE headers have been sent.
+        await anyio.to_thread.run_sync(functools.partial(service.owned,user,sid))
+        async def events():
+            loop=asyncio.get_running_loop();queue=asyncio.Queue(maxsize=32);cancel=threading.Event()
+            def enqueue(item):
+                if not queue.full():queue.put_nowait(item)
+            def observe(item):loop.call_soon_threadsafe(enqueue,item)
+            task=loop.run_in_executor(None,functools.partial(service.chat,user,sid,body.model_dump(),observe,cancel))
+            def event(kind,payload):return 'event: '+kind+'\ndata: '+json.dumps(payload,ensure_ascii=False)+'\n\n'
+            try:
+                yield event('status',{'stage':'connected'})
+                while not task.done():
+                    item=asyncio.create_task(queue.get())
+                    done,_=await asyncio.wait([item,task],timeout=10,return_when=asyncio.FIRST_COMPLETED)
+                    if item in done:yield event('status',item.result())
+                    else:
+                        item.cancel()
+                        try:await item
+                        except asyncio.CancelledError:pass
+                        if not task.done():yield ': heartbeat\n\n'
+                result=await task
+                # Only validated answers are streamed. Raw model JSON/thinking is never exposed.
+                for i in range(0,len(result['answer']),128):yield event('delta',{'text':result['answer'][i:i+128]})
+                yield event('complete',result)
+            except APIError as error:yield event('error',{'code':error.code,'message':error.message})
+            except asyncio.CancelledError:raise
+            except Exception:yield event('error',{'code':'service_unavailable','message':'服务暂时不可用，请重试。'})
+            finally:
+                cancel.set()
+                # Consume exceptions even when the HTTP client disconnected during inference.
+                def consume(future):
+                    if not future.cancelled():future.exception()
+                task.add_done_callback(consume)
+        return StreamingResponse(events(),media_type='text/event-stream',headers={
+            'Cache-Control':'no-store','X-Accel-Buffering':'no','Connection':'keep-alive'})
+
+    @app.get('/metrics',include_in_schema=False)
+    def metrics(request:Request,service=Depends(current_service)):
+        secret=os.getenv('OPERATIONS_TOKEN','')
+        supplied=request.headers.get('x-operations-token','')
+        if len(secret)<32 or not hmac.compare_digest(secret,supplied):raise APIError(401,'unauthorized','运维认证失败')
+        with service.lock:values=dict(service.metrics)
+        text=''.join('smarttitu_'+key+' '+str(value)+'\n' for key,value in sorted(values.items()))
+        return Response(text,media_type='text/plain; version=0.0.4')
 
     @app.delete('/v1/sessions/{sid}',tags=['sessions'])
     def delete(sid:str,user=Depends(actor),service=Depends(current_service)):return service.delete(user,sid)
@@ -262,8 +323,11 @@ def main():
     parser.add_argument('--port',type=int,default=int(os.getenv('PORT','8000')))
     args=parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    # Single worker retains the existing per-session in-process exclusion guarantees.
-    uvicorn.run(create_app(),host=args.host,port=args.port,workers=1,access_log=False,
+    # Cross-process session locking requires PostgreSQL. Default remains one worker.
+    workers=int(os.getenv('APP_WORKERS','1'))
+    if workers<1 or workers>4:raise ValueError('APP_WORKERS范围为1至4，增加前须压测模型容量')
+    if workers>1 and not os.getenv('DATABASE_URL'):raise ValueError('多worker必须使用PostgreSQL')
+    uvicorn.run('app.server:create_app',factory=True,host=args.host,port=args.port,workers=workers,access_log=False,
                 proxy_headers=False,limit_concurrency=64,timeout_graceful_shutdown=180)
 
 if __name__=='__main__':main()

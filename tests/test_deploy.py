@@ -54,4 +54,21 @@ class DeploymentTests(unittest.TestCase):
    result=subprocess.run(['sh',str(root/'scripts/docker-host.sh'),'up'],env={**os.environ,'PATH':str(root/'bin')+os.pathsep+os.environ['PATH']},capture_output=True)
    self.assertEqual(result.returncode,2);self.assertFalse((root/'var').exists())
 
+
+ def test_enterprise_config_preserves_model_auth_and_generates_private_credentials(self):
+  spec=importlib.util.spec_from_file_location('enterprise_config',ROOT/'scripts/configure_enterprise.py')
+  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);(root/'.env').write_text('AUTH_SECRET=original-secret\nMODEL_API_KEY=model-secret\nRERANK_API_KEY=rerank-secret\nVECTOR_BACKEND=sqlite\n')
+   output=io.StringIO()
+   with patch.object(module,'ROOT',root),contextlib.redirect_stdout(output):module.main()
+   values=module.read(root/'.env')
+   self.assertEqual(values['AUTH_SECRET'],'original-secret');self.assertEqual(values['MODEL_API_KEY'],'model-secret')
+   self.assertEqual(values['RERANK_API_KEY'],'rerank-secret');self.assertEqual(values['VECTOR_BACKEND'],'milvus')
+   self.assertTrue(values['DATABASE_URL'].startswith('postgresql://'));self.assertGreaterEqual(len(values['OPERATIONS_TOKEN']),32)
+   self.assertNotIn(values['POSTGRES_PASSWORD'],output.getvalue());self.assertNotIn('model-secret',output.getvalue())
+   self.assertEqual((root/'.env').stat().st_mode&0o777,0o600)
+   self.assertEqual((root/'deploy/generated/milvus-user.yaml').stat().st_mode&0o777,0o600)
+   self.assertTrue(list((root/'backups').rglob('env.before')))
+
 if __name__=='__main__':unittest.main()
