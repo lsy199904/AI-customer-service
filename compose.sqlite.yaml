@@ -1,0 +1,30 @@
+# Offline switch for the Linux model host. Reuses the already-built application image.
+services:
+  assistant:
+    image: "${SQLITE_APP_IMAGE:-ai_customer-assistant:enterprise}"
+    pull_policy: never
+    env_file: .env
+    network_mode: host
+    user: "${ASSISTANT_UID:?use scripts/sqlite.sh}:${ASSISTANT_GID:?use scripts/sqlite.sh}"
+    working_dir: /ai_customer
+    environment:
+      # Explicit overrides also take precedence over manage.py loading .env.
+      DATABASE_URL: ""
+      VECTOR_BACKEND: sqlite
+      APP_WORKERS: "1"
+      HOST: "${HOST:-127.0.0.1}"
+      PORT: "${PORT:-8000}"
+      DATABASE_PATH: /ai_customer/var/assistant.db
+      RAG_INDEX_PATH: /ai_customer/var/rag.sqlite3
+      KNOWLEDGE_SOURCE_DIR: /ai_customer/knowledge_sources
+    volumes: [".:/ai_customer"]
+    restart: unless-stopped
+    stop_grace_period: 190s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','8000')+'/ready',timeout=10)"]
+      interval: 20s
+      timeout: 12s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}

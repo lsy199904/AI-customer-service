@@ -1,3 +1,5 @@
+> 本分支为 `sqlite-local-testing`，保留main的问答功能及策略，新增无需拉取配套镜像的SQLite启动入口。已有应用镜像可执行 `sh scripts/sqlite.sh start`；详见[SQLite本地测试部署](docs/SQLite本地测试部署.md)。main企业版不变。
+
 # SmartTITU 企业智能客服
 
 FastAPI + Uvicorn 提供接口，LangChain 连接模型与检索器，LangGraph 编排并持久化问答流程。企业部署使用 PostgreSQL 保存聊天、知识版本和工作流检查点，Milvus 提供向量索引；保留 SQLite 单实例兼容和回退能力。
