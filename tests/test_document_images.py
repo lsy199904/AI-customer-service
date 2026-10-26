@@ -41,11 +41,11 @@ class DocumentImageTests(unittest.TestCase):
  def test_extractive_answer_also_attaches(self):
   r=self.ask();self.assertEqual(r['images'][0]['id'],'enterprise-register')
  def test_rejected_answer_does_not_attach(self):
-  self.model(answerable=False);r=self.ask();self.assertTrue(r['handoff']);self.assertEqual(r['images'],[])
+  self.model(answerable=False);r=self.ask();self.assertFalse(r['handoff']);self.assertEqual(r['status'],'suggestions');self.assertEqual(r['images'],[])
  def test_unavailable_model_does_not_attach(self):
   class Broken:
    def answer(self,*args):raise ValueError('unavailable')
-  self.service.config.mode='llm';self.service.model=Broken();r=self.ask();self.assertTrue(r['handoff']);self.assertEqual(r['images'],[])
+  self.service.config.mode='llm';self.service.model=Broken();r=self.ask();self.assertFalse(r['handoff']);self.assertEqual(r['status'],'suggestions');self.assertEqual(r['images'],[])
  def test_unrelated_retrieved_diagram_is_not_forced(self):
   # Both records are candidates, but the model cites only the record with no diagram.
   row=next(iter(self.service.knowledge.rows.values()));plain={**row,'id':'KB-aabbcc','title':'其他说明','image_ids':[]}
@@ -53,7 +53,7 @@ class DocumentImageTests(unittest.TestCase):
   self.model();r=self.ask();self.assertFalse(r['handoff']);self.assertEqual(r['images'],[])
  def test_no_hit_does_not_attach(self):
   self.service.knowledge.assess=lambda q:{'matched':False,'hits':[],'method':'embedding','similarity':0}
-  self.model();r=self.ask();self.assertTrue(r['handoff']);self.assertEqual(r['images'],[])
+  self.model();r=self.ask();self.assertFalse(r['handoff']);self.assertEqual(r['status'],'suggestions');self.assertEqual(r['images'],[])
  def test_uncited_candidate_image_is_filtered_even_if_model_selects_it(self):
   row=next(iter(self.service.knowledge.rows.values()))
   plain={**row,'id':'KB-aabbcc','title':'快速使用检查清单总结','image_ids':[]}

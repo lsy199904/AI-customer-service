@@ -33,6 +33,12 @@ function setup(override={}){
  assert.equal((await s.context.streamReply('/v1/sessions/test/messages',{},stage=>stages.push(stage))).answer,'你好');assert.equal(stages.join(','),'retrieving');assert.equal(s.timers.size,0);
  s=setup({token:()=>new Promise(()=>{})});p=s.context.streamReply('/v1/sessions/test/messages',{},()=>{});rejected=assert.rejects(p,/取消或超时/);await flush();s.expire();await rejected;
  s=setup({token:()=>new Promise(()=>{})});s.context.controller.abort();await assert.rejects(s.context.streamReply('/v1/sessions/test/messages',{},()=>{}),/取消或超时/);assert.equal(s.timers.size,0);
+ const sent=[],parent={children:[],append(child){this.children.push(child);}},buttonElement=(tag,cls,text)=>({tag,cls,text,children:[],append(child){this.children.push(child);},setAttribute(){}});
+ const suggestionsContext={element:buttonElement,send:text=>sent.push(text)};
+ vm.runInNewContext(source.slice(source.indexOf('  function renderSuggestions('),source.indexOf('  function customerText(')),suggestionsContext);
+ suggestionsContext.renderSuggestions(parent,{suggestions:['如何开发票'],actions:[{type:'handoff',message:'ignored-untrusted-value'}]});
+ assert.equal(parent.children[0].children.length,2);parent.children[0].children[0].onclick();parent.children[0].children[1].onclick();
+ assert.equal(sent.join('|'),'如何开发票|转人工客服');
  const handlers={},elements={token:{value:'test-only-token',focus(){}},status:{},connect:{disabled:false},'connection-dialog':{open:false,showModal(){this.open=true;},close(){this.open=false;}},'connection-close':{addEventListener(){}},'connection-form':{addEventListener:(name,fn)=>{handlers[name]=fn;}}};
  let result=false,calls=0;
  vm.runInNewContext(fs.readFileSync('app/static/demo.js','utf8'),{location:{origin:'https://assistant.example'},document:{getElementById:id=>elements[id],querySelectorAll:()=>[]},window:{SmartTITUAssistant:{configure(){},open:async()=>{calls++;return result;}}}});

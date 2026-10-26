@@ -14,6 +14,52 @@ REPLIES = {
 }
 
 
+QUICK_QUESTIONS = ['如何创建API密钥', '如何注册企业账号与认证', '如何开发票', '快速使用流程', '操作审计流程', '安全审计流程']
+NO_ANSWER = '你当前的问题我无法回答哦，你可以向我提问：'
+
+
+def sensitive_topic(question):
+    """Local explicit-topic guard, complemented by semantic refusal in SYSTEM.
+
+    These rules are not a claim of comprehensive content moderation. Product safety
+    controls are legitimate business questions, rather than requests for adult content.
+    """
+    compact=re.sub(r'\s+','',question.lower())
+    governance=re.search(r'过滤|拦截|防止|检测|内容审核|内容安全|合规',compact)
+    if governance and re.search(r'模型|平台|系统|内容安全',compact):return False
+    return bool(re.search(r'涉政|政治|政党|选举|国家领导人|涉黄|色情|黄色(?:视频|图片|小说)|成人视频|成人影片|裸聊|porn|sexvideo',compact))
+
+
+def rejected_recommendations(question,history):
+    previous=next((m for m in reversed(history) if m['role']=='assistant'),None)
+    if not previous or (previous.get('response') or {}).get('status')!='suggestions':return False
+    text=re.sub(r'[\W_]+','',question)
+    return bool(re.fullmatch(r'(?:以上|这些问题|这些|推荐的问题|推荐的|当前)?(?:都不是|都不对|都不需要|没有我想问的|没有我想要的|不是我想要的|都不是我想问的|都不是我想要的|都不是想要的|都不是想问的|都不想问)(?:哦|呢|啊|呀)?',text))
+
+
+def recommended_questions(knowledge,question,evidence=(),sensitive=False,related_titles=()):
+    """Suggest curated titles only; do not lower the answer threshold or call models."""
+    from .retrieval import lexical_ranking,title_text,topic
+    related=[]
+    if not sensitive:
+        related.extend(row['title'] for row in evidence)
+        related.extend(title for title in related_titles if isinstance(title,str))
+        try:
+            rows=[(0,{**row,'content':''}) for row in knowledge.rows.values()]
+            ranking=lexical_ranking(question,rows)
+            related.extend(s['row']['title'] for s in sorted(ranking,key=lambda s:s['lexical'],reverse=True)
+                           if s['lexical']>0 and s['coverage']>=.2)
+        except Exception:pass  # Recommendation failure must still offer the static questions.
+    result=[];seen=set()
+    for title in related[:3]+QUICK_QUESTIONS:
+        text=re.sub(r'^\d+(?:\.\d+)*[.、\s]+','',title_text(title)).strip()
+        key=topic(text,question=True)
+        if not 2<=len(text)<=120 or not key or key in seen or re.search(r'https?://',text):continue
+        seen.add(key);result.append(text)
+        if len(result)==6:break
+    return result
+
+
 def intent_of(question):
     compact=re.sub(r'[\s\W_]+','',question.lower())
     if re.fullmatch(r'(你好|您好|哈喽|嗨|hello|hi|早上好|早安|下午好|晚上好|在吗|有人吗|你在吗)+(呀|啊|呢|哦|哇|哟)?',compact):return 'greeting'

@@ -298,6 +298,10 @@ class SemanticKnowledge:
             scores=self.vectors.search(query,[r for r,_ in rows],c.top_k)
             ranked=sorted([(scores.get(record['id'],-1.0),record) for record,_ in rows],key=lambda x:x[0],reverse=True)
         report['similarity']=round(ranked[0][0],4)
+        # Below the answer gate, nearby topics may still be offered as questions.
+        # This never marks them as matched evidence or lowers the answer threshold.
+        report['_suggestion_titles']=[record['title'] for score,record in ranked[:3]
+                                      if score>=max(.2,c.min_similarity-.15)]
         candidates=fuse(question,ranked,c.min_similarity,c.top_k)
         if diagnostics:
             report['_diagnostics']={'dense_top':[{'id':r['id'],'title':r['title'],'score':round(score,6)} for score,r in ranked[:c.top_k]],

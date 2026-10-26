@@ -13,10 +13,10 @@ from typing import TypedDict
 from langgraph.graph import StateGraph,START,END
 from langgraph.runtime import Runtime
 from langsmith import tracing_context
-from .conversation import REPLIES,intent_of,contextual_query,retrieval_query
+from .conversation import REPLIES,NO_ANSWER,intent_of,contextual_query,retrieval_query,sensitive_topic,rejected_recommendations,recommended_questions
 from .tools import ToolContext
 
-FALLBACK='这个问题暂时没有找到足够准确的资料，为了不误导您，建议联系人工客服进一步确认。您可以通过下方电话或邮箱联系我们～'
+FALLBACK=NO_ANSWER
 
 class RequestCancelled(Exception):pass
 class WorkflowConflict(Exception):pass
@@ -39,6 +39,8 @@ class State(TypedDict,total=False):
     retrieval:dict
     retrieval_failed:bool
     result:dict
+    suggestions:list
+    actions:list
 
 @dataclass
 class Context:
@@ -73,16 +75,19 @@ class SupportWorkflow:
         for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),
                         ('generate',self.generate),('validate',self.validate)]:graph.add_node(name,fn)
         graph.add_edge(START,'route')
-        graph.add_conditional_edges('route',lambda s:'validate' if s['intent']=='handoff' else 'business' if s['intent']=='business' else 'generate' if s['intent'] in REPLIES else 'retrieve')
+        graph.add_conditional_edges('route',lambda s:'validate' if s['intent'] in ('handoff','sensitive') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in REPLIES else 'retrieve')
         graph.add_conditional_edges('retrieve',lambda s:'generate' if s['evidence'] or s['candidates'] else 'validate')
         graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
         self.graph=graph.compile(checkpointer=self.saver,name='smarttitu_support')
 
     def route(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('routing');intent=intent_of(state['question'])
+        if rejected_recommendations(state['question'],state['history']):intent='handoff'
+        if intent!='handoff' and sensitive_topic(state['question']):intent='sensitive'
         values={'intent':intent,'answer':FALLBACK,'reason':'no_knowledge','success':False,
                 'selected':[],'images':[],'evidence':[],'candidates':[],'retrieval_failed':False,
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
+        if intent=='sensitive':values['reason']='sensitive_topic'
         if intent=='handoff':values.update(answer='好的，您可以通过以下方式联系人工客服。',reason='requested_handoff')
         return values
 
@@ -96,12 +101,12 @@ class SupportWorkflow:
             evidence=found['evidence'];candidates=self.service.media.candidates(state['question'],evidence)
             values={'retrieval':found['retrieval'],'evidence':evidence,'candidates':candidates}
             if not evidence and not candidates and state['intent']=='image':
-                values['answer']='暂时没有找到您需要的图片资料。您可以通过下方方式联系人工客服，我们帮您确认并提供合适的资料～'
+                values['answer']=NO_ANSWER
             return values
         except RequestCancelled:raise
         except Exception:
             self.service.observe('retrieval_failed',0)
-            return {'reason':'retrieval_unavailable','answer':'资料查询暂时不可用，您可以稍后再试，或通过下方方式联系人工客服。',
+            return {'reason':'retrieval_unavailable','answer':'资料查询暂时不可用，请稍后再试，也可以试试下面的问题。',
                 'retrieval_failed':True,'retrieval':{'matched':False,'method':self.service.config.retrieval_backend,'reason':'retrieval_unavailable','similarity':None}}
         finally:self.service.observe('retrieval',time.monotonic()-started)
 
@@ -138,7 +143,7 @@ class SupportWorkflow:
         except Exception:
             s.observe('generation_failed',0)
             if conversation:return {'answer':REPLIES[intent],'success':True,'reason':'conversation_fallback'}
-            return {'reason':'model_unavailable','answer':'我这边暂时没能完成回答，您可以稍后重试，或通过以下方式联系人工客服。'}
+            return {'reason':'model_unavailable','answer':'我这边暂时没能完成回答，请稍后重试，也可以试试下面的问题。'}
         finally:s.observe('generation',time.monotonic()-started)
 
     def validate(self,state:State,runtime:Runtime[Context]):
@@ -146,7 +151,14 @@ class SupportWorkflow:
         if state['success'] and state['selected']:
             bound=[s.media.public(r) for r in s.media.bound(state['selected'])]
             images=list({r['id']:r for r in bound+images}.values())[:4]
-        return {'images':images}
+        values={'images':images,'suggestions':[],'actions':[]}
+        if not state['success'] and state['intent']!='handoff':
+            values.update(images=[],selected=[],suggestions=recommended_questions(s.knowledge,state['question'],
+                state['evidence'],sensitive=state['intent']=='sensitive',
+                related_titles=state['retrieval'].get('_suggestion_titles',[])),
+                actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
+            if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
+        return values
 
     def invoke(self,state,observer=None,cancelled=None):
         key=self.key(state)

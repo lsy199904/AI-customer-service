@@ -152,7 +152,7 @@ class SemanticHTTPTests(unittest.TestCase):
     self.assertEqual(req(citation['url'])[0],200)
     server.service.knowledge.store.deactivate(citation['document_id']);self.assertEqual(req(download)[0],200)
     _,raw=req(path,{'message':'退款规则是什么','request_id':'unknown-001'});answer=json.loads(raw)
-    self.assertTrue(answer['handoff']);self.assertIsNone(answer['contact']['wechat_qr_url'])
+    self.assertFalse(answer['handoff']);self.assertEqual(answer['status'],'suggestions');self.assertIsNone(answer['contact'])
    finally:server.shutdown();thread.join();server.server_close();server.service.db.close()
 
 if __name__=='__main__':unittest.main()

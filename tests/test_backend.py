@@ -43,7 +43,11 @@ class BackendTests(unittest.TestCase):
   self.s.delete(A,self.sid);self.assertEqual(self.s.db.execute('SELECT count(*) FROM messages').fetchone()[0],0)
  def test_handoff(self):
   for i,q in enumerate(['量子土豆如何驾驶火星飞船','转人工客服','查询我的余额','你们的退款政策是什么']):
-   r=self.ask(q,'fallback-%d'%i);self.assertTrue(r['handoff']);self.assertEqual(r['citations'],[]);self.assertIsNone(r['contact']['wechat_qr_url'])
+   r=self.ask(q,'fallback-%d'%i);self.assertEqual(r['citations'],[])
+   if q=='转人工客服':
+    self.assertTrue(r['handoff']);self.assertIsNone(r['contact']['wechat_qr_url'])
+   else:
+    self.assertFalse(r['handoff']);self.assertEqual(r['status'],'suggestions');self.assertIsNone(r['contact'])
  def test_llm_history(self):
   calls=[]
   class Fake:
