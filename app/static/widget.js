@@ -196,6 +196,7 @@
       .replace(/[（(]\s*(?:KB|DOC)-[a-f0-9]{3,64}\s*[）)]/gi,'')
       .replace(/\b(?:KB|DOC)-[a-f0-9]{3,64}\b/gi,'');
     return cleaned.split(/(```[\s\S]*?```)/g).map((part,index)=>index%2?part:part
+      .replace(/(?:\*\*)?适用版本[：:][ \t]*(?:\*\*)?\d{4}[-/]\d{1,2}[-/]\d{1,2}[ \t]*[vV]\d+(?:\.\d+)*(?:\*\*)?[。.]?/g,'')
       .replace(/^[ \t]*(?:更多详情|更多信息|详细内容|详情)[^\n]*(?:手册|原文档|原始文档|PDF)[^\n]*(?:\n[ \t]*)*(?:https?:\/\/[^\n]+|\[[^\]\n]+\]\(https?:\/\/[^\n]+\))?/gim,'')
       .replace(/\[[^\]\n]*\]\(https?:\/\/raw\.githubusercontent\.com\/lsy199904\/AI-customer-service\/[^)\n]*docs\/sources\/[^)\n]*\)/gi,'')
       .replace(/^[ \t]*https?:\/\/raw\.githubusercontent\.com\/lsy199904\/AI-customer-service\/[^\n]*docs\/sources\/[^\n]*$/gim,'')

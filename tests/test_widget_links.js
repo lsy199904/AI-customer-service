@@ -43,3 +43,7 @@ assert.equal(cleaned,'1. 企业基础版。\n2. 企业专业版。');
 assert.equal(customer.customerText('官网入口：https://www.smarttitu.cn'),'官网入口：https://www.smarttitu.cn');
 assert(customer.customerText('在线文档入口：[在线文档](https://doc.smarttitu.cn)').includes('https://doc.smarttitu.cn'));
 console.log('Clickable links: plain and Markdown URLs, punctuation, query strings, safe DOM, protocols and code blocks passed');
+
+assert.equal(customer.customerText('1. 进入安全审计。\n\n适用版本：2026-10-26 v5。'),'1. 进入安全审计。');
+assert.equal(customer.customerText('适用版本：2026-10-26 v5。操作步骤如下。'),'操作步骤如下。');
+assert.equal(customer.customerText('企业基础版、企业专业版可按需选择。'),'企业基础版、企业专业版可按需选择。');
