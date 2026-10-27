@@ -236,11 +236,34 @@ class Model:
             'evidence':evidence,'media':[{'id':r['id'],'title':r.get('title','')} for r in media]},ensure_ascii=False)
         chain=(prompt
                | RunnableLambda(lambda value:self.complete(convert_to_openai_messages(value.to_messages())),name='model_completion')
-               | RunnableLambda(lambda text:self.parse_answer(text,evidence,media,intent),name='validate_citations'))
+               | RunnableLambda(lambda text:self._validate_response(text,evidence,media,intent),name='validate_citations'))
         with tracing_context(enabled=False):
             return chain.invoke({'history':[(h['role'],h['content']) for h in history[-2*self.config.context_rounds:]],'payload':payload})
 
+    def _validate_response(self,text,evidence,media,intent):
+        from .observability import event,error_fields
+        try:
+            result=self.parse_answer(text,evidence,media,intent)
+            event('answer_validation_completed',answerable=result['answerable'],citations=len(result['citation_ids']))
+            return result
+        except Exception as error:
+            event('answer_validation_failed',level='ERROR',response_chars=len(text) if isinstance(text,str) else 0,
+                  **error_fields(error))
+            raise
+
     def complete(self,messages):
+        from .observability import event,error_fields
+        started=time.monotonic()
+        event('model_request_started',history_and_prompt_messages=len(messages),max_tokens=int(os.getenv('MODEL_MAX_TOKENS','2048')))
+        try:
+            result=self._complete_request(messages)
+            event('model_request_completed',elapsed_ms=round((time.monotonic()-started)*1000,2),response_chars=len(result))
+            return result
+        except Exception as error:
+            event('model_request_failed',level='ERROR',elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
+            raise
+
+    def _complete_request(self,messages):
         from langchain.chat_models import init_chat_model
         from .transport import client,async_client
         options={}
@@ -251,6 +274,15 @@ class Model:
             max_tokens=int(os.getenv('MODEL_MAX_TOKENS','2048')),temperature=0.1,http_socket_options=(),**options)
         from langsmith import tracing_context
         with tracing_context(enabled=False):response=model.invoke(messages)
+        from .observability import event
+        metadata=getattr(response,'response_metadata',{}) or {}
+        finish=metadata.get('finish_reason')
+        if finish in ('stop','length','content_filter','tool_calls'):
+            event('model_finish',level='WARNING' if finish!='stop' else 'INFO',finish_reason=finish)
+        usage=getattr(response,'usage_metadata',None)
+        if isinstance(usage,dict):
+            counts={key:usage[key] for key in ('input_tokens','output_tokens','total_tokens') if isinstance(usage.get(key),int)}
+            event('model_usage',**counts)
         if not isinstance(response.content,str) or len(response.content.encode())>1024*1024:raise ValueError('模型响应无效或过大')
         return response.content
 
@@ -379,6 +411,10 @@ class Service:
         with self.lock, self.db:
             self.db.execute('INSERT INTO sessions VALUES(?,?,?,?,?,?)',
                  (sid, actor['tenant_id'],actor['sub'],json.dumps(context,ensure_ascii=False),now,now))
+        from .observability import event,reference
+        event('session_created',session_ref=reference(self.config.secret,sid),
+              tenant_ref=reference(self.config.secret,actor['tenant_id']),
+              user_ref=reference(self.config.secret,actor['tenant_id']+'\0'+actor['sub']))
         return {'session_id':sid, 'context':context, **self.bootstrap()}
 
     def sessions(self, actor):
@@ -473,7 +509,10 @@ class Service:
             document_url=self.config.source_url.rstrip('/')+'/'+urllib.parse.quote(row['source_file'])
             if row.get('source_pages'):
                 document_url += '#page='+str(row['source_pages'][0])
-        return {'id':row['id'],'title':row['title'],'source_file':row['source_file'],
+        from .retrieval import title_text
+        chapter=title_text(row.get('section_title') or row['title'])
+        return {'id':row['id'],'title':row['title'],'display_title':'用户手册：'+chapter,
+                'section_title':chapter,'source_file':row['source_file'],
                 'pages':row.get('source_pages',[]),'version':row.get('version'),
                 'url':url,'document_url':document_url,'download_url':row.get('download_url'),'document_id':row.get('document_id'),'revision':row.get('revision'),'source_locator':row.get('source_locator'),'source_references':row.get('source_references',[])}
 
@@ -507,6 +546,8 @@ class Service:
                 prev=self.db.execute("SELECT content FROM messages WHERE session=? AND request_id=? AND role='user'",(sid,rid)).fetchone()
                 if prev['content']!=question.strip():
                     raise APIError(409,'request_id_conflict','相同request_id不能用于不同问题')
+                from .observability import event
+                event('chat_cache_hit')
                 return json.loads(cached['payload'])
             if sid in self.active:
                 raise APIError(409,'session_busy','该会话正在回答,请等待完成')
@@ -555,6 +596,31 @@ class Service:
             self.metrics[stage+'_seconds']+=elapsed
 
     def chat(self,actor,sid,body,observer=None,cancelled=None):
+        from .observability import bind,event,error_fields,reference,question_category
+        rid=body.get('request_id')
+        safe_rid=rid if isinstance(rid,str) and re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',rid) else 'invalid'
+        question=body.get('message')
+        started=time.monotonic()
+        with bind(request_id=safe_rid,session_ref=reference(self.config.secret,sid),
+                  tenant_ref=reference(self.config.secret,actor.get('tenant_id','')),
+                  user_ref=reference(self.config.secret,str(actor.get('tenant_id',''))+'\0'+str(actor.get('sub',''))),
+                  question_category=question_category(question) if isinstance(question,str) else 'invalid'):
+            event('chat_started',question_chars=len(question) if isinstance(question,str) else 0)
+            try:
+                result=self._dispatch_chat(actor,sid,body,observer,cancelled)
+                retrieval=result.get('retrieval',{})
+                event('chat_completed',level='INFO' if result['status']=='answered' else 'WARNING',
+                      intent=result.get('intent'),outcome=result['status'],reason=result.get('reason'),
+                      matched=retrieval.get('matched'),similarity=retrieval.get('similarity'),
+                      citations=len(result.get('citations',[])),elapsed_ms=round((time.monotonic()-started)*1000,2))
+                return result
+            except Exception as error:
+                fields=error_fields(error)
+                if isinstance(error,APIError):fields={'error_code':error.code,'http_status':error.status}
+                event('chat_failed',level='ERROR',elapsed_ms=round((time.monotonic()-started)*1000,2),**fields)
+                raise
+
+    def _dispatch_chat(self,actor,sid,body,observer=None,cancelled=None):
         from .storage import BusySession
         from .workflow import WorkflowConflict
         started=time.monotonic()

@@ -78,10 +78,18 @@ def validate_endpoint(url,allowed):
         raise ValueError('HTTP接口必须是MODEL_HTTP_ORIGINS中显式允许的内网来源')
 
 
-def post_json(url,payload,key,timeout=60):
+def post_json(url,payload,key,timeout=60,stage='retrieval'):
     from .transport import post_json as request_json
-    try:return request_json(url,payload,key,timeout)
+    from .observability import event,error_fields
+    started=time.monotonic()
+    event('retrieval_model_started',model_stage=stage)
+    try:
+        result=request_json(url,payload,key,timeout)
+        event('retrieval_model_completed',model_stage=stage,elapsed_ms=round((time.monotonic()-started)*1000,2))
+        return result
     except Exception as error:
+        event('retrieval_model_failed',level='ERROR',model_stage=stage,
+              elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
         import httpx
         if isinstance(error,httpx.HTTPStatusError):raise RAGError('模型接口返回HTTP '+str(error.response.status_code)) from None
         raise RAGError('模型接口连接或JSON响应异常') from None
@@ -100,7 +108,7 @@ class EmbeddingClient:
         c=self.config
         payload={'model':c.embedding_model,'input':texts}
         if c.embedding_provider=='ollama':payload['truncate']=False
-        data=post_json(c.embedding_url,payload,c.embedding_key,timeout=c.embedding_timeout)
+        data=post_json(c.embedding_url,payload,c.embedding_key,timeout=c.embedding_timeout,stage='embedding')
         if c.embedding_provider=='ollama':values=data.get('embeddings')
         else:
             items=data.get('data',[])
@@ -115,7 +123,7 @@ class RerankerClient:
     def __init__(self,config):self.config=config
     def rank(self,question,documents):
         c=self.config
-        data=post_json(c.rerank_url,{'model':c.rerank_model,'query':question,'documents':documents,'top_n':len(documents)},c.rerank_key,timeout=c.rerank_timeout)
+        data=post_json(c.rerank_url,{'model':c.rerank_model,'query':question,'documents':documents,'top_n':len(documents)},c.rerank_key,timeout=c.rerank_timeout,stage='rerank')
         results=data.get('results');seen=set();ranked=[]
         if not isinstance(results,list):raise RAGError('Reranker没有返回results数组')
         for row in results:

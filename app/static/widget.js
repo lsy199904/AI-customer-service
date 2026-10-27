@@ -10,6 +10,7 @@
     getToken: null
   };
   let host, root, panel, launcher, transcript, input, sendButton, quick, status, sourcePane;
+  const windowId='window-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2));
   let sessionId = null, initialized = false, busy = false, opened = false;
   let idleTimer, controller, generation = 0, retry = null, lastFocus;
   let idleSeconds = 1800;
@@ -19,7 +20,7 @@
     [hidden]{display:none!important}.launch{position:fixed;right:26px;bottom:24px;z-index:2147483001;border:0;border-radius:999px;background:#135de4;color:white;padding:15px 22px;box-shadow:0 8px 28px #155ce53b;display:flex;align-items:center;gap:10px;font-weight:600;transition:transform .2s}.launch:hover{transform:translateY(-2px)}
     .icon{width:22px;height:22px;display:inline-grid;place-items:center;font-size:19px}.panel{position:fixed;right:26px;bottom:94px;z-index:2147483002;width:414px;height:min(680px,calc(100dvh - 126px));min-height:300px;background:#fff;border:1px solid #dfe7f0;border-radius:22px;box-shadow:0 18px 80px #203c6530;display:flex;flex-direction:column;overflow:hidden}
     header{padding:19px 20px;display:flex;align-items:center;gap:11px;background:linear-gradient(115deg,#edf5ff,#f9fcff);border-bottom:1px solid #e8eef6}.avatar{height:42px;width:42px;border-radius:14px;background:#155de6;display:grid;place-items:center;color:#fff;font-size:22px}h2{font-size:16px;line-height:1.4;margin:0;font-weight:650}.subtitle{font-size:11px;color:#6b809a}.head-actions{margin-left:auto;display:flex;gap:4px}.ghost{border:0;background:transparent;color:#62778f;border-radius:8px;padding:7px 9px}.ghost:hover{background:#e1edff;color:#135de4}
-    .body{flex:1;overflow:auto;padding:20px;background:#f7f9fc;overscroll-behavior:contain}.welcome-label{font-size:11px;letter-spacing:.12em;color:#547491;margin-bottom:10px}.message{margin-bottom:17px;display:flex;flex-direction:column;align-items:flex-start}.message.user{align-items:flex-end}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:94%;border-radius:3px 15px 15px 15px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px #192c4a05;border:1px solid #e6ecf4;font-size:13px}.bubble a{color:#155de6;text-decoration:underline;text-underline-offset:2px}.user .bubble a{color:inherit}.bubble a:focus-visible{outline:2px solid currentColor;outline-offset:3px}.bubble pre{white-space:pre;overflow:auto;max-width:100%;background:#f1f5fa;border-radius:7px;padding:10px;font:11px/1.7 monospace}.reply-images{max-width:94%;display:flex;flex-direction:column;gap:8px;margin-top:9px}.image-button{border:1px solid #e0e8f4;border-radius:11px;background:#fff;padding:8px;text-align:left}.image-button img{display:block;max-width:100%;max-height:220px;object-fit:contain;border-radius:7px}.image-caption{color:#6380a0;font-size:11px;padding-top:5px}.preview-image{display:block;max-width:100%;max-height:75vh;object-fit:contain}.user .bubble{background:#155de6;color:#fff;border-color:#155de6;border-radius:15px 3px 15px 15px}.meta{font-size:10px;color:#73879d;margin:5px 3px}.sources{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-width:100%}.source{background:#eff5ff;color:#245ba4;border:1px solid #dae7fb;border-radius:7px;font-size:11px;padding:5px 8px;text-align:left;max-width:100%}
+    .body{flex:1;overflow:auto;padding:20px;background:#f7f9fc;overscroll-behavior:contain}.welcome-label{font-size:11px;letter-spacing:.12em;color:#547491;margin-bottom:10px}.message{margin-bottom:17px;display:flex;flex-direction:column;align-items:flex-start}.message.user{align-items:flex-end}.message-role{display:flex;align-items:center;gap:7px;margin:0 2px 7px;color:#61758f;font-size:11px;font-weight:500}.user .message-role{flex-direction:row-reverse}.message-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:9px;background:#e6efff;color:#155de6;flex-shrink:0}.message-avatar svg{width:18px;height:18px}.user .message-avatar{background:#edf0f5;color:#65748a}.message .bubble{margin-left:2px}.message.user .bubble{margin-left:0;margin-right:2px}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:94%;border-radius:3px 15px 15px 15px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px #192c4a05;border:1px solid #e6ecf4;font-size:13px}.bubble a{color:#155de6;text-decoration:underline;text-underline-offset:2px}.user .bubble a{color:inherit}.bubble a:focus-visible{outline:2px solid currentColor;outline-offset:3px}.bubble pre{white-space:pre;overflow:auto;max-width:100%;background:#f1f5fa;border-radius:7px;padding:10px;font:11px/1.7 monospace}.reply-images{max-width:94%;display:flex;flex-direction:column;gap:8px;margin-top:9px}.image-button{border:1px solid #e0e8f4;border-radius:11px;background:#fff;padding:8px;text-align:left}.image-button img{display:block;max-width:100%;max-height:220px;object-fit:contain;border-radius:7px}.image-caption{color:#6380a0;font-size:11px;padding-top:5px}.preview-image{display:block;max-width:100%;max-height:75vh;object-fit:contain}.user .bubble{background:#155de6;color:#fff;border-color:#155de6;border-radius:15px 3px 15px 15px}.meta{font-size:10px;color:#73879d;margin:5px 3px}.sources{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-width:100%}.source{background:#eff5ff;color:#245ba4;border:1px solid #dae7fb;border-radius:7px;font-size:11px;padding:5px 8px;text-align:left;max-width:100%}
     .quick{display:flex;flex-wrap:wrap;gap:7px;padding-top:2px;margin-bottom:18px}.quick button{border:1px solid #dce6f4;border-radius:999px;background:white;color:#34577f;font-size:12px;padding:7px 10px}.quick button:hover{border-color:#7ba6ef;background:#f0f6ff}.notice{font-size:12px;color:#9a611c;white-space:pre-wrap;margin:12px 0}.composer{padding:12px 16px 10px;border-top:1px solid #e7edf5;background:#fff}.entry{display:flex;gap:8px;align-items:flex-end;border:1px solid #d7e1ed;border-radius:13px;padding:8px}.entry:focus-within{border-color:#6797ee;box-shadow:0 0 0 2px #eaf1ff}textarea{resize:none;border:0;outline:0!important;background:transparent;flex:1;min-width:0;width:auto;height:44px;max-height:100px;font-size:13px;padding:3px 5px;color:#17283b}.send{flex-shrink:0;white-space:nowrap;border:0;border-radius:9px;color:#fff;background:#155de6;padding:9px 12px;font-size:12px}.foot{display:flex;align-items:center;justify-content:space-between;margin-top:7px;font-size:10px;color:#8a99ab}.human{border:0;padding:0;background:transparent;color:#5d789c;font-size:11px}.contact{background:#f1f6ff;border-radius:10px;padding:11px 12px;margin-top:9px;font-size:12px;max-width:100%}.contact a{display:block;color:#235cac}.contact img{display:block;width:128px;height:128px;object-fit:contain;margin-top:9px}.contact .hint{font-size:11px;color:#6b809a}
     .suggestions{margin:10px 0 0;max-width:100%}.suggestions .handoff-choice{border-color:#9cb8e6;color:#155de6;font-weight:600}
     .source-pane{position:absolute;inset:0;background:#fff;z-index:2;padding:20px;overflow:auto}.source-pane h3{font-size:15px;margin:10px 0}.source-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}.source-back{border:1px solid #dce6f4;background:#f5f8fc;color:#34577f;padding:6px 10px;border-radius:8px}.loading{color:#73879d;font-size:12px;padding:10px 0}.retry{border:1px solid #ddd;background:#fff;color:#9a611c;border-radius:7px;padding:5px 10px}
@@ -51,7 +52,7 @@
     if (typeof value !== 'string' || !value) throw new Error('登录凭证接口未返回 token');
     return value;
   }
-  async function request(path, method = 'GET', body) {
+  async function request(path, method = 'GET', body, correlationId) {
     const parent=controller?.signal,scope=new AbortController();
     const limit=method==='POST' && /\/messages$/.test(path) ? 180000 : 15000;
     let timedOut=false,timer;
@@ -71,7 +72,7 @@
         let response;
         try {
           response=await fetch(apiURL(path), {
-            method, headers:{Authorization:'Bearer ' + auth, ...(body ? {'Content-Type':'application/json'} : {})},
+            method, headers:{Authorization:'Bearer ' + auth,'X-Widget-ID':windowId,...((body?.request_id || correlationId)?{'X-Request-ID':body?.request_id || correlationId}:{}), ...(body ? {'Content-Type':'application/json'} : {})},
             body:body ? JSON.stringify(body) : undefined, signal:scope.signal, credentials:'omit', cache:'no-store'
           });
         } catch(error) {
@@ -98,7 +99,7 @@
       if(scope.signal.aborted)throw new Error('请求已取消');
       const auth=await Promise.race([token(),stopped]);
       if(scope.signal.aborted)throw new Error('请求已取消');
-      const response=await fetch(apiURL(path+'/stream'),{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':'application/json'},body:JSON.stringify(body),signal:scope.signal,credentials:'omit',cache:'no-store'});
+      const response=await fetch(apiURL(path+'/stream'),{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':'application/json','X-Widget-ID':windowId,'X-Request-ID':body.request_id},body:JSON.stringify(body),signal:scope.signal,credentials:'omit',cache:'no-store'});
       if(!response.ok){const data=await response.json();throw new Error(data.error?.message || '客服连接失败');}
       if(!response.body)throw new Error('浏览器不支持流式响应');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',result=null;
@@ -123,8 +124,28 @@
     clearTimeout(idleTimer);
     if (opened) idleTimer = setTimeout(close, idleSeconds * 1000);
   }
+  function sourceLabel(source) {
+    const raw=source.section_title || source.title || '知识说明';
+    const title=String(raw).replace(/^用户手册[：:\s-]*/, '')
+      .replace(/^问题\s*\d+\s*(?:第\s*\d+\s*页\s*)?/, '')
+      .replace(/^\d+(?:\.\d+)*[.、\s]+/, '').trim();
+    return '用户手册：'+(title || '知识说明');
+  }
+  function roleAvatar(role) {
+    const holder=element('span','message-avatar');holder.setAttribute('aria-hidden','true');
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    for(const [key,value] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.6','stroke-linecap':'round','stroke-linejoin':'round'}))svg.setAttribute(key,value);
+    const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',role==='assistant'
+      ?'M12 3v3m-6 0h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2ZM8 11h.01M16 11h.01M8 16h8M1 10v5m22-5v5'
+      :'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a8 8 0 0 1 16 0v2');
+    svg.append(path);holder.append(svg);return holder;
+  }
   function message(role, text, response) {
     const row = element('div', 'message ' + role);
+    const identity=element('div','message-role');
+    identity.append(roleAvatar(role),element('span','',role==='assistant'?'SmartTITU 智能客服':'您'));
+    row.append(identity);
     const bubble=element('div','bubble');
     renderText(bubble, role==='assistant' ? customerText(text) : text);
     row.append(bubble);
@@ -132,14 +153,27 @@
     if (response?.citations?.length) {
       const list = element('div', 'sources');
       response.citations.forEach((source, i) => {
-        const b = element('button', 'source', `参考资料 · ${source.title.replace(/^问题\s*\d+\s*(?:第\s*\d+\s*页\s*)?/, '').replace(/^\d+(?:\.\d+)*\s+/, '')}`);
+        const b = element('button', 'source', sourceLabel(source));
         b.type = 'button'; b.addEventListener('click', () => showSource(source)); list.append(b);
       });
       row.append(list);
     }
     if(response?.status==='suggestions')renderSuggestions(row,response);
     if (response?.handoff && response.contact) renderContact(row, response.contact);
+    if(role==='assistant'&&response?.status==='suggestions')renderRequestReference(row,response.request_id);
     transcript.append(row); scroll(); return row;
+  }
+  function renderRequestReference(parent,id) {
+    if(typeof id!=='string'||!/^[-a-zA-Z0-9_]{8,80}$/.test(id))return;
+    const details=element('details','meta');
+    details.append(element('summary','','反馈问题'));
+    details.append(element('div','','问题编号：'+id));
+    const copy=element('button','source','复制问题编号');copy.type='button';
+    copy.onclick=async()=>{
+      try {await navigator.clipboard.writeText(id);copy.textContent='已复制';}
+      catch {copy.textContent='请选中上方编号复制';}
+    };
+    details.append(copy);parent.append(details);
   }
   function renderSuggestions(parent,response) {
     const group=element('div','quick suggestions');group.setAttribute('aria-label','推荐问题');
@@ -294,7 +328,7 @@
     const loading=element('div','loading','正在为您解答…');transcript.append(loading);scroll();
     try {
       if (!sessionId) {
-        const created=await request('/v1/sessions','POST',{context:{page_path:location.pathname.slice(0,200),page_title:document.title.slice(0,200)}});
+        const created=await request('/v1/sessions','POST',{context:{page_path:location.pathname.slice(0,200),page_title:document.title.slice(0,200)}},rid);
         if (v!==generation) return;sessionId=created.session_id;
       }
       const path=`/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
@@ -306,7 +340,7 @@
       if (v!==generation) return;
       message('assistant',r.answer,r);retry=null;activity();
     } catch(err) {
-      if (v===generation) notice(err.message,()=>send(text,true));
+      if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true));
     } finally {
       loading.remove();if(v===generation) {setBusy(false);input.focus();scroll();}
     }
@@ -314,7 +348,7 @@
   async function downloadDocument(path,filename) {
     if(!/^\/v1\/documents\/DOC-[a-f0-9]+\/revisions\/[a-f0-9]{64}\/download$/.test(path))throw new Error('文档链接无效');
     const auth=await token();
-    const response=await fetch(apiURL(path),{headers:{Authorization:'Bearer '+auth},cache:'no-store',credentials:'omit'});
+    const response=await fetch(apiURL(path),{headers:{Authorization:'Bearer '+auth,'X-Widget-ID':windowId},cache:'no-store',credentials:'omit'});
     if(!response.ok)throw new Error('文档暂时无法下载');
     const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=filename || 'knowledge.docx';a.style.display='none';document.body.append(a);a.click();a.remove();
@@ -327,7 +361,7 @@
     try {
       const r=await request('/v1/sources/'+encodeURIComponent(source.id));
       if(v!==generation) return;
-      content.replaceChildren(element('h3','',r.title),element('div','meta',`${r.source_file} · ${r.version || ''} · 页码 ${(r.pages || []).join(', ') || '不适用'}`),element('p','',r.content));
+      content.replaceChildren(element('h3','',sourceLabel(r)),element('div','meta',`${r.source_file} · ${r.version || ''} · 页码 ${(r.pages || []).join(', ') || '不适用'}`),element('p','',r.content));
       if(r.source_locator)content.append(element('div','meta',r.source_locator));
       if(r.source_references?.length)content.append(element('p','meta',r.source_references.join('\n')));
       if(r.download_url){const b=element('button','source-back','下载这份知识文档');b.onclick=async()=>{try{await downloadDocument(r.download_url,r.source_file);}catch(err){b.textContent=err.message;}};content.append(b);}

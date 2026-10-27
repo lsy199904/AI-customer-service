@@ -4,6 +4,8 @@ import asyncio
 import functools
 import hmac
 import threading
+import time
+from contextvars import copy_context
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -50,10 +52,39 @@ class RequestBoundary:
 
     async def __call__(self,scope,receive,send):
         if scope['type']!='http':return await self.app(scope,receive,send)
-        headers=Headers(scope=scope)
-        supplied=headers.get('x-request-id','')
+        from .observability import bind,event,error_fields
+        supplied=Headers(scope=scope).get('x-request-id','')
         request_id=supplied if re.fullmatch(r'[A-Za-z0-9_-]{8,80}',supplied) else str(uuid4())
         scope.setdefault('state',{})['request_id']=request_id
+        started=time.monotonic();status=None;completed=False
+        async def track(message):
+            nonlocal status,completed
+            if message['type']=='http.response.start':status=message['status']
+            if message['type']=='http.response.body' and not message.get('more_body',False):completed=True
+            await send(message)
+        window_id=Headers(scope=scope).get('x-widget-id','')
+        window_id=window_id if re.fullmatch(r'[A-Za-z0-9_-]{8,80}',window_id) else None
+        with bind(http_request_id=request_id,window_id=window_id):
+            try:
+                await self._call(scope,receive,track)
+            except Exception as error:
+                event('http_failed',level='ERROR',**error_fields(error))
+                raise
+            finally:
+                route=getattr(scope.get('route'),'path',None)
+                # Never record unknown paths, query strings or headers.
+                if not route:route=scope['path'] if scope['path'] in STATIC or scope['path'] in ('/health','/ready') else 'unmatched'
+                if route not in ('/health','/ready') or (status is not None and status>=400):
+                    event('http_completed',level='WARNING' if status is not None and status>=400 else 'INFO',
+                          method=scope['method'],route=route,status=status,completed=completed,
+                          elapsed_ms=round((time.monotonic()-started)*1000,2),
+                          **scope.get('state',{}).get('actor_log_fields',{}))
+
+    async def _call(self,scope,receive,send):
+        if scope['type']!='http':return await self.app(scope,receive,send)
+        headers=Headers(scope=scope)
+        supplied=headers.get('x-request-id','')
+        request_id=scope['state']['request_id']
         origin=headers.get('origin')
         same_origin=bool(origin and urlsplit(origin).scheme in ('http','https') and urlsplit(origin).netloc==headers.get('host'))
         allowed=bool(origin and (origin in self.config.origins or same_origin))
@@ -74,7 +105,7 @@ class RequestBoundary:
         if scope['method']=='OPTIONS':
             return await Response(status_code=204,headers={
                 'Access-Control-Allow-Methods':'GET, HEAD, POST, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Request-ID'})(scope,receive,respond)
+                'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Request-ID, X-Widget-ID'})(scope,receive,respond)
         if self.active>=32:return await error(503,'service_busy','客服繁忙，请稍后重试')
         self.active+=1
         started=False
@@ -110,9 +141,9 @@ class RequestBoundary:
                     return await original_receive()
                 receive=replay
             await self.app(scope,receive,tracked_send)
-        except Exception:
-            # Never log question bodies, query strings, auth headers or upstream error text.
-            LOG.error('request failed request_id=%s',request_id)
+        except Exception as exc:
+            from .observability import event,error_fields
+            event('http_failed',level='ERROR',**error_fields(exc))
             if not started:await error(500,'internal_error','服务暂时不可用')
         finally:self.active-=1
 
@@ -129,14 +160,24 @@ bearer=HTTPBearer(auto_error=False)
 
 def current_service(request:Request):return request.app.state.service
 
-def actor(credentials:HTTPAuthorizationCredentials=Depends(bearer),service=Depends(current_service)):
+def actor(request:Request,credentials:HTTPAuthorizationCredentials=Depends(bearer),service=Depends(current_service)):
     if credentials is None or credentials.scheme.lower()!='bearer':
         raise APIError(401,'unauthorized','请提供登录凭证')
-    return authenticate(service.config.secret,credentials.credentials)
+    claims=authenticate(service.config.secret,credentials.credentials)
+    from .observability import reference
+    fields={'tenant_ref':reference(service.config.secret,claims['tenant_id']),
+            'user_ref':reference(service.config.secret,claims['tenant_id']+'\0'+claims['sub'])}
+    sid=request.path_params.get('sid')
+    if sid:fields['session_ref']=reference(service.config.secret,sid)
+    request.scope.setdefault('state',{})['actor_log_fields']=fields
+    return claims
+
 
 
 def create_app(config=None,model=None,service=None):
     config=config or Settings()
+    from .observability import configure,event
+    configure(os.getenv('LOG_DIR',str(BASE/'var/logs')))
     config.validate()
     @asynccontextmanager
     async def lifespan(app):
@@ -150,18 +191,20 @@ def create_app(config=None,model=None,service=None):
                     except asyncio.CancelledError:
                         # Finish the current database cleanup before closing its connections.
                         try:await future
-                        except Exception:LOG.error('session retention cleanup failed during shutdown')
+                        except Exception:event('retention_cleanup_failed',level='ERROR',during_shutdown=True)
                         raise
                     if report['batch_full'] and not report['skipped_busy']:
                         await asyncio.sleep(.05);continue
                 except asyncio.CancelledError:raise
-                except Exception:LOG.error('session retention cleanup failed')
+                except Exception:event('retention_cleanup_failed',level='ERROR',during_shutdown=False)
                 await asyncio.sleep(config.cleanup_interval)
         cleanup_task=asyncio.create_task(cleanup())
         app.state.ready=True
+        event('service_started',answer_mode=config.mode,retrieval_backend=config.retrieval_backend)
         try:yield
         finally:
             app.state.ready=False
+            event('service_stopping')
             cleanup_task.cancel()
             try:await cleanup_task
             except asyncio.CancelledError:pass
@@ -179,11 +222,15 @@ def create_app(config=None,model=None,service=None):
     app.add_middleware(RequestBoundary,config=config)
 
     @app.exception_handler(APIError)
-    async def api_error(request,exc):return failure(exc.status,exc.code,exc.message)
+    async def api_error(request,exc):
+        event('api_rejected',level='WARNING',http_status=exc.status,error_code=exc.code,
+              **request.scope.get('state',{}).get('actor_log_fields',{}))
+        return failure(exc.status,exc.code,exc.message)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request,exc):
         code='invalid_json' if any(e['type']=='json_invalid' for e in exc.errors()) else 'invalid_fields'
+        event('request_validation_failed',level='WARNING',error_code=code,http_status=400)
         return failure(400,code,'请求格式或字段无效，请检查输入')
 
     @app.exception_handler(HTTPException)
@@ -253,7 +300,7 @@ def create_app(config=None,model=None,service=None):
             def enqueue(item):
                 if not queue.full():queue.put_nowait(item)
             def observe(item):loop.call_soon_threadsafe(enqueue,item)
-            task=loop.run_in_executor(None,functools.partial(service.chat,user,sid,body.model_dump(),observe,cancel))
+            task=loop.run_in_executor(None,functools.partial(copy_context().run,service.chat,user,sid,body.model_dump(),observe,cancel))
             def event(kind,payload):return 'event: '+kind+'\ndata: '+json.dumps(payload,ensure_ascii=False)+'\n\n'
             try:
                 yield event('status',{'stage':'connected'})

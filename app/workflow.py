@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph,START,END
 from langgraph.runtime import Runtime
 from langsmith import tracing_context
 from .conversation import REPLIES,NO_ANSWER,intent_of,contextual_query,retrieval_query,sensitive_topic,rejected_recommendations,recommended_questions
+from .observability import event,error_fields
 from .tools import ToolContext
 
 FALLBACK=NO_ANSWER
@@ -89,6 +90,7 @@ class SupportWorkflow:
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
         if intent=='sensitive':values['reason']='sensitive_topic'
         if intent=='handoff':values.update(answer='好的，您可以通过以下方式联系人工客服。',reason='requested_handoff')
+        event('question_classified',intent=intent,history_messages=len(state['history']))
         return values
 
     def retrieve(self,state:State,runtime:Runtime[Context]):
@@ -100,12 +102,20 @@ class SupportWorkflow:
             found=run(lambda:retrieve(self.service.knowledge,query),self.service.config.retrieval_timeout)
             runtime.context.check()
             evidence=found['evidence'];candidates=self.service.media.candidates(state['question'],evidence)
-            values={'retrieval':found['retrieval'],'evidence':evidence,'candidates':candidates}
+            report=found['retrieval']
+            hits=report.get('hits',[])
+            event('retrieval_completed',matched=report.get('matched'),similarity=report.get('similarity'),
+                  threshold=report.get('threshold'),title_matched=report.get('title_matched'),
+                  evidence_count=len(evidence),evidence_ids=[r['id'] for r in evidence],
+                  rerank_scores=[round(float(hit[0]),6) for hit in hits],
+                  elapsed_ms=round((time.monotonic()-started)*1000,2))
+            values={'retrieval':report,'evidence':evidence,'candidates':candidates}
             if not evidence and not candidates and state['intent']=='image':
                 values['answer']=NO_ANSWER
             return values
         except RequestCancelled:raise
         except Exception as error:
+            event('retrieval_failed',level='WARNING',elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             from .deadlines import RetrievalTimeout
             if isinstance(error,RetrievalTimeout):
                 self.service.observe('retrieval_timeout',0)
@@ -125,7 +135,8 @@ class SupportWorkflow:
             return {'answer':result['answer'],'success':True,'reason':'business_tool'}
         except LookupError:
             return {'answer':'我暂时还无法直接查询企业的实时余额、订单或认证状态，也不能替您创建工单。您可以联系人工客服进一步处理。','reason':'business_tool_unavailable'}
-        except Exception:
+        except Exception as error:
+            event('business_tool_failed',level='ERROR',**error_fields(error))
             return {'answer':'业务查询暂时不可用，请稍后再试或联系人工客服。','reason':'business_tool_unavailable'}
 
     def generate(self,state:State,runtime:Runtime[Context]):
@@ -140,13 +151,17 @@ class SupportWorkflow:
             context={**state['page_context'],'_intent':intent,'_media':state['candidates']}
             result=s.model.answer(state['question'],state['history'],state['evidence'],context)
             runtime.context.check()
+            event('generation_completed',answerable=result['answerable'],citations=len(result.get('citation_ids',[])),
+                  history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2))
             if not result['answerable']:return {'reason':'insufficient_evidence'}
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
             allowed=s.media.bound(selected) if selected else state['candidates'] if intent=='image' else []
             images=[s.media.public(r) for r in allowed if r['id'] in result.get('image_ids',[])]
             return {'selected':selected,'images':images,'answer':result['answer'],'reason':intent,'success':True}
         except RequestCancelled:raise
-        except Exception:
+        except Exception as error:
+            event('generation_failed',level='ERROR',evidence_count=len(state['evidence']),
+                  history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             s.observe('generation_failed',0)
             if conversation:return {'answer':REPLIES[intent],'success':True,'reason':'conversation_fallback'}
             return {'reason':'model_unavailable','answer':'我这边暂时没能完成回答，请稍后重试，也可以试试下面的问题。'}

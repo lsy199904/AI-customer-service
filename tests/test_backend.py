@@ -57,6 +57,11 @@ class BackendTests(unittest.TestCase):
   self.ask('429错误怎么办','llm-00001');r=self.ask('这个怎么配置','llm-00002')
   self.assertEqual(r['status'],'answered');self.assertEqual(len(calls[1][1]),2)
   self.assertEqual(calls[0][3]['page_path'],'/console')
+ def test_manual_source_label(self):
+  row={'id':'KB-label-test','title':'问题44 操作审计','source_file':'用户手册.docx'}
+  citation=self.s.citation(row)
+  self.assertEqual(citation['display_title'],'用户手册：操作审计')
+  self.assertEqual(citation['title'],'问题44 操作审计')
  def test_model_failure(self):
   class Broken:
    def answer(self,*args):raise ValueError('SECRET-UPSTREAM')

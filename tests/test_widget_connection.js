@@ -7,7 +7,7 @@ const customer={};vm.runInNewContext(source.slice(source.indexOf('  function cus
 assert(!customer.customerText('统一接入（KB-0f567c3f2b830588627d13d2）。').includes('KB-'));
 function setup(override={}){
  const timers=new Map();let number=0;
- const context={AbortController,TextDecoder,controller:new AbortController(),token:async()=>'test-only-token',apiURL:path=>'https://assistant.example'+path,
+ const context={windowId:'window-test-123',AbortController,TextDecoder,controller:new AbortController(),token:async()=>'test-only-token',apiURL:path=>'https://assistant.example'+path,
  fetch:async()=>({ok:true,json:async()=>({welcome:'hello'})}),
  setTimeout:(callback,delay)=>{timers.set(++number,{callback,delay});return number;},clearTimeout:id=>timers.delete(id),...override};
  vm.runInNewContext(code,context);return {context,timers,expire(){assert.equal(timers.size,1);[...timers.values()][0].callback();}};

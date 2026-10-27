@@ -1,3 +1,4 @@
+import json
 """ASGI contracts and actual LangChain paths; no external models or production data."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -61,9 +62,9 @@ class FastAPIContracts(unittest.TestCase):
   self.assertNotIn('test-secret',r.text)
  def test_internal_errors_do_not_expose_upstream_text(self):
   with patch.object(self.app.state.service,'bootstrap',side_effect=RuntimeError('SECRET-UPSTREAM-TEXT')):
-   with self.assertLogs('assistant',level='ERROR') as logs:r=self.client.get('/v1/bootstrap',headers=self.headers)
+   with self.assertLogs('assistant.operations',level='ERROR') as logs:r=self.client.get('/v1/bootstrap',headers=self.headers)
   self.assertEqual(r.status_code,500);self.assertNotIn('SECRET',r.text)
-  self.assertNotIn('SECRET',' '.join(logs.output));self.assertIn(r.headers['x-request-id'],' '.join(logs.output))
+  self.assertNotIn('SECRET',json.dumps([record.operation_fields for record in logs.records]));self.assertEqual(r.headers['x-request-id'],logs.records[0].operation_fields['http_request_id'])
  def test_slow_model_does_not_block_health_or_allow_duplicate_session(self):
   sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
   entered=threading.Event();release=threading.Event();service=self.app.state.service
@@ -88,6 +89,44 @@ class FastAPIContracts(unittest.TestCase):
   with TestClient(create_app(self.settings)) as second:
    self.assertEqual(len(second.get('/v1/sessions/'+sid+'/messages',headers=self.headers).json()['items']),2)
   self.assertFalse(second.app.state.ready)
+
+ def test_chat_logs_distinguish_sessions_and_windows(self):
+  first=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
+  second=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
+  with self.assertLogs('assistant.operations',level='INFO') as logs:
+   for index,sid in enumerate((first,second)):
+    rid='message-test-'+str(index)
+    r=self.client.post('/v1/sessions/'+sid+'/messages',json={'message':'你好','request_id':rid},
+      headers={**self.headers,'X-Request-ID':rid,'X-Widget-ID':'window-test-'+str(index)})
+    self.assertEqual(r.status_code,200)
+  rows=[r.operation_fields for r in logs.records if r.msg=='chat_completed']
+  self.assertEqual(len(rows),2)
+  self.assertEqual(rows[0]['user_ref'],rows[1]['user_ref'])
+  self.assertNotEqual(rows[0]['session_ref'],rows[1]['session_ref'])
+  self.assertNotEqual(rows[0]['window_id'],rows[1]['window_id'])
+  self.assertTrue(all(r['http_request_id']==r['request_id'] for r in rows))
+  self.assertNotIn('你好',json.dumps(rows,ensure_ascii=False))
+ def test_stream_worker_preserves_http_correlation(self):
+  sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
+  with self.assertLogs('assistant.operations',level='INFO') as logs:
+   r=self.client.post('/v1/sessions/'+sid+'/messages/stream',json={'message':'你好','request_id':'stream-log-123'},
+      headers={**self.headers,'X-Request-ID':'stream-log-123','X-Widget-ID':'window-stream-123'})
+  self.assertEqual(r.status_code,200);self.assertIn('event: complete',r.text)
+  completed=[r.operation_fields for r in logs.records if r.msg=='chat_completed'][0]
+  self.assertEqual(completed['http_request_id'],'stream-log-123')
+  self.assertEqual(completed['window_id'],'window-stream-123')
+ def test_model_failures_are_classified_and_private(self):
+  sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
+  class Broken:
+   def answer(self,*args):raise ValueError('untrusted citations')
+  service=self.app.state.service;service.config.mode='llm';service.model=Broken()
+  with self.assertLogs('assistant.operations',level='INFO') as logs:
+   r=self.client.post('/v1/sessions/'+sid+'/messages',json={'message':'429错误怎么办','request_id':'failure-log-123'},headers=self.headers)
+  self.assertEqual(r.status_code,200);self.assertEqual(r.json()['reason'],'model_unavailable')
+  error=[r.operation_fields for r in logs.records if r.msg=='generation_failed'][0]
+  self.assertEqual(error['error_code'],'citation_validation')
+  self.assertGreater(error['evidence_count'],0)
+  self.assertNotIn('429错误怎么办',json.dumps([r.operation_fields for r in logs.records],ensure_ascii=False))
 
 class LangChainContracts(unittest.TestCase):
  def backend(self):
