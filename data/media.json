@@ -273,5 +273,105 @@
       "充值、结算流程图"
     ],
     "knowledge_ids": []
+  },
+  {
+    "id": "business-register",
+    "title": "注册流程",
+    "alt": "注册流程",
+    "url": "/media/business-register.png",
+    "keywords": [
+      "注册流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-login",
+    "title": "登录流程",
+    "alt": "登录流程",
+    "url": "/media/business-login.png",
+    "keywords": [
+      "登录流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-verification",
+    "title": "企业认证流程",
+    "alt": "企业认证流程",
+    "url": "/media/business-verification.png",
+    "keywords": [
+      "企业认证流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-contract",
+    "title": "在线签约流程",
+    "alt": "在线签约流程",
+    "url": "/media/business-contract.png",
+    "keywords": [
+      "在线签约流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-subscription",
+    "title": "服务订购流程",
+    "alt": "服务订购流程",
+    "url": "/media/business-subscription.png",
+    "keywords": [
+      "服务订购流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-rating",
+    "title": "星级评定流程",
+    "alt": "星级评定流程",
+    "url": "/media/business-rating.png",
+    "keywords": [
+      "星级评定流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-delivery",
+    "title": "客户交付流程",
+    "alt": "客户交付流程",
+    "url": "/media/business-delivery.png",
+    "keywords": [
+      "客户交付流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-recharge",
+    "title": "客户充值流程",
+    "alt": "客户充值流程",
+    "url": "/media/business-recharge.png",
+    "keywords": [
+      "客户充值流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-payment",
+    "title": "账单支付流程",
+    "alt": "账单支付流程",
+    "url": "/media/business-payment.png",
+    "keywords": [
+      "账单支付流程图"
+    ],
+    "knowledge_ids": []
+  },
+  {
+    "id": "business-invoice",
+    "title": "在线开票流程",
+    "alt": "在线开票流程",
+    "url": "/media/business-invoice.png",
+    "keywords": [
+      "在线开票流程图"
+    ],
+    "knowledge_ids": []
   }
 ]

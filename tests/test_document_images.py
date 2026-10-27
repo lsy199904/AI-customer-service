@@ -103,32 +103,41 @@ class DocumentImageTests(unittest.TestCase):
 class DocumentImageParserTests(unittest.TestCase):
  def test_updated_word(self):
   result=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx')
-  self.assertEqual(len(result.chunks),50)
+  self.assertEqual(len(result.chunks),57)
   import re
   numbers=[int(re.match(r'问题(\d+)',c['title']).group(1)) for c in result.chunks]
-  self.assertEqual(numbers,list(range(1,51)))
+  self.assertEqual(numbers,list(range(1,58)))
   from app.retrieval import title_text
-  self.assertEqual(len({title_text(c['title']) for c in result.chunks}),50)
-  self.assertEqual([c['title'] for c in result.chunks[3:6]],['问题4 企业注册与认证流程','问题5 开发票流程','问题6 充值、结算流程'])
-  self.assertEqual(result.chunks[4]['image_ids'],['billing-invoice-flow'])
-  self.assertEqual(result.chunks[5]['image_ids'],['recharge-balance-flow'])
-  self.assertEqual(result.version,'2026-10-23 v4')
-  self.assertEqual(result.chunks[7]['title'],'问题8 SmartTITU服务体系与架构')
-  self.assertEqual(result.chunks[7]['image_ids'],['product-04'])
-  self.assertEqual(len(result.chunks[7]['source_references']),4)
-  bound=[c for c in result.chunks if 'enterprise-register' in c['image_ids']];self.assertEqual(len(bound),1)
-  self.assertIn('企业注册与认证流程',bound[0]['title'])
-  self.assertEqual(len(set(k for c in result.chunks for k in c['image_ids'])),23)
+  self.assertEqual(len({title_text(c['title']) for c in result.chunks}),57)
+  topics=['注册','登录','企业认证','在线签约','服务订购','星级评定','客户交付','客户充值','账单支付','在线开票']
+  ids=['register','login','verification','contract','subscription','rating','delivery','recharge','payment','invoice']
+  self.assertEqual([c['title'] for c in result.chunks[3:13]],[f'问题{i+4} {name}流程' for i,name in enumerate(topics)])
+  self.assertEqual([c['image_ids'] for c in result.chunks[3:13]],[['business-'+key] for key in ids])
+  self.assertEqual(result.version,'2026-10-26 v5')
+  self.assertEqual(result.chunks[14]['title'],'问题15 SmartTITU服务体系与架构')
+  self.assertEqual(result.chunks[14]['image_ids'],['product-04'])
+  self.assertEqual(len(result.chunks[14]['source_references']),4)
+  self.assertEqual(len(set(k for c in result.chunks for k in c['image_ids'])),30)
+  self.assertFalse(any(k in {'enterprise-register','billing-invoice-flow','recharge-balance-flow'} for c in result.chunks for k in c['image_ids']))
   self.assertFalse(any('运营团队预创建' in c['content'] for c in result.chunks))
   self.assertFalse(any('配图:' in c['content'] for c in result.chunks))
 
+ def test_business_images_match_v5_embedded_images(self):
+  import hashlib,zipfile
+  with zipfile.ZipFile(BASE/'knowledge_sources/SmartTITU客户问答.docx') as archive:
+   embedded={hashlib.sha256(archive.read(n)).hexdigest() for n in archive.namelist() if n.startswith('word/media/')}
+  images=list((BASE/'app/static/media').glob('business-*.png'))
+  self.assertEqual(len(images),10)
+  for image in images:
+   self.assertIn(hashlib.sha256(image.read_bytes()).hexdigest(),embedded,image.name)
+
  def test_external_source_order(self):
   rows=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx').chunks
-  for i,name in enumerate(['产品介绍网页','在线文件','模型清单','企业注册与认证流程']):self.assertIn(name,rows[i]['title'])
+  for i,name in enumerate(['产品介绍网页','在线文件','模型清单','注册流程']):self.assertIn(name,rows[i]['title'])
   for i,url in enumerate(['https://www.smarttitu.cn','https://doc.smarttitu.cn','https://www.smarttitu.cn/models']):self.assertIn(url,rows[i]['content'])
   positions={}
   for i,row in enumerate(rows):
-   ref=row['source_references'][0];positions.setdefault(ref.split('，物理第')[0],[]).append(i)
+   ref=row['source_references'][0];positions.setdefault(ref.split('，')[0],[]).append(i)
   for indexes in positions.values():self.assertEqual(indexes,list(range(min(indexes),max(indexes)+1)))
   text='\n'.join(str(c['source_references']) for c in rows)
   for excluded in ['6.AICC','7.SmartTITU销售','8.AI_Token','12.TITU Edge']:self.assertNotIn(excluded,text)
