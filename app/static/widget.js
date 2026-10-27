@@ -19,7 +19,7 @@
     [hidden]{display:none!important}.launch{position:fixed;right:26px;bottom:24px;z-index:2147483001;border:0;border-radius:999px;background:#135de4;color:white;padding:15px 22px;box-shadow:0 8px 28px #155ce53b;display:flex;align-items:center;gap:10px;font-weight:600;transition:transform .2s}.launch:hover{transform:translateY(-2px)}
     .icon{width:22px;height:22px;display:inline-grid;place-items:center;font-size:19px}.panel{position:fixed;right:26px;bottom:94px;z-index:2147483002;width:414px;height:min(680px,calc(100dvh - 126px));min-height:300px;background:#fff;border:1px solid #dfe7f0;border-radius:22px;box-shadow:0 18px 80px #203c6530;display:flex;flex-direction:column;overflow:hidden}
     header{padding:19px 20px;display:flex;align-items:center;gap:11px;background:linear-gradient(115deg,#edf5ff,#f9fcff);border-bottom:1px solid #e8eef6}.avatar{height:42px;width:42px;border-radius:14px;background:#155de6;display:grid;place-items:center;color:#fff;font-size:22px}h2{font-size:16px;line-height:1.4;margin:0;font-weight:650}.subtitle{font-size:11px;color:#6b809a}.head-actions{margin-left:auto;display:flex;gap:4px}.ghost{border:0;background:transparent;color:#62778f;border-radius:8px;padding:7px 9px}.ghost:hover{background:#e1edff;color:#135de4}
-    .body{flex:1;overflow:auto;padding:20px;background:#f7f9fc;overscroll-behavior:contain}.welcome-label{font-size:11px;letter-spacing:.12em;color:#547491;margin-bottom:10px}.message{margin-bottom:17px;display:flex;flex-direction:column;align-items:flex-start}.message.user{align-items:flex-end}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:94%;border-radius:3px 15px 15px 15px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px #192c4a05;border:1px solid #e6ecf4;font-size:13px}.bubble pre{white-space:pre;overflow:auto;max-width:100%;background:#f1f5fa;border-radius:7px;padding:10px;font:11px/1.7 monospace}.reply-images{max-width:94%;display:flex;flex-direction:column;gap:8px;margin-top:9px}.image-button{border:1px solid #e0e8f4;border-radius:11px;background:#fff;padding:8px;text-align:left}.image-button img{display:block;max-width:100%;max-height:220px;object-fit:contain;border-radius:7px}.image-caption{color:#6380a0;font-size:11px;padding-top:5px}.preview-image{display:block;max-width:100%;max-height:75vh;object-fit:contain}.user .bubble{background:#155de6;color:#fff;border-color:#155de6;border-radius:15px 3px 15px 15px}.meta{font-size:10px;color:#73879d;margin:5px 3px}.sources{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-width:100%}.source{background:#eff5ff;color:#245ba4;border:1px solid #dae7fb;border-radius:7px;font-size:11px;padding:5px 8px;text-align:left;max-width:100%}
+    .body{flex:1;overflow:auto;padding:20px;background:#f7f9fc;overscroll-behavior:contain}.welcome-label{font-size:11px;letter-spacing:.12em;color:#547491;margin-bottom:10px}.message{margin-bottom:17px;display:flex;flex-direction:column;align-items:flex-start}.message.user{align-items:flex-end}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:94%;border-radius:3px 15px 15px 15px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px #192c4a05;border:1px solid #e6ecf4;font-size:13px}.bubble a{color:#155de6;text-decoration:underline;text-underline-offset:2px}.user .bubble a{color:inherit}.bubble a:focus-visible{outline:2px solid currentColor;outline-offset:3px}.bubble pre{white-space:pre;overflow:auto;max-width:100%;background:#f1f5fa;border-radius:7px;padding:10px;font:11px/1.7 monospace}.reply-images{max-width:94%;display:flex;flex-direction:column;gap:8px;margin-top:9px}.image-button{border:1px solid #e0e8f4;border-radius:11px;background:#fff;padding:8px;text-align:left}.image-button img{display:block;max-width:100%;max-height:220px;object-fit:contain;border-radius:7px}.image-caption{color:#6380a0;font-size:11px;padding-top:5px}.preview-image{display:block;max-width:100%;max-height:75vh;object-fit:contain}.user .bubble{background:#155de6;color:#fff;border-color:#155de6;border-radius:15px 3px 15px 15px}.meta{font-size:10px;color:#73879d;margin:5px 3px}.sources{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-width:100%}.source{background:#eff5ff;color:#245ba4;border:1px solid #dae7fb;border-radius:7px;font-size:11px;padding:5px 8px;text-align:left;max-width:100%}
     .quick{display:flex;flex-wrap:wrap;gap:7px;padding-top:2px;margin-bottom:18px}.quick button{border:1px solid #dce6f4;border-radius:999px;background:white;color:#34577f;font-size:12px;padding:7px 10px}.quick button:hover{border-color:#7ba6ef;background:#f0f6ff}.notice{font-size:12px;color:#9a611c;white-space:pre-wrap;margin:12px 0}.composer{padding:12px 16px 10px;border-top:1px solid #e7edf5;background:#fff}.entry{display:flex;gap:8px;align-items:flex-end;border:1px solid #d7e1ed;border-radius:13px;padding:8px}.entry:focus-within{border-color:#6797ee;box-shadow:0 0 0 2px #eaf1ff}textarea{resize:none;border:0;outline:0!important;background:transparent;flex:1;min-width:0;width:auto;height:44px;max-height:100px;font-size:13px;padding:3px 5px;color:#17283b}.send{flex-shrink:0;white-space:nowrap;border:0;border-radius:9px;color:#fff;background:#155de6;padding:9px 12px;font-size:12px}.foot{display:flex;align-items:center;justify-content:space-between;margin-top:7px;font-size:10px;color:#8a99ab}.human{border:0;padding:0;background:transparent;color:#5d789c;font-size:11px}.contact{background:#f1f6ff;border-radius:10px;padding:11px 12px;margin-top:9px;font-size:12px;max-width:100%}.contact a{display:block;color:#235cac}.contact img{display:block;width:128px;height:128px;object-fit:contain;margin-top:9px}.contact .hint{font-size:11px;color:#6b809a}
     .suggestions{margin:10px 0 0;max-width:100%}.suggestions .handoff-choice{border-color:#9cb8e6;color:#155de6;font-weight:600}
     .source-pane{position:absolute;inset:0;background:#fff;z-index:2;padding:20px;overflow:auto}.source-pane h3{font-size:15px;margin:10px 0}.source-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}.source-back{border:1px solid #dce6f4;background:#f5f8fc;color:#34577f;padding:6px 10px;border-radius:8px}.loading{color:#73879d;font-size:12px;padding:10px 0}.retry{border:1px solid #ddd;background:#fff;color:#9a611c;border-radius:7px;padding:5px 10px}
@@ -158,9 +158,38 @@
       .replace(/[（(]\s*(?:KB|DOC)-[a-f0-9]{3,64}\s*[）)]/gi,'')
       .replace(/\b(?:KB|DOC)-[a-f0-9]{3,64}\b/gi,'');
   }
+  function appendLinkedText(parent,text) {
+    const pattern=/\[([^\]\n]+)\]\((https?:\/\/[^\s<>"`\(\)]+)\)|https?:\/\/[^\s<>"`，。；！？、（）【】]+/gi;
+    let offset=0;
+    for(const match of text.matchAll(pattern)) {
+      parent.append(document.createTextNode(text.slice(offset,match.index)));
+      const markdown=match[1]!==undefined;
+      let address=markdown?match[2]:match[0],suffix='';
+      if(!markdown) {
+        while(/[.,;!?:]$/.test(address)||(/[)\]]$/.test(address)&&
+          (address.split(address.endsWith(')')?'(':'[').length<address.split(address.endsWith(')')?')':']').length))) {
+          suffix=address.slice(-1)+suffix;address=address.slice(0,-1);
+        }
+      }
+      let valid=false;
+      try {const url=new URL(address);valid=['http:','https:'].includes(url.protocol)&&!!url.hostname&&!url.username&&!url.password;}catch {}
+      if(valid) {
+        const link=element('a','',markdown?match[1]:address);
+        link.href=address;link.target='_blank';link.rel='noopener noreferrer';
+        parent.append(link);
+        if(suffix)parent.append(document.createTextNode(suffix));
+      } else parent.append(document.createTextNode(match[0]));
+      offset=match.index+match[0].length;
+    }
+    parent.append(document.createTextNode(text.slice(offset)));
+  }
   function renderText(parent,text) {
     const parts=String(text || '').split(/```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g);
-    parts.forEach((part,index)=>{if(part)parent.append(index%2?element('pre','',part):document.createTextNode(part));});
+    parts.forEach((part,index)=>{
+      if(!part)return;
+      if(index%2)parent.append(element('pre','',part));
+      else appendLinkedText(parent,part);
+    });
   }
   function safeImage(value) {
     if(typeof value!=='string')return null;
