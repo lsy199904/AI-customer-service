@@ -147,8 +147,10 @@
     identity.append(roleAvatar(role),element('span','',role==='assistant'?'SmartTITU 智能客服':'您'));
     row.append(identity);
     const bubble=element('div','bubble');
-    renderText(bubble, role==='assistant' ? customerText(text) : text);
-    row.append(bubble);
+    const displayText=role==='assistant' ? customerText(text) : text;
+    if(String(displayText || '').trim() || !response?.images?.length) {
+      renderText(bubble,displayText);row.append(bubble);
+    }
     if(response?.images?.length)renderImages(row,response.images);
     if (response?.citations?.length) {
       const list = element('div', 'sources');
@@ -187,10 +189,20 @@
     parent.append(group);
   }
   function customerText(text) {
-    // Old saved responses keep their original database payload; hide legacy debug prefixes in customer UI.
-    return String(text || '').replace(/^以下为(?:知识库原文摘录|本地知识摘录|知识原文摘录)[（(][^）)]*[）)][：:]?\s*/,'')
+    // Saved answers keep their payload; render registered images only in the bottom gallery.
+    const cleaned=String(text || '').replace(/^以下为(?:知识库原文摘录|本地知识摘录|知识原文摘录)[（(][^）)]*[）)][：:]?\s*/,'')
       .replace(/[（(]\s*(?:KB|DOC)-[a-f0-9]{3,64}\s*[）)]/gi,'')
       .replace(/\b(?:KB|DOC)-[a-f0-9]{3,64}\b/gi,'');
+    return cleaned.split(/(```[\s\S]*?```)/g).map((part,index)=>index%2?part:part
+      .replace(/^[ \t]*(?:更多详情|更多信息|详细内容|详情)[^\n]*(?:手册|原文档|原始文档|PDF)[^\n]*(?:\n[ \t]*)*(?:https?:\/\/[^\n]+|\[[^\]\n]+\]\(https?:\/\/[^\n]+\))?/gim,'')
+      .replace(/\[[^\]\n]*\]\(https?:\/\/raw\.githubusercontent\.com\/lsy199904\/AI-customer-service\/[^)\n]*docs\/sources\/[^)\n]*\)/gi,'')
+      .replace(/^[ \t]*https?:\/\/raw\.githubusercontent\.com\/lsy199904\/AI-customer-service\/[^\n]*docs\/sources\/[^\n]*$/gim,'')
+      .replace(/![ \t]*\[[^\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g,'')
+      .replace(/![ \t]*\[[^\]\n]*\]\[[^\]\n]*\]/g,'')
+      .replace(/<img\b[^>]*>/gi,'')
+      .replace(/^[ \t]*(?:图片\s*URL|图片链接|配图链接)[ \t]*[:：][ \t]*https?:\/\/\S+[ \t]*$/gim,'')
+      .replace(/^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(?:图片展示|配图展示|相关配图|图片预览|相关图片|配图|图片)(?:\*\*)?[ \t]*[:：]?[ \t]*(?:\*\*)?[ \t]*$/gm,'')
+    ).join('').replace(/\n[ \t]*\n(?:[ \t]*\n)+/g,'\n\n').trim();
   }
   function appendLinkedText(parent,text) {
     const pattern=/\[([^\]\n]+)\]\((https?:\/\/[^\s<>"`\(\)]+)\)|https?:\/\/[^\s<>"`，。；！？、（）【】]+/gi;
@@ -234,9 +246,9 @@
     return safeHTTPS(value);
   }
   function renderImages(parent,images) {
-    const group=element('div','reply-images');
+    const group=element('div','reply-images'),seen=new Set();
     images.slice(0,4).forEach(picture=>{
-      const url=safeImage(picture.url);if(!url)return;
+      const url=safeImage(picture.url);if(!url||seen.has(url))return;seen.add(url);
       const button=element('button','image-button');button.type='button';button.setAttribute('aria-label','查看图片：'+(picture.title || picture.alt || '相关图片'));
       const image=element('img');image.src=url;image.alt=picture.alt || picture.title || '相关图片';image.loading='lazy';image.referrerPolicy='no-referrer';
       image.onerror=()=>{button.replaceChildren(element('span','image-caption','图片暂时无法显示，请稍后重试。'));button.disabled=true;};
