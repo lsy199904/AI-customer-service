@@ -14,6 +14,10 @@
     const data=event.data;if(!data||typeof data!=='object')return;
     if(data.type==='smarttitu:ready'){ready=true;}
     else if(data.type==='smarttitu:close')close();
+    else if(data.type==='smarttitu:resize' && typeof data.expanded==='boolean'){
+      frame.style.width=data.expanded?'min(860px,calc(100vw - 32px))':'min(414px,calc(100vw - 32px))';
+      frame.style.height=data.expanded?'calc(100dvh - 100px)':'min(680px,calc(100dvh - 100px))';
+    }
     else if(data.type==='smarttitu:token-request' && typeof data.id==='string'){
       const current=generation;
       try{

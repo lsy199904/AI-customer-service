@@ -13,7 +13,7 @@
     });
   }
   function start(){
-    window.SmartTITUAssistant.configure({apiBase:location.origin,layout:'iframe',getToken,onClose:embedded?()=>tell('smarttitu:close'):null});
+    window.SmartTITUAssistant.configure({apiBase:location.origin,layout:'iframe',getToken,onResize:embedded?(expanded)=>tell('smarttitu:resize',{expanded}):null,onClose:embedded?()=>tell('smarttitu:close'):null});
     panel.hidden=true;window.SmartTITUAssistant.open();
   }
   async function connect(){
