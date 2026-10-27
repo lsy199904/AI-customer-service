@@ -114,6 +114,23 @@ def report(records, request_id, content_enabled=False):
     print('\n提示：发送结束只代表服务端已交付响应，不证明浏览器已经渲染。完整模型输入可用 --event model_input --debug-content 单独查。')
 
 
+def is_document(record):
+    return all(key in record for key in ('时间','输入','处理流程','输出'))
+
+
+def field(record,key):
+    if not is_document(record):return record.get(key)
+    names={'request_id':'请求编号','http_request_id':'接口请求编号','session_ref':'会话编号',
+           'window_id':'窗口编号','tenant_ref':'企业标识','user_ref':'用户标识','question_category':'问题分类'}
+    if key in names:
+        value=record['输入'].get(names[key])
+        return value or (record['输入'].get('请求编号') if key=='http_request_id' else None)
+    if key=='event':return [step.get('事件') for step in record['处理流程']]
+    if key=='question_category':
+        return next((step.get('详情',{}).get('question_category') for step in record['处理流程'] if step.get('详情',{}).get('question_category')),None)
+    return record.get(key)
+
+
 def main():
     parser=argparse.ArgumentParser(description='按问题编号查看节点排查报告或原始日志')
     parser.add_argument('--directory',default=str(Path(__file__).resolve().parent.parent/'var/logs'))
@@ -125,7 +142,7 @@ def main():
     parser.add_argument('--debug-content',action='store_true',help='同时读取独立调试文件中的输入输出正文')
     args=parser.parse_args()
     if args.date and not re.fullmatch(r'\d{4}-\d{2}-\d{2}',args.date):parser.error('日期格式应为 YYYY-MM-DD')
-    if args.report and not args.request_id:parser.error('--report 需要 --request-id')
+    if (args.report or args.debug_content) and not args.request_id:parser.error('--report / --debug-content 需要 --request-id')
     directory=Path(args.directory)
     if not directory.is_dir():parser.exit(1,'日志目录不存在；确认服务已更新并启动。\n')
     ignored=('directory','date','errors','report','debug_content')
@@ -140,13 +157,25 @@ def main():
                     try:record=json.loads(line)
                     except ValueError:continue
                     if not isinstance(record,dict):continue
-                    if args.errors and record.get('level') not in ('WARNING','ERROR','CRITICAL'):continue
+                    if args.errors:
+                        failed=(bool(record['输出'].get('失败节点')) or any(step.get('级别') in ('WARNING','ERROR','CRITICAL') for step in record['处理流程'])) if is_document(record) else record.get('level') in ('WARNING','ERROR','CRITICAL')
+                        if not failed:continue
                     def matches(key,value):
-                        if key=='request_id':return value in (record.get('request_id'),record.get('http_request_id'))
-                        return record.get(key)==value
+                        if key=='request_id':return value in (field(record,'request_id'),field(record,'http_request_id'))
+                        if key=='event' and is_document(record):return value in field(record,'event')
+                        return field(record,key)==value
                     if all(matches(key,value) for key,value in filters.items()):
-                        if args.report:records.append(record)
+                        if args.report or args.debug_content:records.append(record)
                         else:print(json.dumps(record,ensure_ascii=False))
-    if args.report:report(records,args.request_id,args.debug_content)
+    documents={}
+    legacy=[]
+    for record in records:
+        if is_document(record):documents[(record['时间'],field(record,'request_id'))]=record
+        else:legacy.append(record)
+    if documents:
+        for key in sorted(documents,key=lambda value:(str(value[0]),str(value[1]))):print(json.dumps(documents[key],ensure_ascii=False,indent=2 if args.report else None))
+    elif args.report:report(legacy,args.request_id,args.debug_content)
+    else:
+        for record in legacy:print(json.dumps(record,ensure_ascii=False))
 
 if __name__=='__main__':main()

@@ -609,7 +609,7 @@ class Service:
             self.metrics[stage+'_seconds']+=elapsed
 
     def chat(self,actor,sid,body,observer=None,cancelled=None):
-        from .observability import bind,event,error_fields,reference,question_category,debug_event
+        from .observability import bind,event,error_fields,reference,question_category,debug_event,capture_request
         rid=body.get('request_id')
         safe_rid=rid if isinstance(rid,str) and re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',rid) else 'invalid'
         question=body.get('message')
@@ -617,7 +617,7 @@ class Service:
         with bind(request_id=safe_rid,session_ref=reference(self.config.secret,sid),
                   tenant_ref=reference(self.config.secret,actor.get('tenant_id','')),
                   user_ref=reference(self.config.secret,str(actor.get('tenant_id',''))+'\0'+str(actor.get('sub',''))),
-                  question_category=question_category(question) if isinstance(question,str) else 'invalid'):
+                  question_category=question_category(question) if isinstance(question,str) else 'invalid'),capture_request():
             event('chat_started',question_chars=len(question) if isinstance(question,str) else 0)
             debug_event('chat_input',question=question)
             try:

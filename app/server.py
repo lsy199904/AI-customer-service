@@ -52,7 +52,7 @@ class RequestBoundary:
 
     async def __call__(self,scope,receive,send):
         if scope['type']!='http':return await self.app(scope,receive,send)
-        from .observability import bind,event,error_fields
+        from .observability import bind,event,error_fields,capture_request
         supplied=Headers(scope=scope).get('x-request-id','')
         request_id=supplied if re.fullmatch(r'[A-Za-z0-9_-]{8,80}',supplied) else str(uuid4())
         scope.setdefault('state',{})['request_id']=request_id
@@ -64,7 +64,8 @@ class RequestBoundary:
             await send(message)
         window_id=Headers(scope=scope).get('x-widget-id','')
         window_id=window_id if re.fullmatch(r'[A-Za-z0-9_-]{8,80}',window_id) else None
-        with bind(http_request_id=request_id,window_id=window_id):
+        is_chat=scope['method']=='POST' and bool(re.fullmatch(r'/v1/sessions/[^/]+/messages(?:/stream)?',scope['path']))
+        with bind(http_request_id=request_id,window_id=window_id),capture_request(is_chat):
             try:
                 await self._call(scope,receive,track)
             except Exception as error:

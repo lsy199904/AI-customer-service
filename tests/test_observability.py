@@ -190,4 +190,80 @@ class OperationalLogs(unittest.TestCase):
    self.assertEqual((root/'.env').read_text().count('LOG_DEBUG_CONTENT='),1)
    self.assertIn('LOG_DEBUG_CONTENT=false',(root/'.env').read_text())
 
+ def test_one_complete_json_per_request_and_no_content_on_stdout(self):
+  output=io.StringIO();handler=logging.StreamHandler(output)
+  handler.setFormatter(ops.JSONFormatter(ZoneInfo('Asia/Shanghai')));handler.addFilter(ops.BufferedSteps())
+  old=list(ops._debug_log.handlers);level=ops._debug_log.level;propagate=ops._debug_log.propagate
+  ops._debug_log.handlers=[handler];ops._debug_log.setLevel(logging.INFO);ops._debug_log.propagate=False
+  self.handler.addFilter(ops.BufferedSteps())
+  try:
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true'}),ops.bind(request_id='msg-one-123',window_id='window-one-123'),ops.capture_request():
+    ops.event('chat_started',question_chars=6)
+    ops.debug_event('chat_input',question='账单支付流程')
+    ops.event('retrieval_completed',matched=True,evidence_count=1)
+    ops.debug_event('retrieval_evidence',query='账单支付流程',evidence=[{'title':'问题12 账单支付流程','content':'知识正文'}])
+    ops.debug_event('model_output',text='原始模型返回')
+    ops.event('answer_validation_failed',**ops.error_fields(ValueError('untrusted citations')))
+    ops.debug_event('chat_output',response={'answer':'最终回复','status':'suggestions'})
+    ops.event('chat_completed',outcome='suggestions',reason='model_unavailable')
+    ops.event('http_completed',status=200,completed=True)
+   self.assertEqual(len(self.records()),1)
+   self.assertNotIn('账单支付流程',self.output.getvalue());self.assertNotIn('最终回复',self.output.getvalue())
+   records=[json.loads(line) for line in output.getvalue().splitlines()];self.assertEqual(len(records),1)
+   r=records[0];self.assertEqual(set(r),{'时间','输入','处理流程','输出'})
+   self.assertEqual(r['输入']['问题'],'账单支付流程');self.assertEqual(r['输入']['请求编号'],'msg-one-123')
+   self.assertEqual(r['输出']['最终响应']['answer'],'最终回复')
+   self.assertEqual(r['输出']['失败节点']['错误分类'],'citation_validation')
+   self.assertTrue(r['输出']['发送完成'])
+   self.assertIn('原始模型返回',json.dumps(r,ensure_ascii=False))
+  finally:
+   ops._debug_log.handlers=old;ops._debug_log.setLevel(level);ops._debug_log.propagate=propagate
+ def test_concurrent_aggregate_documents_do_not_mix_requests(self):
+  self.handler.addFilter(ops.BufferedSteps())
+  def run(index):
+   rid=f'msg-group-{index:08}'
+   with ops.bind(request_id=rid),ops.capture_request():
+    ops.event('chat_started');ops.event('generation_completed',answerable=True)
+    ops.event('chat_completed',outcome='answered',reason='knowledge')
+  with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'false'}),ThreadPoolExecutor(max_workers=8) as pool:list(pool.map(run,range(20)))
+  rows=self.records();self.assertEqual(len(rows),20)
+  self.assertEqual(len({r['输入']['请求编号'] for r in rows}),20)
+  self.assertTrue(all(len(r['处理流程'])==3 for r in rows))
+ def test_query_prefers_one_complete_content_document(self):
+  import subprocess,sys
+  with tempfile.TemporaryDirectory() as temp:
+   safe={'时间':'2026-10-27T10:00:00+08:00','输入':{'请求编号':'msg-document-123'},'处理流程':[], '输出':{'状态':'answered'}}
+   full={**safe,'输入':{'请求编号':'msg-document-123','问题':'账单支付流程'}}
+   (Path(temp)/'app-2026-10-27-1.jsonl').write_text(json.dumps(safe)+'\n')
+   (Path(temp)/'debug-2026-10-27-1.jsonl').write_text(json.dumps(full)+'\n')
+   result=subprocess.run([sys.executable,'scripts/query_logs.py','--directory',temp,'--request-id','msg-document-123',
+      '--debug-content','--report'],capture_output=True,text=True,check=True)
+   parsed=json.loads(result.stdout)
+   self.assertEqual(parsed['输入']['问题'],'账单支付流程')
+
+ def test_configured_date_files_contain_one_aggregate_not_node_rows(self):
+  import subprocess,sys
+  with tempfile.TemporaryDirectory() as temp:
+   program="""
+import os,sys
+os.environ['LOG_DEBUG_CONTENT']='true'
+from app import observability as ops
+ops.configure(sys.argv[1])
+with ops.bind(request_id='msg-real-file-123'),ops.capture_request():
+    ops.event('chat_started')
+    ops.debug_event('chat_input',question='机密问答')
+    ops.event('retrieval_completed',matched=True)
+    ops.debug_event('model_output',text='原始内容')
+    ops.debug_event('chat_output',response={'answer':'最终回答'})
+    ops.event('chat_completed',outcome='answered')
+"""
+   result=subprocess.run([sys.executable,'-c',program,temp],capture_output=True,text=True,check=True)
+   debug=[json.loads(line) for p in Path(temp).glob('debug-*.jsonl') for line in p.read_text().splitlines()]
+   app=[json.loads(line) for p in Path(temp).glob('app-*.jsonl') for line in p.read_text().splitlines()]
+   self.assertEqual(len(debug),1);self.assertEqual(set(debug[0]),{'时间','输入','处理流程','输出'})
+   self.assertEqual(debug[0]['输入']['问题'],'机密问答')
+   self.assertEqual(len([r for r in app if '处理流程' in r]),1)
+   self.assertFalse(any(r.get('event') in ('chat_started','retrieval_completed','chat_completed') for r in app))
+   self.assertNotIn('机密问答',result.stderr);self.assertNotIn('最终回答',result.stderr)
+
 if __name__=='__main__':unittest.main()

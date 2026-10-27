@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import threading
+import time
 from zoneinfo import ZoneInfo
 
 _context = ContextVar('operation_log_context', default={})
@@ -82,6 +83,8 @@ class JSONFormatter(logging.Formatter):
         self.timezone = timezone
 
     def format(self, record):
+        if hasattr(record,'operation_document'):
+            return json.dumps(record.operation_document,ensure_ascii=False,allow_nan=False)
         data = {'timestamp': datetime.fromtimestamp(record.created, self.timezone).isoformat(timespec='milliseconds'),
                 'level': record.levelname, 'event': record.getMessage(), 'pid': os.getpid(),
                 **getattr(record, 'operation_fields', {})}
@@ -147,6 +150,7 @@ def configure(directory=None):
         formatter = JSONFormatter(timezone)
         stream = logging.StreamHandler()
         stream.setFormatter(formatter)
+        stream.addFilter(BufferedSteps())
         _log.addHandler(stream)
         _log.setLevel(logging.INFO)
         _log.propagate = False
@@ -156,7 +160,7 @@ def configure(directory=None):
         if directory:
             try:
                 files = DailyFiles(directory, timezone, days)
-                files.setFormatter(formatter)
+                files.setFormatter(formatter);files.addFilter(BufferedSteps())
                 _log.addHandler(files)
             except OSError:
                 event('log_storage_unavailable', level='ERROR')
@@ -168,7 +172,7 @@ def configure(directory=None):
             if directory:
                 try:
                     debug_files=DailyFiles(directory,timezone,debug_days,prefix='debug')
-                    debug_files.setFormatter(formatter);_debug_log.addHandler(debug_files)
+                    debug_files.setFormatter(formatter);debug_files.addFilter(BufferedSteps());_debug_log.addHandler(debug_files)
                     event('debug_logging_enabled',retention_days=debug_days)
                 except OSError:event('debug_log_storage_unavailable',level='ERROR')
             else:event('debug_log_storage_unavailable',level='ERROR')
@@ -176,12 +180,19 @@ def configure(directory=None):
 
 def event(name, level='INFO', **fields):
     # Call sites supply metadata only. Never pass request bodies or exception strings.
-    _log.log(getattr(logging, level), name, extra={'operation_fields': {**_context.get(), **fields}})
+    values={**_context.get(),**fields}
+    trace=_trace.get()
+    if trace is not None:trace.record(name,values,level)
+    _log.log(getattr(logging,level),name,extra={'operation_fields':values,'request_buffered':trace is not None})
 
 
 def debug_event(name, **fields):
     """Opt-in bounded content snapshots, only in local debug files; never stdout."""
     if os.getenv('LOG_DEBUG_CONTENT','false').lower()!='true' or not _debug_log.handlers:
+        return
+    trace=_trace.get()
+    if trace is not None:
+        trace.snapshot(name,fields)
         return
     try:
         snapshot=json.dumps(fields,ensure_ascii=False,default=lambda value:'<'+type(value).__name__+'>')
@@ -193,6 +204,133 @@ def debug_event(name, **fields):
         snapshot=re.sub(r'(?i)([?&](?:token|api_key|key|password|secret|authorization)=)[^&\s"\\]+',r'\1[REDACTED]',snapshot)
         limit=16000
         truncated=len(snapshot)>limit
-        _debug_log.info(name,extra={'operation_fields':{**_context.get(),'snapshot':snapshot[:limit],'truncated':truncated}})
+        _debug_log.info(name,extra={'operation_fields':{**_context.get(),'snapshot':snapshot[:limit],'truncated':truncated},'request_buffered':trace is not None})
     except Exception:
         event('debug_snapshot_failed',level='WARNING')
+
+
+# A shared mutable buffer is propagated to sync workers and SSE tasks through ContextVar.
+_trace = ContextVar('request_trace', default=None)
+_NODE_NAMES = {
+    'chat_started':'接收问题','question_classified':'问题分类',
+    'retrieval_model_started':'检索模型调用开始','retrieval_model_completed':'检索模型调用完成',
+    'retrieval_model_failed':'检索模型调用失败','retrieval_completed':'知识检索完成',
+    'retrieval_failed':'知识检索失败','model_request_started':'回答模型调用开始',
+    'model_request_completed':'回答模型调用完成','model_request_failed':'回答模型调用失败',
+    'model_finish':'模型结束原因','model_usage':'模型用量',
+    'answer_validation_completed':'回答格式和引用校验通过','answer_validation_failed':'回答格式或引用校验失败',
+    'generation_completed':'生成完成','generation_failed':'生成失败',
+    'final_validation_completed':'最终内容校验','response_persist_started':'保存问答开始',
+    'response_persist_completed':'保存问答完成','response_persist_failed':'保存问答失败',
+    'chat_cache_hit':'复用已保存回答','chat_completed':'问答结束','chat_failed':'问答异常',
+    'response_ready':'回复准备完成','stream_completed':'流式发送完成',
+    'stream_cancelled':'流式发送中断','stream_failed':'流式发送失败','http_completed':'HTTP发送结果',
+    'chat_input':'用户输入','retrieval_evidence':'命中知识内容','model_input':'模型输入',
+    'model_output':'模型原始返回','answer_validation_context':'校验失败上下文',
+    'answer_validated':'校验后回答','chat_output':'最终回答',
+}
+
+_DETAIL_NAMES={
+    'intent':'问题意图','matched':'是否命中','similarity':'向量相似度','threshold':'相似度门槛',
+    'title_matched':'标题匹配','evidence_count':'命中数量','evidence_ids':'知识编号',
+    'rerank_scores':'重排分数','history_messages':'历史消息数','question_chars':'问题字数',
+    'outcome':'处理结果','reason':'原因','model_stage':'模型阶段','answerable':'模型判断可回答',
+    'max_tokens':'最大输出Token','history_and_prompt_messages':'模型输入消息数','finish_reason':'模型结束原因',
+    'response_chars':'模型返回字数','answer_chars':'回复字数','elapsed_ms':'耗时毫秒',
+    'error_code':'错误分类','error_type':'异常类型','upstream_status':'上游HTTP状态',
+    'status':'HTTP状态','completed':'发送完成','success':'成功','citations':'引用数量',
+    'selected_count':'选中知识数','image_count':'图片数量','suggestion_count':'推荐问题数',
+}
+
+
+class BufferedSteps(logging.Filter):
+    def filter(self, record):
+        return not getattr(record,'request_buffered',False)
+
+
+def _safe_snapshot(fields):
+    value=json.dumps(fields,ensure_ascii=False,default=lambda item:'<'+type(item).__name__+'>')
+    for key,secret in os.environ.items():
+        if secret and len(secret)>=8 and re.search(r'SECRET|PASSWORD|TOKEN|API_KEY|PRIVATE_KEY|DATABASE_URL|AUTHORIZATION',key,re.I):
+            value=value.replace(secret,'[REDACTED]')
+    value=re.sub(r'(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+',r'\1[REDACTED]',value)
+    value=re.sub(r'(?i)(https?://)[^\s/@]+:[^\s/@]+@',r'\1[REDACTED]@',value)
+    value=re.sub(r'(?i)([?&](?:token|api_key|key|password|secret|authorization)=)[^&\s"\\]+',r'\1[REDACTED]',value)
+    if len(value)>16000:return {'内容':value[:16000],'已截断':True}
+    return json.loads(value)
+
+
+class RequestTrace:
+    def __init__(self):
+        self.time=datetime.now(ZoneInfo(os.getenv('LOG_TIMEZONE','Asia/Shanghai'))).isoformat(timespec='milliseconds')
+        self.started=time.monotonic()
+        self.lock=threading.RLock();self.closed=False;self.steps=[];self.raw_steps=[];self.truncated=False
+        self.input={};self.output={};self.metadata={};self.failures=[]
+        self.content=os.getenv('LOG_DEBUG_CONTENT','false').lower()=='true'
+
+    def record(self,name,fields,level='INFO'):
+        with self.lock:
+            if self.closed:return
+            for key in ('http_request_id','request_id','session_ref','window_id','tenant_ref','user_ref','question_category'):
+                if fields.get(key) is not None:self.metadata[key]=fields[key]
+            details={_DETAIL_NAMES.get(key,key):value for key,value in fields.items() if key not in self.metadata}
+            if len(self.steps)<80:
+                self.steps.append({'节点':_NODE_NAMES.get(name,name),'事件':name,'级别':level,
+                                   '开始后毫秒':round((time.monotonic()-self.started)*1000,2),'详情':details})
+            else:self.truncated=True
+            if name.endswith('_failed') or name in ('stream_cancelled','api_rejected') or (name=='http_completed' and isinstance(fields.get('status'),int) and fields['status']>=400):
+                self.failures.append({'节点':_NODE_NAMES.get(name,name),'错误分类':fields.get('error_code',name),
+                                      '异常类型':fields.get('error_type')})
+            if name=='chat_completed':self.output.update({'状态':fields.get('outcome'),'原因':fields.get('reason'),'耗时毫秒':fields.get('elapsed_ms')})
+            if name=='http_completed':self.output.update({'HTTP状态':fields.get('status'),'发送完成':fields.get('completed')})
+
+    def snapshot(self,name,fields):
+        if not self.content:return
+        with self.lock:
+            if self.closed:return
+            value=_safe_snapshot(fields)
+            if name=='chat_input':self.input={'问题':value.get('question',value)}
+            elif name=='chat_output':self.output['最终响应']=value.get('response',value)
+            elif len(self.raw_steps)<12:
+                self.raw_steps.append({'节点':_NODE_NAMES.get(name,name),'事件':name,'数据':value,'序号':len(self.steps)})
+            else:self.truncated=True
+
+    def finish(self):
+        with self.lock:
+            if self.closed:return
+            self.closed=True
+            metadata_input={'请求编号':self.metadata.get('request_id') or self.metadata.get('http_request_id'),
+                            '接口请求编号':self.metadata.get('http_request_id'),
+                            '会话编号':self.metadata.get('session_ref'),'窗口编号':self.metadata.get('window_id'),
+                            '企业标识':self.metadata.get('tenant_ref'),'用户标识':self.metadata.get('user_ref'),
+                            '问题分类':self.metadata.get('question_category')}
+            safe_output={key:value for key,value in self.output.items() if key!='最终响应'}
+            if self.failures:safe_output['失败节点']=self.failures[0]
+            if self.truncated:safe_output['流程已截断']=True
+            if '状态' not in safe_output:safe_output['状态']='未完成'
+            # Keep ordinary files and stdout content-free, but still one JSON per request.
+            document={'时间':self.time,'输入':metadata_input,'处理流程':self.steps,'输出':safe_output}
+            _log.info('request_completed',extra={'operation_document':document,'operation_fields':dict(self.metadata)})
+            if self.content and _debug_log.handlers:
+                steps=[];raw=list(self.raw_steps)
+                for index,step in enumerate(self.steps):
+                    while raw and raw[0]['序号']<=index:
+                        item=raw.pop(0);item.pop('序号',None);steps.append(item)
+                    steps.append(step)
+                for item in raw:item.pop('序号',None);steps.append(item)
+                full={'时间':self.time,'输入':{**metadata_input,**self.input},'处理流程':steps,
+                      '输出':{**safe_output,**({'最终响应':self.output['最终响应']} if '最终响应' in self.output else {})}}
+                _debug_log.info('request_completed',extra={'operation_document':full,'operation_fields':dict(self.metadata)})
+
+
+@contextmanager
+def capture_request(enabled=True):
+    current=_trace.get()
+    if current is not None or not enabled:
+        yield current
+        return
+    trace=RequestTrace();token=_trace.set(trace)
+    try:yield trace
+    finally:
+        try:trace.finish()
+        finally:_trace.reset(token)

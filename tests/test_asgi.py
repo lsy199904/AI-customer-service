@@ -134,7 +134,7 @@ class FastAPIContracts(unittest.TestCase):
   from app import observability as ops
   from app.core import Model
   output=io.StringIO();handler=logging.StreamHandler(output)
-  handler.setFormatter(ops.JSONFormatter(ZoneInfo('Asia/Shanghai')))
+  handler.setFormatter(ops.JSONFormatter(ZoneInfo('Asia/Shanghai')));handler.addFilter(ops.BufferedSteps())
   old=list(ops._debug_log.handlers);oldlevel=ops._debug_log.level;propagate=ops._debug_log.propagate
   ops._debug_log.handlers=[handler];ops._debug_log.setLevel(logging.INFO);ops._debug_log.propagate=False
   try:
@@ -145,10 +145,16 @@ class FastAPIContracts(unittest.TestCase):
      r=self.client.post('/v1/sessions/'+sid+'/messages/stream',json={'message':'429错误怎么办','request_id':'debug-nodes-123'},headers=self.headers)
    self.assertEqual(r.status_code,200);self.assertIn('event: complete',r.text)
    records=[json.loads(line) for line in output.getvalue().splitlines()]
-   names=[row['event'] for row in records]
-   for name in ('chat_input','retrieval_evidence','model_input','model_output','answer_validation_context','chat_output'):self.assertIn(name,names)
-   raw=next(row for row in records if row['event']=='model_output')
-   self.assertEqual(json.loads(raw['snapshot'])['text'],'INVALID-MODEL-JSON')
+   self.assertEqual(len(records),1)
+   document=records[0]
+   self.assertEqual(set(document),{'时间','输入','处理流程','输出'})
+   self.assertEqual(document['输入']['问题'],'429错误怎么办')
+   names=[step['事件'] for step in document['处理流程']]
+   for name in ('retrieval_evidence','model_input','model_output','answer_validation_context','chat_completed','stream_completed'):self.assertIn(name,names)
+   raw=next(step for step in document['处理流程'] if step['事件']=='model_output')
+   self.assertEqual(raw['数据']['text'],'INVALID-MODEL-JSON')
+   self.assertEqual(document['输出']['失败节点']['错误分类'],'invalid_json')
+   self.assertEqual(document['输出']['HTTP状态'],200)
    normal=json.dumps([record.operation_fields for record in logs.records],ensure_ascii=False)
    self.assertNotIn('INVALID-MODEL-JSON',normal);self.assertNotIn('429错误怎么办',normal)
    stages=[record.msg for record in logs.records]
