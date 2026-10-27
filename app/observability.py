@@ -217,6 +217,8 @@ _NODE_NAMES = {
     'retrieval_model_failed':'检索模型调用失败','retrieval_completed':'知识检索完成',
     'retrieval_failed':'知识检索失败','model_request_started':'回答模型调用开始',
     'model_request_completed':'回答模型调用完成','model_request_failed':'回答模型调用失败',
+    'answer_repair_started':'回答格式修复开始','answer_repair_completed':'回答格式修复成功',
+    'answer_repair_failed':'回答格式修复失败','model_json_mode_unsupported':'模型接口不支持JSON模式',
     'model_finish':'模型结束原因','model_usage':'模型用量',
     'answer_validation_completed':'回答格式和引用校验通过','answer_validation_failed':'回答格式或引用校验失败',
     'generation_completed':'生成完成','generation_failed':'生成失败',
@@ -305,7 +307,9 @@ class RequestTrace:
                             '企业标识':self.metadata.get('tenant_ref'),'用户标识':self.metadata.get('user_ref'),
                             '问题分类':self.metadata.get('question_category')}
             safe_output={key:value for key,value in self.output.items() if key!='最终响应'}
-            if self.failures:safe_output['失败节点']=self.failures[0]
+            if self.failures:
+                recovered=self.output.get('状态')=='answered' and any(step.get('事件')=='answer_repair_completed' for step in self.steps)
+                safe_output['已恢复异常' if recovered else '失败节点']=self.failures[0]
             if self.truncated:safe_output['流程已截断']=True
             if '状态' not in safe_output:safe_output['状态']='未完成'
             # Keep ordinary files and stdout content-free, but still one JSON per request.

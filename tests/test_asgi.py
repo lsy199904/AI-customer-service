@@ -163,6 +163,33 @@ class FastAPIContracts(unittest.TestCase):
   finally:
    ops._debug_log.handlers=old;ops._debug_log.setLevel(oldlevel);ops._debug_log.propagate=propagate
 
+ def test_invalid_model_format_has_specific_reason(self):
+  from app.core import Model
+  sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
+  service=self.app.state.service;service.config.mode='llm';service.model=Model(service.config)
+  with patch.object(Model,'_complete_request',return_value='INVALID') as calls:
+   response=self.client.post('/v1/sessions/'+sid+'/messages',json={'message':'429错误怎么办','request_id':'invalid-format-123'},headers=self.headers)
+  self.assertEqual(response.json()['reason'],'model_invalid_response');self.assertEqual(calls.call_count,2)
+
+ def test_invalid_model_format_repaired_before_delivery(self):
+  from app.core import Model
+  sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
+  service=self.app.state.service;service.config.mode='llm';service.model=Model(service.config)
+  count=0
+  def complete(model,messages):
+   nonlocal count
+   count+=1
+   if count==1:return 'INVALID'
+   payload=json.loads(messages[-2]['content'])
+   return json.dumps({'answerable':True,'answer':'请检查限流配置。','citation_ids':[payload['evidence'][0]['id']],'image_ids':[]})
+  with patch.object(Model,'_complete_request',complete),self.assertLogs('assistant.operations',level='INFO') as logs:
+   response=self.client.post('/v1/sessions/'+sid+'/messages',json={'message':'429错误怎么办','request_id':'repaired-format-123'},headers=self.headers)
+  self.assertEqual(response.json()['status'],'answered');self.assertEqual(count,2)
+  self.assertTrue(response.json()['citations'])
+  document=next(record.operation_document for record in logs.records if record.msg=='request_completed')
+  self.assertIn('已恢复异常',document['输出']);self.assertNotIn('失败节点',document['输出'])
+  self.assertTrue(any(step['事件']=='answer_repair_completed' for step in document['处理流程']))
+
 class LangChainContracts(unittest.TestCase):
  def backend(self):
   class Knowledge:

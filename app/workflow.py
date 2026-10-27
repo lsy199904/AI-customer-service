@@ -165,7 +165,9 @@ class SupportWorkflow:
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             s.observe('generation_failed',0)
             if conversation:return {'answer':REPLIES[intent],'success':True,'reason':'conversation_fallback'}
-            return {'reason':'model_unavailable','answer':'我这边暂时没能完成回答，请稍后重试，也可以试试下面的问题。'}
+            from .core import AnswerValidationError
+            reason='model_invalid_response' if isinstance(error,AnswerValidationError) else 'model_unavailable'
+            return {'reason':reason,'answer':'我这边暂时没能完成回答，请稍后重试，也可以试试下面的问题。'}
         finally:s.observe('generation',time.monotonic()-started)
 
     def validate(self,state:State,runtime:Runtime[Context]):
