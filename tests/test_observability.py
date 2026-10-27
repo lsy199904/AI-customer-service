@@ -116,4 +116,78 @@ class OperationalLogs(unittest.TestCase):
      '--request-id','message-123','--errors'],capture_output=True,text=True,check=True)
    self.assertEqual(len(result.stdout.splitlines()),1)
 
+ def test_debug_snapshots_are_opt_in_separate_and_redacted(self):
+  output=io.StringIO();handler=logging.StreamHandler(output)
+  handler.setFormatter(ops.JSONFormatter(ZoneInfo('Asia/Shanghai')))
+  previous=list(ops._debug_log.handlers);level=ops._debug_log.level;propagate=ops._debug_log.propagate
+  ops._debug_log.handlers=[handler];ops._debug_log.setLevel(logging.INFO);ops._debug_log.propagate=False
+  try:
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'false'}):ops.debug_event('chat_input',question='原始问题')
+   self.assertEqual(output.getvalue(),'')
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true','MODEL_API_KEY':'secret-model-key'}):
+    with ops.bind(request_id='msg-debug-123'):
+     ops.debug_event('model_output',text='业务回答 secret-model-key Bearer unrelated-token')
+   row=json.loads(output.getvalue())
+   self.assertEqual(row['request_id'],'msg-debug-123')
+   self.assertIn('业务回答',row['snapshot']);self.assertNotIn('secret-model-key',row['snapshot'])
+   self.assertNotIn('unrelated-token',row['snapshot']);self.assertNotIn('业务回答',self.output.getvalue())
+   output.truncate(0);output.seek(0)
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true'}):ops.debug_event('long',text='长'*20000)
+   row=json.loads(output.getvalue());self.assertTrue(row['truncated']);self.assertEqual(len(row['snapshot']),16000)
+  finally:
+   ops._debug_log.handlers=previous;ops._debug_log.setLevel(level);ops._debug_log.propagate=propagate
+ def test_debug_retention_does_not_delete_operational_files(self):
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);app=root/'app-2026-10-01-1.jsonl';app.write_text('keep')
+   old=root/'debug-2026-10-01-1.jsonl';old.write_text('remove')
+   handler=ops.DailyFiles(root,ZoneInfo('Asia/Shanghai'),days=3,prefix='debug')
+   handler.setFormatter(ops.JSONFormatter(ZoneInfo('Asia/Shanghai')))
+   record=logging.LogRecord('debug',logging.INFO,'',0,'debug_event',(),None)
+   record.created=datetime.fromisoformat('2026-10-27T10:00:00+08:00').timestamp()
+   handler.handle(record);handler.close()
+   self.assertTrue(app.exists());self.assertFalse(old.exists())
+ def test_report_pinpoints_validation_failure_and_includes_optional_contents(self):
+  import subprocess,sys
+  with tempfile.TemporaryDirectory() as temp:
+   records=[{'timestamp':'2026-10-27T10:00:00+08:00','event':'retrieval_completed','matched':True,'evidence_count':1},
+    {'timestamp':'2026-10-27T10:00:01+08:00','event':'answer_validation_failed','error_code':'citation_validation'},
+    {'timestamp':'2026-10-27T10:00:02+08:00','event':'chat_completed','outcome':'suggestions','reason':'model_unavailable'}]
+   for r in records:r['request_id']='msg-report-123'
+   (Path(temp)/'app-2026-10-27-1.jsonl').write_text('\n'.join(json.dumps(r) for r in records)+'\n')
+   snapshot={'timestamp':'2026-10-27T10:00:00+08:00','event':'chat_input','request_id':'msg-report-123',
+       'snapshot':json.dumps({'question':'账单支付流程'},ensure_ascii=False),'truncated':False}
+   (Path(temp)/'debug-2026-10-27-1.jsonl').write_text(json.dumps(snapshot)+'\n')
+   base=[sys.executable,'scripts/query_logs.py','--directory',temp,'--request-id','msg-report-123','--report']
+   r=subprocess.run(base,capture_output=True,text=True,check=True)
+   self.assertIn('首个记录到的失败节点：回答格式或引用校验失败',r.stdout)
+   self.assertNotIn('账单支付流程',r.stdout)
+   r=subprocess.run(base+['--debug-content'],capture_output=True,text=True,check=True)
+   self.assertIn('账单支付流程',r.stdout);self.assertIn('【用户输入】',r.stdout)
+
+ def test_normal_logs_purge_old_debug_content_when_capture_disabled(self):
+  with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'false','LOG_DEBUG_RETENTION_DAYS':'3'}):
+   root=Path(temp);old=root/'debug-2026-10-01-1.jsonl';old.write_text('expired')
+   recent=root/'debug-2026-10-26-1.jsonl';recent.write_text('recent')
+   handler=ops.DailyFiles(root,ZoneInfo('Asia/Shanghai'),days=30)
+   handler.setFormatter(ops.JSONFormatter(ZoneInfo('Asia/Shanghai')))
+   record=logging.LogRecord('app',logging.INFO,'',0,'event',(),None)
+   record.created=datetime.fromisoformat('2026-10-27T10:00:00+08:00').timestamp()
+   handler.handle(record);handler.close()
+   self.assertFalse(old.exists());self.assertTrue(recent.exists())
+ def test_debug_configuration_preserves_secret_and_requires_recreation(self):
+  import subprocess,sys,shutil
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);(root/'scripts').mkdir()
+   shutil.copy2('scripts/configure_debug_logging.py',root/'scripts/configure_debug_logging.py')
+   (root/'.env').write_text('AUTH_SECRET=do-not-print-this-secret\nLOG_DEBUG_CONTENT=false\n')
+   r=subprocess.run([sys.executable,str(root/'scripts/configure_debug_logging.py'),'enable'],capture_output=True,text=True,check=True)
+   self.assertIn('LOG_DEBUG_CONTENT=true',(root/'.env').read_text())
+   self.assertIn('AUTH_SECRET=do-not-print-this-secret',(root/'.env').read_text())
+   self.assertNotIn('do-not-print',r.stdout);self.assertIn('重建应用容器',r.stdout)
+   backups=list((root/'backups').glob('*/env.before'));self.assertEqual(len(backups),1)
+   self.assertEqual(backups[0].stat().st_mode&0o777,0o600)
+   subprocess.run([sys.executable,str(root/'scripts/configure_debug_logging.py'),'disable'],capture_output=True,text=True,check=True)
+   self.assertEqual((root/'.env').read_text().count('LOG_DEBUG_CONTENT='),1)
+   self.assertIn('LOG_DEBUG_CONTENT=false',(root/'.env').read_text())
+
 if __name__=='__main__':unittest.main()

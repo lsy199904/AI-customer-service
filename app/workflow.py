@@ -14,7 +14,7 @@ from langgraph.graph import StateGraph,START,END
 from langgraph.runtime import Runtime
 from langsmith import tracing_context
 from .conversation import REPLIES,NO_ANSWER,intent_of,contextual_query,retrieval_query,sensitive_topic,rejected_recommendations,recommended_questions
-from .observability import event,error_fields
+from .observability import event,error_fields,debug_event
 from .tools import ToolContext
 
 FALLBACK=NO_ANSWER
@@ -104,6 +104,7 @@ class SupportWorkflow:
             evidence=found['evidence'];candidates=self.service.media.candidates(state['question'],evidence)
             report=found['retrieval']
             hits=report.get('hits',[])
+            debug_event('retrieval_evidence',query=query,evidence=evidence,report={k:v for k,v in report.items() if k!='hits'})
             event('retrieval_completed',matched=report.get('matched'),similarity=report.get('similarity'),
                   threshold=report.get('threshold'),title_matched=report.get('title_matched'),
                   evidence_count=len(evidence),evidence_ids=[r['id'] for r in evidence],
@@ -179,6 +180,9 @@ class SupportWorkflow:
                 related_titles=state['retrieval'].get('_suggestion_titles',[])),
                 actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
             if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
+        event('final_validation_completed',success=state['success'],reason=state['reason'],
+              selected_count=len(values.get('selected',state['selected'])),image_count=len(values['images']),
+              suggestion_count=len(values['suggestions']))
         return values
 
     def invoke(self,state,observer=None,cancelled=None):

@@ -241,22 +241,26 @@ class Model:
             return chain.invoke({'history':[(h['role'],h['content']) for h in history[-2*self.config.context_rounds:]],'payload':payload})
 
     def _validate_response(self,text,evidence,media,intent):
-        from .observability import event,error_fields
+        from .observability import event,error_fields,debug_event
         try:
             result=self.parse_answer(text,evidence,media,intent)
+            debug_event('answer_validated',result=result)
             event('answer_validation_completed',answerable=result['answerable'],citations=len(result['citation_ids']))
             return result
         except Exception as error:
+            debug_event('answer_validation_context',response=text,evidence_ids=[row['id'] for row in evidence],allowed_images=[row['id'] for row in media],**error_fields(error))
             event('answer_validation_failed',level='ERROR',response_chars=len(text) if isinstance(text,str) else 0,
                   **error_fields(error))
             raise
 
     def complete(self,messages):
-        from .observability import event,error_fields
+        from .observability import event,error_fields,debug_event
         started=time.monotonic()
+        debug_event('model_input',messages=messages)
         event('model_request_started',history_and_prompt_messages=len(messages),max_tokens=int(os.getenv('MODEL_MAX_TOKENS','2048')))
         try:
             result=self._complete_request(messages)
+            debug_event('model_output',text=result)
             event('model_request_completed',elapsed_ms=round((time.monotonic()-started)*1000,2),response_chars=len(result))
             return result
         except Exception as error:
@@ -531,6 +535,7 @@ class Service:
         return row
 
     def _chat(self, actor, sid, body, observer=None, cancelled=None):
+        from .observability import event,error_fields
         if set(body)-{'message','request_id'}:
             raise APIError(400,'invalid_fields','仅接受 message/request_id')
         question=body.get('message'); rid=body.get('request_id')
@@ -576,15 +581,23 @@ class Service:
                 'citations':[self.citation(r) for r in state['selected']],
                 'suggestions':state.get('suggestions',[]),'actions':state.get('actions',[]),
                 'handoff':state['intent']=='handoff','contact':self.contact() if state['intent']=='handoff' else None,'created_at':time.time()}
-            with self.lock, self.db:
-                self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
-                    (str(uuid.uuid4()),sid,rid,'user',question,'{}',result['created_at']))
-                self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
-                    (result['message_id'],sid,rid,'assistant',answer,json.dumps(result,ensure_ascii=False),result['created_at']))
-                self.db.execute('UPDATE sessions SET updated=? WHERE id=?',(result['created_at'],sid))
-                self.db.execute('INSERT INTO workflow_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated=excluded.updated',(key,sid,rid,'complete',result['created_at'],result['created_at']))
+            event('response_persist_started')
+            try:
+                with self.lock, self.db:
+                    self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
+                        (str(uuid.uuid4()),sid,rid,'user',question,'{}',result['created_at']))
+                    self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
+                        (result['message_id'],sid,rid,'assistant',answer,json.dumps(result,ensure_ascii=False),result['created_at']))
+                    self.db.execute('UPDATE sessions SET updated=? WHERE id=?',(result['created_at'],sid))
+                    self.db.execute('INSERT INTO workflow_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated=excluded.updated',(key,sid,rid,'complete',result['created_at'],result['created_at']))
+            except Exception as error:
+                event('response_persist_failed',level='ERROR',**error_fields(error))
+                raise
+            event('response_persist_completed')
             try:self._workflow.saver.delete_thread(key)
-            except Exception:self.observe('checkpoint_cleanup_failed',0)
+            except Exception as error:
+                self.observe('checkpoint_cleanup_failed',0)
+                event('checkpoint_cleanup_failed',level='WARNING',**error_fields(error))
             return result
         finally:
             with self.lock:
@@ -596,7 +609,7 @@ class Service:
             self.metrics[stage+'_seconds']+=elapsed
 
     def chat(self,actor,sid,body,observer=None,cancelled=None):
-        from .observability import bind,event,error_fields,reference,question_category
+        from .observability import bind,event,error_fields,reference,question_category,debug_event
         rid=body.get('request_id')
         safe_rid=rid if isinstance(rid,str) and re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',rid) else 'invalid'
         question=body.get('message')
@@ -606,8 +619,10 @@ class Service:
                   user_ref=reference(self.config.secret,str(actor.get('tenant_id',''))+'\0'+str(actor.get('sub',''))),
                   question_category=question_category(question) if isinstance(question,str) else 'invalid'):
             event('chat_started',question_chars=len(question) if isinstance(question,str) else 0)
+            debug_event('chat_input',question=question)
             try:
                 result=self._dispatch_chat(actor,sid,body,observer,cancelled)
+                debug_event('chat_output',response=result)
                 retrieval=result.get('retrieval',{})
                 event('chat_completed',level='INFO' if result['status']=='answered' else 'WARNING',
                       intent=result.get('intent'),outcome=result['status'],reason=result.get('reason'),

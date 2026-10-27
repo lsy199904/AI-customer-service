@@ -1,4 +1,4 @@
-"""Structured operational logs without customer content or upstream payloads."""
+"""Metadata-only operational logs plus explicitly enabled local debug snapshots."""
 from contextvars import ContextVar
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 _context = ContextVar('operation_log_context', default={})
 _log = logging.getLogger('assistant.operations')
+_debug_log = logging.getLogger('assistant.debug_content')
 _lock = threading.Lock()
 _VALIDATION = {
     'invalid answer schema': 'answer_schema', 'invalid answer': 'answer_schema',
@@ -60,6 +61,7 @@ def error_fields(error):
             status = getattr(getattr(current, 'response', None), 'status_code', None)
         if isinstance(status, int) and 100 <= status <= 599:
             return {**result, 'error_code': 'upstream_http', 'upstream_status': status}
+        if name=='RequestCancelled':return {**result,'error_code':'cancelled'}
         if 'Timeout' in name:
             return {**result, 'error_code': 'timeout'}
         if name in ('ConnectError', 'APIConnectionError', 'NetworkError', 'RemoteProtocolError'):
@@ -88,8 +90,10 @@ class JSONFormatter(logging.Formatter):
 
 class DailyFiles(logging.Handler):
     """Each worker writes its own files; date + size rotation and finite retention."""
-    def __init__(self, directory, timezone, days=30, max_bytes=20*1024*1024):
+    def __init__(self, directory, timezone, days=30, max_bytes=20*1024*1024, prefix='app'):
         super().__init__()
+        if prefix not in ('app','debug'):raise ValueError('invalid log prefix')
+        self.prefix = prefix
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.timezone, self.days, self.max_bytes = timezone, days, max_bytes
@@ -101,17 +105,21 @@ class DailyFiles(logging.Handler):
             if self.day != day:
                 if self.writer:
                     self.writer.close()
-                filename = self.directory / f'app-{day.isoformat()}-{os.getpid()}.jsonl'
+                filename = self.directory / f'{self.prefix}-{day.isoformat()}-{os.getpid()}.jsonl'
                 fd = os.open(filename, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
                 os.close(fd)
                 self.writer = RotatingFileHandler(filename, maxBytes=self.max_bytes, backupCount=4, encoding='utf-8')
                 self.writer.setFormatter(self.formatter)
                 self.day = day
-                cutoff = (day - timedelta(days=self.days-1)).isoformat()
+                policies={self.prefix:self.days}
+                if self.prefix=='app':
+                    # Purge expired content even after content collection is disabled.
+                    policies['debug']=max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3'))))
                 for path in self.directory.iterdir():
-                    match = re.fullmatch(r'app-(\d{4}-\d{2}-\d{2})-\d+\.jsonl(?:\.[1-4])?', path.name)
-                    if match and match[1] < cutoff and path.is_file() and not path.is_symlink():
-                        path.unlink()
+                    match = re.fullmatch(r'(app|debug)-(\d{4}-\d{2}-\d{2})-\d+\.jsonl(?:\.[1-4])?', path.name)
+                    if not match or match[1] not in policies:continue
+                    cutoff=(day-timedelta(days=policies[match[1]]-1)).isoformat()
+                    if match[2]<cutoff and path.is_file() and not path.is_symlink():path.unlink()
             self.writer.emit(record)
             # RotatingFileHandler creates a new file after size rollover.
             os.chmod(self.writer.baseFilename, 0o600)
@@ -153,8 +161,38 @@ def configure(directory=None):
             except OSError:
                 event('log_storage_unavailable', level='ERROR')
         event('logging_configured', retention_days=days, timezone=str(timezone))
+        if os.getenv('LOG_DEBUG_CONTENT','false').lower()=='true':
+            debug_days=int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3'))
+            if not 1<=debug_days<=30:raise ValueError('LOG_DEBUG_RETENTION_DAYS must be 1..30')
+            _debug_log.setLevel(logging.INFO);_debug_log.propagate=False
+            if directory:
+                try:
+                    debug_files=DailyFiles(directory,timezone,debug_days,prefix='debug')
+                    debug_files.setFormatter(formatter);_debug_log.addHandler(debug_files)
+                    event('debug_logging_enabled',retention_days=debug_days)
+                except OSError:event('debug_log_storage_unavailable',level='ERROR')
+            else:event('debug_log_storage_unavailable',level='ERROR')
 
 
 def event(name, level='INFO', **fields):
     # Call sites supply metadata only. Never pass request bodies or exception strings.
     _log.log(getattr(logging, level), name, extra={'operation_fields': {**_context.get(), **fields}})
+
+
+def debug_event(name, **fields):
+    """Opt-in bounded content snapshots, only in local debug files; never stdout."""
+    if os.getenv('LOG_DEBUG_CONTENT','false').lower()!='true' or not _debug_log.handlers:
+        return
+    try:
+        snapshot=json.dumps(fields,ensure_ascii=False,default=lambda value:'<'+type(value).__name__+'>')
+        for key,value in os.environ.items():
+            if value and len(value)>=8 and re.search(r'SECRET|PASSWORD|TOKEN|API_KEY|PRIVATE_KEY|DATABASE_URL|AUTHORIZATION',key,re.I):
+                snapshot=snapshot.replace(value,'[REDACTED]')
+        snapshot=re.sub(r'(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+',r'\1[REDACTED]',snapshot)
+        snapshot=re.sub(r'(?i)(https?://)[^\s/@]+:[^\s/@]+@',r'\1[REDACTED]@',snapshot)
+        snapshot=re.sub(r'(?i)([?&](?:token|api_key|key|password|secret|authorization)=)[^&\s"\\]+',r'\1[REDACTED]',snapshot)
+        limit=16000
+        truncated=len(snapshot)>limit
+        _debug_log.info(name,extra={'operation_fields':{**_context.get(),'snapshot':snapshot[:limit],'truncated':truncated}})
+    except Exception:
+        event('debug_snapshot_failed',level='WARNING')

@@ -293,6 +293,7 @@ def create_app(config=None,model=None,service=None):
               responses={200:{'description':'Authenticated SSE: status, delta, complete, error',
                               'content':{'text/event-stream':{'schema':{'type':'string'}}}}})
     async def chat_stream(sid:str,body:ChatBody,request:Request,user=Depends(actor),service=Depends(current_service)):
+        from .observability import event as log_event,error_fields
         # Ownership errors remain HTTP errors, before SSE headers have been sent.
         await anyio.to_thread.run_sync(functools.partial(service.owned,user,sid))
         async def events():
@@ -314,12 +315,21 @@ def create_app(config=None,model=None,service=None):
                         except asyncio.CancelledError:pass
                         if not task.done():yield ': heartbeat\n\n'
                 result=await task
+                log_event('response_ready',request_id=body.request_id,outcome=result['status'],
+                          answer_chars=len(result['answer']),**request.scope.get('state',{}).get('actor_log_fields',{}))
                 # Only validated answers are streamed. Raw model JSON/thinking is never exposed.
                 for i in range(0,len(result['answer']),128):yield event('delta',{'text':result['answer'][i:i+128]})
                 yield event('complete',result)
-            except APIError as error:yield event('error',{'code':error.code,'message':error.message})
-            except asyncio.CancelledError:raise
-            except Exception:yield event('error',{'code':'service_unavailable','message':'服务暂时不可用，请重试。'})
+                log_event('stream_completed',request_id=body.request_id,**request.scope.get('state',{}).get('actor_log_fields',{}))
+            except APIError as error:
+                log_event('stream_failed',level='ERROR',request_id=body.request_id,error_code=error.code)
+                yield event('error',{'code':error.code,'message':error.message})
+            except asyncio.CancelledError:
+                log_event('stream_cancelled',level='WARNING',request_id=body.request_id)
+                raise
+            except Exception as error:
+                log_event('stream_failed',level='ERROR',request_id=body.request_id,**error_fields(error))
+                yield event('error',{'code':'service_unavailable','message':'服务暂时不可用，请重试。'})
             finally:
                 cancel.set()
                 # Consume exceptions even when the HTTP client disconnected during inference.

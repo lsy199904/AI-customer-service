@@ -128,6 +128,35 @@ class FastAPIContracts(unittest.TestCase):
   self.assertGreater(error['evidence_count'],0)
   self.assertNotIn('429错误怎么办',json.dumps([r.operation_fields for r in logs.records],ensure_ascii=False))
 
+ def test_debug_nodes_capture_invalid_model_output_without_polluting_ops(self):
+  import io,logging,os
+  from zoneinfo import ZoneInfo
+  from app import observability as ops
+  from app.core import Model
+  output=io.StringIO();handler=logging.StreamHandler(output)
+  handler.setFormatter(ops.JSONFormatter(ZoneInfo('Asia/Shanghai')))
+  old=list(ops._debug_log.handlers);oldlevel=ops._debug_log.level;propagate=ops._debug_log.propagate
+  ops._debug_log.handlers=[handler];ops._debug_log.setLevel(logging.INFO);ops._debug_log.propagate=False
+  try:
+   sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
+   service=self.app.state.service;service.config.mode='llm';service.model=Model(service.config)
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true'}),patch.object(Model,'_complete_request',return_value='INVALID-MODEL-JSON'):
+    with self.assertLogs('assistant.operations',level='INFO') as logs:
+     r=self.client.post('/v1/sessions/'+sid+'/messages/stream',json={'message':'429错误怎么办','request_id':'debug-nodes-123'},headers=self.headers)
+   self.assertEqual(r.status_code,200);self.assertIn('event: complete',r.text)
+   records=[json.loads(line) for line in output.getvalue().splitlines()]
+   names=[row['event'] for row in records]
+   for name in ('chat_input','retrieval_evidence','model_input','model_output','answer_validation_context','chat_output'):self.assertIn(name,names)
+   raw=next(row for row in records if row['event']=='model_output')
+   self.assertEqual(json.loads(raw['snapshot'])['text'],'INVALID-MODEL-JSON')
+   normal=json.dumps([record.operation_fields for record in logs.records],ensure_ascii=False)
+   self.assertNotIn('INVALID-MODEL-JSON',normal);self.assertNotIn('429错误怎么办',normal)
+   stages=[record.msg for record in logs.records]
+   self.assertIn('answer_validation_failed',stages);self.assertIn('final_validation_completed',stages)
+   self.assertIn('response_ready',stages);self.assertIn('stream_completed',stages)
+  finally:
+   ops._debug_log.handlers=old;ops._debug_log.setLevel(oldlevel);ops._debug_log.propagate=propagate
+
 class LangChainContracts(unittest.TestCase):
  def backend(self):
   class Knowledge:
