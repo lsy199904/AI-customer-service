@@ -9,7 +9,7 @@ _LABELS = {
     'question_classified':'问题分类', 'retrieval_model_started':'开始检索模型调用',
     'retrieval_model_completed':'检索模型完成', 'retrieval_model_failed':'检索模型失败',
     'retrieval_completed':'知识检索完成', 'retrieval_failed':'知识检索失败',
-    'model_request_started':'开始生成回答', 'model_finish':'模型停止原因',
+    'model_request_started':'开始生成回答', 'model_first_token':'模型首段文字到达','response_assembled':'回复与配图组装完成','model_finish':'模型停止原因',
     'model_usage':'模型用量', 'model_request_completed':'收到模型返回',
     'model_request_failed':'模型请求失败', 'answer_validation_completed':'回答格式及引用校验通过',
     'answer_validation_failed':'回答格式或引用校验失败', 'generation_completed':'生成处理完成',

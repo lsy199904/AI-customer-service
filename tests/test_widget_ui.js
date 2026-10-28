@@ -74,6 +74,29 @@ const {chromium}=require('playwright');
   if(process.env.UI_SCREENSHOT)await page.locator('#smarttitu-panel').screenshot({path:process.env.UI_SCREENSHOT.replace(/\.png$/,'-手机.png')});
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('.message').last().evaluate(el=>getComputedStyle(el).animationName),'none');
+  await page.evaluate(()=>{
+   const original=window.fetch;
+   window.fetch=async(url,options)=>{
+    if(String(url).endsWith('/v1/bootstrap')){const response=await original(url,options),body=await response.json();body.capabilities.streaming=true;return new Response(JSON.stringify(body));}
+    if(String(url).endsWith('/messages/stream')){
+     const encoder=new TextEncoder(),request=JSON.parse(options.body);
+     return new Response(new ReadableStream({start(controller){
+      const emit=(kind,data)=>controller.enqueue(encoder.encode('event: '+kind+'\n'+'data: '+JSON.stringify(data)+'\n\n'));
+      emit('status',{stage:'generating'});emit('delta',{text:'第一段文字'});
+      window.finishStream=()=>{emit('delta',{text:'，第二段文字。'});emit('complete',{answer:'第一段文字，第二段文字。',status:'answered',request_id:request.request_id,images:[{id:'plan',title:'套餐版本介绍',url:'/media/hub-03.png'}],citations:[{id:'KB-test',title:'操作审计'}]});controller.close();};
+     }}),{headers:{'Content-Type':'text/event-stream'}});
+    }
+    return original(url,options);
+   };
+   window.pendingStream=window.SmartTITUAssistant.ask('真正流式测试');
+  });
+  await page.locator('.message.streaming .bubble').waitFor();
+  assert.equal(await page.locator('.message.streaming .bubble').innerText(),'第一段文字');
+  assert.equal(await page.locator('.message.streaming .image-button').count(),0);
+  await page.evaluate(async()=>{window.finishStream();await window.pendingStream;});
+  assert.equal(await page.locator('.message.streaming').count(),0);
+  assert.equal(await page.locator('.message.assistant .bubble').last().innerText(),'第一段文字，第二段文字。');
+  assert.equal(await page.locator('.message.assistant').last().locator('.image-button').count(),1);
   assert.deepEqual(errors,[]);
   console.log('Browser checks passed: message avatars and roles, manual labels, clickable URLs, correlation headers, feedback IDs and mobile width');
  } finally {await browser.close();}

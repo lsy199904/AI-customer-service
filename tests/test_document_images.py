@@ -82,13 +82,15 @@ class DocumentImageTests(unittest.TestCase):
  def test_general_question_does_not_search_global_image_keywords(self):
   self.service.media.rows['enterprise-register']['keywords']=['使用']
   self.assertEqual(self.service.media.candidates('快速使用流程',[]),[])
- def test_image_only_answer_cannot_bypass_current_evidence_citations(self):
-  import json
+ def test_plain_text_model_uses_server_owned_images_and_sources(self):
+  from unittest.mock import patch
   from app.core import Model
-  result={'answerable':True,'answer':'看这张图。','citation_ids':[],'image_ids':['enterprise-register']}
   row=next(iter(self.service.knowledge.rows.values()))
-  with self.assertRaises(ValueError):
-   Model(self.service.config).parse_answer(json.dumps(result),[row],self.service.media.bound([row]),'knowledge')
+  media=self.service.media.bound([row])
+  with patch.object(Model,'_complete_request',return_value='看这张图。'):
+   result=Model(self.service.config).answer('注册流程',[],[row],{'_media':media})
+  self.assertEqual(result['citation_ids'],[row['id']])
+  self.assertEqual(result['image_ids'],[item['id'] for item in media])
  def test_revision_changes_without_rebinding_image(self):
   before=next(iter(self.service.knowledge.rows));self.file.write_text(self.file.read_text()+'\n来源：修订后的注册流程。\n',encoding='utf-8')
   calls=len(self.embed.calls);ingest_documents(self.config,embedder=self.embed)

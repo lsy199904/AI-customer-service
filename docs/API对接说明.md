@@ -93,7 +93,7 @@ FastAPI升级保持现有业务接口不变。新增GET /ready（应用及数据
 
 ## 流式响应与运维检查
 
-POST /v1/sessions/{sid}/messages/stream 与原 messages 使用相同Bearer、message和request_id；返回 text/event-stream。事件包括 status（stage）、delta（已校验答案的text）、complete（与原JSON接口相同的完整响应）、error（code/message）。HTTP鉴权/归属失败在SSE头之前返回；流内失败以error事件返回，客户端不能只检查HTTP200。断线后重用同一个request_id重试，避免重复消息。
+POST /v1/sessions/{sid}/messages/stream 与原 messages 使用相同Bearer、message和request_id；返回 text/event-stream。事件包括 status（stage）、delta（模型实时生成的正文text）、complete（与原JSON接口相同的完整响应）、error（code/message）。HTTP鉴权/归属失败在SSE头之前返回；流内失败以error事件返回，客户端不能只检查HTTP200。断线后重用同一个request_id重试，避免重复消息。
 
 GET /ready 检查关系库、非空活动知识和Milvus当前集合；GET /metrics 需要独立 X-Operations-Token，不使用浏览器登录token。模型协议通过 manage.py doctor --models 检查。iframe、原JSON接口及来源下载路径保持兼容。
 
@@ -124,3 +124,9 @@ status有三种：answered正常回答；suggestions尚未回答、等待用户�
 来源对象保留原有 `title`，新增 `display_title`（例如 `用户手册：操作审计`）和 `section_title`。前端建议展示 `display_title`，引用 ID 与来源访问权限不变。历史响应没有新字段时，可清理原 `title` 的问题序号再添加“用户手册：”前缀。
 
 聊天请求可将正文 `request_id` 同时放入 `X-Request-ID`，并通过 `X-Widget-ID` 携带每次页面加载生成的随机窗口编号。窗口编号仅用于运营排查，不作为身份或访问权限。接口响应继续返回 `X-Request-ID`，详情见 [运营日志与身份对接](运营日志与身份对接.md)。
+
+正文采用真实模型流式输出，不再要求模型生成JSON，不进行模型答案JSON解析、引用字段校验或格式重试。提示词约束依据本轮资料回答、不要输出思考过程或图片占位。`citations` 来自本轮选用的检索证据，`images` 来自关联的已登记配图，不再由模型生成ID。
+
+前端收到delta后立即追加到当前机器人消息；complete到达后以其中的最终answer定稿并附加图片和来源，不额外新建重复答案。若生成中途失败，complete可能携带降级提示，应以complete结果替换临时正文；如果收到error或流中断且没有complete，移除临时消息并提示重试。同一个请求编号重试仍复用已保存结果。HTTP JSON接口、SSE事件负载和日志文件仍用JSON传输，这与模型直接输出普通文本是两回事。
+
+请确保反向代理关闭该SSE路径的响应缓冲和压缩缓冲。服务已设置 `X-Accel-Buffering: no` 和心跳；若直连能实时显示而经过代理一次出现，应检查代理配置。

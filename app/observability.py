@@ -230,6 +230,7 @@ _NODE_NAMES = {
     'model_request_completed':'回答模型调用完成','model_request_failed':'回答模型调用失败',
     'answer_repair_started':'回答格式修复开始','answer_repair_completed':'回答格式修复成功',
     'answer_repair_failed':'回答格式修复失败','model_json_mode_unsupported':'模型接口不支持JSON模式',
+    'model_first_token':'模型首段文字到达','response_assembled':'回复与配图组装完成',
     'model_finish':'模型结束原因','model_usage':'模型用量',
     'answer_validation_completed':'回答格式和引用校验通过','answer_validation_failed':'回答格式或引用校验失败',
     'generation_completed':'生成完成','generation_failed':'生成失败',

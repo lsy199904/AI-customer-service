@@ -41,6 +41,7 @@
     .composer{padding-top:13px;background:linear-gradient(180deg,#fff,#fbfcff)}.composer .quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:10px}.composer .quick button{position:relative;border-radius:9px;border-color:#e4ebf6;background:linear-gradient(130deg,#f8faff,#f1f5fd);font-size:11px;padding:8px 4px;color:#506b94;transition:background .18s,border-color .18s,transform .18s;min-width:0;white-space:nowrap}.composer .quick button:hover{background:#eaf1ff;border-color:#aac4f2;color:#155de6;transform:translateY(-1px)}
     .suggestions{gap:6px}.suggestions button{border-radius:8px;background:#fff;border-color:#e0e8f5;color:#5b7296;font-size:11px;padding:6px 9px;transition:border-color .18s,background .18s}.suggestions button:hover{border-color:#aac4f2;background:#f0f5ff}.suggestions .handoff-choice{background:#f3f7ff;border-style:dashed}
     .entry{background:#fff;border-radius:12px;box-shadow:0 2px 8px #203c6503}.send{background:linear-gradient(135deg,#3478f4,#155de6);box-shadow:0 3px 7px #155de620}.ghost:focus-visible,.quick button:focus-visible,.source:focus-visible,.image-button:focus-visible,.original-link:focus-visible{outline:2px solid #5c91e9;outline-offset:3px}.ghost,.send{transition:background .18s,box-shadow .18s}.loading{display:flex;gap:8px;align-items:center}.loading:before{content:'';width:7px;height:7px;background:#6393eb;border-radius:50%;animation:status-glow 1.2s ease-in-out infinite}
+    .streaming .bubble:after{content:'';display:inline-block;width:2px;height:1em;background:#3979df;margin-left:3px;vertical-align:-2px;animation:status-glow .8s ease-in-out infinite}
     @keyframes message-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes status-glow{50%{opacity:.35;box-shadow:0 0 0 4px #6393eb15}}
     @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   `;
@@ -106,7 +107,7 @@
       clearTimeout(timer);parent?.removeEventListener('abort',onAbort);
     }
   }
-  async function streamReply(path,body,onStage) {
+  async function streamReply(path,body,onStage,onDelta=()=>{}) {
     const scope=new AbortController(),parent=controller?.signal;
     const abort=()=>scope.abort();parent?.addEventListener('abort',abort,{once:true});
     if(parent?.aborted)scope.abort();
@@ -127,7 +128,7 @@
           const frame=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);
           const kind=frame.split('\n').find(line=>line.startsWith('event: '))?.slice(7);
           const raw=frame.split('\n').filter(line=>line.startsWith('data: ')).map(line=>line.slice(6)).join('\n');
-          if(raw){const payload=JSON.parse(raw);if(kind==='status')onStage(payload.stage);if(kind==='complete')result=payload;if(kind==='error')throw new Error(payload.message || '服务暂时不可用');}
+          if(raw){const payload=JSON.parse(raw);if(kind==='status')onStage(payload.stage);if(kind==='delta'&&typeof payload.text==='string')onDelta(payload.text);if(kind==='complete')result=payload;if(kind==='error')throw new Error(payload.message || '服务暂时不可用');}
         }
         if(buffer.length>1000000)throw new Error('客服响应过大');
         if(part.done)break;
@@ -361,6 +362,7 @@
     const rid=retrying && retry?.text===text ? retry.id : ('msg-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2)));
     if (!retrying) message('user',text);
     input.value='';retry={text,id:rid};
+    let live=null,liveText='';
     const loading=element('div','loading','正在为您解答…');transcript.append(loading);scroll();
     try {
       if (!sessionId) {
@@ -370,15 +372,20 @@
       const path=`/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
       const r=config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
-        const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',validating:'正在核对答案与配图…',business:'正在查询业务信息…'};
+        const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…'};
         loading.textContent=labels[stage] || '正在为您解答…';
+      },delta=>{
+        if(v!==generation)return;
+        loading.hidden=true;
+        if(!live){live=message('assistant','');live.classList.add('streaming');}
+        liveText+=delta;live.querySelector('.bubble').textContent=liveText;scroll();
       }) : await request(path,'POST',payload);
       if (v!==generation) return;
-      message('assistant',r.answer,r);retry=null;activity();
+      const finished=message('assistant',r.answer,r);if(live){live.remove();live=null;finished.style.animation='none';}retry=null;activity();
     } catch(err) {
       if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true));
     } finally {
-      loading.remove();if(v===generation) {setBusy(false);input.focus();scroll();}
+      live?.remove();loading.remove();if(v===generation) {setBusy(false);input.focus();scroll();}
     }
   }
   async function downloadDocument(path,filename) {

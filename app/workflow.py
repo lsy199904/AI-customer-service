@@ -49,6 +49,10 @@ class Context:
     cancelled:object=None
     def check(self):
         if self.cancelled is not None and self.cancelled.is_set():raise RequestCancelled()
+    def delta(self,text):
+        self.check()
+        if self.observer:self.observer({'type':'delta','text':text})
+
     def emit(self,stage):
         self.check()
         if self.observer:self.observer({'type':'status','stage':stage})
@@ -149,10 +153,10 @@ class SupportWorkflow:
             return {}
         started=time.monotonic()
         try:
-            context={**state['page_context'],'_intent':intent,'_media':state['candidates']}
+            context={**state['page_context'],'_intent':intent,'_media':state['candidates'],'_on_delta':runtime.context.delta if runtime.context.observer else None}
             result=s.model.answer(state['question'],state['history'],state['evidence'],context)
             runtime.context.check()
-            event('generation_completed',answerable=result['answerable'],citations=len(result.get('citation_ids',[])),
+            event('generation_completed',citations=len(result.get('citation_ids',[])),
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2))
             if not result['answerable']:return {'reason':'insufficient_evidence'}
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
@@ -165,13 +169,11 @@ class SupportWorkflow:
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             s.observe('generation_failed',0)
             if conversation:return {'answer':REPLIES[intent],'success':True,'reason':'conversation_fallback'}
-            from .core import AnswerValidationError
-            reason='model_invalid_response' if isinstance(error,AnswerValidationError) else 'model_unavailable'
-            return {'reason':reason,'answer':'我这边暂时没能完成回答，请稍后重试，也可以试试下面的问题。'}
+            return {'reason':'model_unavailable','answer':'我这边暂时没能完成回答，请稍后重试，也可以试试下面的问题。'}
         finally:s.observe('generation',time.monotonic()-started)
 
     def validate(self,state:State,runtime:Runtime[Context]):
-        runtime.context.emit('validating');s=self.service;images=state['images']
+        runtime.context.emit('assembling');s=self.service;images=state['images']
         if state['success'] and state['selected']:
             bound=[s.media.public(r) for r in s.media.bound(state['selected'])]
             images=list({r['id']:r for r in bound+images}.values())[:4]
@@ -182,7 +184,7 @@ class SupportWorkflow:
                 related_titles=state['retrieval'].get('_suggestion_titles',[])),
                 actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
             if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
-        event('final_validation_completed',success=state['success'],reason=state['reason'],
+        event('response_assembled',success=state['success'],reason=state['reason'],
               selected_count=len(values.get('selected',state['selected'])),image_count=len(values['images']),
               suggestion_count=len(values['suggestions']))
         return values

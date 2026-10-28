@@ -140,7 +140,7 @@ class FastAPIContracts(unittest.TestCase):
   try:
    sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
    service=self.app.state.service;service.config.mode='llm';service.model=Model(service.config)
-   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true'}),patch.object(Model,'_complete_request',return_value='INVALID-MODEL-JSON'):
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true'}),patch.object(Model,'_complete_request',return_value='普通文本回答'):
     with self.assertLogs('assistant.operations',level='INFO') as logs:
      r=self.client.post('/v1/sessions/'+sid+'/messages/stream',json={'message':'429错误怎么办','request_id':'debug-nodes-123'},headers=self.headers)
    self.assertEqual(r.status_code,200);self.assertIn('event: complete',r.text)
@@ -150,45 +150,27 @@ class FastAPIContracts(unittest.TestCase):
    self.assertEqual(set(document),{'时间','输入','处理流程','输出'})
    self.assertEqual(document['输入']['问题'],'429错误怎么办')
    names=[step['事件'] for step in document['处理流程']]
-   for name in ('retrieval_evidence','model_input','model_output','answer_validation_context','chat_completed','stream_completed'):self.assertIn(name,names)
+   for name in ('retrieval_evidence','model_input','model_output','chat_completed','stream_completed'):self.assertIn(name,names)
    raw=next(step for step in document['处理流程'] if step['事件']=='model_output')
-   self.assertEqual(raw['数据']['text'],'INVALID-MODEL-JSON')
-   self.assertEqual(document['输出']['失败节点']['错误分类'],'invalid_json')
+   self.assertEqual(raw['数据']['text'],'普通文本回答')
+   self.assertNotIn('失败节点',document['输出'])
    self.assertEqual(document['输出']['HTTP状态'],200)
    normal=json.dumps([record.operation_fields for record in logs.records],ensure_ascii=False)
-   self.assertNotIn('INVALID-MODEL-JSON',normal);self.assertNotIn('429错误怎么办',normal)
+   self.assertNotIn('普通文本回答',normal);self.assertNotIn('429错误怎么办',normal)
    stages=[record.msg for record in logs.records]
-   self.assertIn('answer_validation_failed',stages);self.assertIn('final_validation_completed',stages)
+   self.assertNotIn('answer_validation_failed',stages);self.assertIn('response_assembled',stages)
    self.assertIn('response_ready',stages);self.assertIn('stream_completed',stages)
   finally:
    ops._debug_log.handlers=old;ops._debug_log.setLevel(oldlevel);ops._debug_log.propagate=propagate
 
- def test_invalid_model_format_has_specific_reason(self):
+ def test_plain_text_delivered_once_with_server_owned_sources(self):
   from app.core import Model
   sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
   service=self.app.state.service;service.config.mode='llm';service.model=Model(service.config)
-  with patch.object(Model,'_complete_request',return_value='INVALID') as calls:
-   response=self.client.post('/v1/sessions/'+sid+'/messages',json={'message':'429错误怎么办','request_id':'invalid-format-123'},headers=self.headers)
-  self.assertEqual(response.json()['reason'],'model_invalid_response');self.assertEqual(calls.call_count,2)
-
- def test_invalid_model_format_repaired_before_delivery(self):
-  from app.core import Model
-  sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
-  service=self.app.state.service;service.config.mode='llm';service.model=Model(service.config)
-  count=0
-  def complete(model,messages):
-   nonlocal count
-   count+=1
-   if count==1:return 'INVALID'
-   payload=json.loads(messages[-2]['content'])
-   return json.dumps({'answerable':True,'answer':'请检查限流配置。','citation_ids':[payload['evidence'][0]['id']],'image_ids':[]})
-  with patch.object(Model,'_complete_request',complete),self.assertLogs('assistant.operations',level='INFO') as logs:
-   response=self.client.post('/v1/sessions/'+sid+'/messages',json={'message':'429错误怎么办','request_id':'repaired-format-123'},headers=self.headers)
-  self.assertEqual(response.json()['status'],'answered');self.assertEqual(count,2)
-  self.assertTrue(response.json()['citations'])
-  document=next(record.operation_document for record in logs.records if record.msg=='request_completed')
-  self.assertIn('已恢复异常',document['输出']);self.assertNotIn('失败节点',document['输出'])
-  self.assertTrue(any(step['事件']=='answer_repair_completed' for step in document['处理流程']))
+  with patch.object(Model,'_complete_request',return_value='请检查限流配置。') as calls:
+   response=self.client.post('/v1/sessions/'+sid+'/messages',json={'message':'429错误怎么办','request_id':'plain-text-123'},headers=self.headers)
+  self.assertEqual(response.json()['status'],'answered');self.assertEqual(calls.call_count,1)
+  self.assertEqual(response.json()['answer'],'请检查限流配置。');self.assertTrue(response.json()['citations'])
 
 class LangChainContracts(unittest.TestCase):
  def backend(self):

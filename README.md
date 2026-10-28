@@ -2,7 +2,7 @@
 
 FastAPI + Uvicorn 提供接口，LangChain 连接模型与检索器，LangGraph 编排并持久化问答流程。企业部署使用 PostgreSQL 保存聊天、知识版本和工作流检查点，Milvus 提供向量索引；保留 SQLite 单实例兼容和回退能力。
 
-默认问答链路为：Word/PDF解析 → BGE-M3向量 → Milvus + BM25 混合召回 → RRF融合 → Qwen3-Reranker-4B重排 → Qwen3-32B基于资料生成 → 引用/图片校验 → 保存历史。iframe、自带浮窗和直接API共用同一套会话及权限逻辑，无需 Dify。
+默认问答链路为：Word/PDF解析 → BGE-M3向量 → Milvus + BM25 混合召回 → RRF融合 → Qwen3-Reranker-4B重排 → Qwen3-32B基于资料流式生成正文 → 附加知识关联图片与来源 → 保存历史。iframe、自带浮窗和直接API共用同一套会话及权限逻辑，无需 Dify。
 
 ## 现有服务器升级
 
@@ -104,7 +104,7 @@ sh scripts/enterprise.sh exec assistant python manage.py retrieve --query '企�
 
 完整 [语义评测步骤](docs/企业升级与迁移.md) 支持为全部主题生成多样问法、人工审阅后分别统计召回、选中文档、引用、关键事实、图片与耗时；私有数据集和报告不推Git。自动测试通过不等于目标模型业务准确率通过，也不承诺任意问法100%正确。
 
-SSE接口 /v1/sessions/{sid}/messages/stream 先推处理进度与心跳，完整答案通过校验后发送delta和complete；原JSON接口保持兼容。相同request_id重试返回已保存结果，不重复写聊天；更换问题必须换请求ID。
+SSE接口 /v1/sessions/{sid}/messages/stream 先推处理进度与心跳，模型生成正文时即时发送delta，生成结束后发送附带来源、图片的complete；原JSON接口保持兼容。相同request_id重试返回已保存结果，不重复写聊天；更换问题必须换请求ID。
 
 ## 运维与测试
 
@@ -162,6 +162,6 @@ sh scripts/enterprise.sh exec assistant python manage.py check
 
 历史到期后立即从API与模型上下文中排除；启动时及默认每300秒分批清理在线库的过期消息、闲置会话及对应工作流检查点。已完成回答的冗余工作流快照及时删除，幂等结果保留在消息表。手动清理可执行 `python manage.py prune-sessions`；不删除知识库。备份文件不在在线7天自动清理范围，需要单独设置备份保留策略。
 
-0.75是向量候选余弦门槛，不是75%的准确率。保留BM25及章节主题补召回，因此低于向量门槛的候选仍可能经过词法召回、重排和证据校验进入答案；本次没有加入人工标准问答优先层。
+0.75是向量候选余弦门槛，不是75%的准确率。保留BM25及章节主题补召回，因此低于向量门槛的候选仍可能经过词法召回、重排进入回答上下文；本次没有加入人工标准问答优先层。
 
 运营日志、日期轮转、问题编号排查和平台身份对接说明见 [运营日志与身份对接](docs/运营日志与身份对接.md)。聊天来源统一显示为“用户手册：章节名”，用户与 AI 消息分别显示人员、机器人头像。

@@ -299,27 +299,42 @@ def create_app(config=None,model=None,service=None):
         await anyio.to_thread.run_sync(functools.partial(service.owned,user,sid))
         async def events():
             loop=asyncio.get_running_loop();queue=asyncio.Queue(maxsize=32);cancel=threading.Event()
-            def enqueue(item):
-                if not queue.full():queue.put_nowait(item)
-            def observe(item):loop.call_soon_threadsafe(enqueue,item)
+            def observe(item):
+                from concurrent.futures import TimeoutError as QueueTimeout
+                from .workflow import RequestCancelled
+                if cancel.is_set():raise RequestCancelled()
+                pending=asyncio.run_coroutine_threadsafe(queue.put(item),loop)
+                while True:
+                    try:pending.result(timeout=.25);return
+                    except QueueTimeout:
+                        if cancel.is_set():pending.cancel();raise RequestCancelled()
             task=loop.run_in_executor(None,functools.partial(copy_context().run,service.chat,user,sid,body.model_dump(),observe,cancel))
             def event(kind,payload):return 'event: '+kind+'\ndata: '+json.dumps(payload,ensure_ascii=False)+'\n\n'
+            item=None
             try:
                 yield event('status',{'stage':'connected'})
+                streamed=False
                 while not task.done():
                     item=asyncio.create_task(queue.get())
                     done,_=await asyncio.wait([item,task],timeout=10,return_when=asyncio.FIRST_COMPLETED)
-                    if item in done:yield event('status',item.result())
+                    if item in done:
+                        payload=item.result();kind=payload.get('type','status')
+                        if kind=='delta':streamed=True;yield event('delta',{'text':payload['text']})
+                        else:yield event('status',{'stage':payload.get('stage')})
                     else:
                         item.cancel()
                         try:await item
                         except asyncio.CancelledError:pass
                         if not task.done():yield ': heartbeat\n\n'
+                while not queue.empty():
+                    payload=queue.get_nowait()
+                    if payload.get('type')=='delta':streamed=True;yield event('delta',{'text':payload['text']})
+                    else:yield event('status',{'stage':payload.get('stage')})
                 result=await task
                 log_event('response_ready',request_id=body.request_id,outcome=result['status'],
                           answer_chars=len(result['answer']),**request.scope.get('state',{}).get('actor_log_fields',{}))
-                # Only validated answers are streamed. Raw model JSON/thinking is never exposed.
-                for i in range(0,len(result['answer']),128):yield event('delta',{'text':result['answer'][i:i+128]})
+                # Cached/static answers have no upstream token events.
+                if not streamed:yield event('delta',{'text':result['answer']})
                 yield event('complete',result)
                 log_event('stream_completed',request_id=body.request_id,**request.scope.get('state',{}).get('actor_log_fields',{}))
             except APIError as error:
@@ -333,6 +348,10 @@ def create_app(config=None,model=None,service=None):
                 yield event('error',{'code':'service_unavailable','message':'服务暂时不可用，请重试。'})
             finally:
                 cancel.set()
+                if item is not None and not item.done():
+                    item.cancel()
+                    try:await item
+                    except asyncio.CancelledError:pass
                 # Consume exceptions even when the HTTP client disconnected during inference.
                 def consume(future):
                     if not future.cancelled():future.exception()
