@@ -1,5 +1,7 @@
 # SmartTITU 企业智能客服
 
+当前 `v2` 分支新增问题澄清与六个业务流程的分步陪办，功能、边界和切换步骤见 [v2 使用说明](docs/v2流程陪办.md)。知识仍使用最新业务全流程版，不接入真实业务办理。
+
 FastAPI + Uvicorn 提供接口，LangChain 连接模型与检索器，LangGraph 编排并持久化问答流程。企业部署使用 PostgreSQL 保存聊天、知识版本和工作流检查点，Milvus 提供向量索引；保留 SQLite 单实例兼容和回退能力。
 
 默认问答链路为：Word/PDF解析 → BGE-M3向量 → Milvus + BM25 混合召回 → RRF融合 → Qwen3-Reranker-4B重排 → Qwen3-32B基于资料流式生成正文 → 附加知识关联图片与来源 → 保存历史。iframe、自带浮窗和直接API共用同一套会话及权限逻辑，无需 Dify。

@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 
 _LABELS = {
+    'assistance_planned':'对话协助路径','clarification_requested':'澄清问题','guidance_step_selected':'陪办步骤','guidance_closed':'陪办结束','guidance_source_unavailable':'陪办知识不可用',
     'chat_started':'收到问题', 'chat_cache_hit':'复用已保存回答',
     'question_classified':'问题分类', 'retrieval_model_started':'开始检索模型调用',
     'retrieval_model_completed':'检索模型完成', 'retrieval_model_failed':'检索模型失败',

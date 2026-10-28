@@ -41,6 +41,9 @@
     .composer{padding-top:13px;background:linear-gradient(180deg,#fff,#fbfcff)}.composer .quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:10px}.composer .quick button{position:relative;border-radius:9px;border-color:#e4ebf6;background:linear-gradient(130deg,#f8faff,#f1f5fd);font-size:11px;padding:8px 4px;color:#506b94;transition:background .18s,border-color .18s,transform .18s;min-width:0;white-space:nowrap}.composer .quick button:hover{background:#eaf1ff;border-color:#aac4f2;color:#155de6;transform:translateY(-1px)}
     .suggestions{gap:6px}.suggestions button{border-radius:8px;background:#fff;border-color:#e0e8f5;color:#5b7296;font-size:11px;padding:6px 9px;transition:border-color .18s,background .18s}.suggestions button:hover{border-color:#aac4f2;background:#f0f5ff}.suggestions .handoff-choice{background:#f3f7ff;border-style:dashed}
     .entry{background:#fff;border-radius:12px;box-shadow:0 2px 8px #203c6503}.send{background:linear-gradient(135deg,#3478f4,#155de6);box-shadow:0 3px 7px #155de620}.ghost:focus-visible,.quick button:focus-visible,.source:focus-visible,.image-button:focus-visible,.original-link:focus-visible{outline:2px solid #5c91e9;outline-offset:3px}.ghost,.send{transition:background .18s,box-shadow .18s}.loading{display:flex;gap:8px;align-items:center}.loading:before{content:'';width:7px;height:7px;background:#6393eb;border-radius:50%;animation:status-glow 1.2s ease-in-out infinite}
+    .assistant-actions{display:flex;flex-wrap:wrap;gap:7px;max-width:94%;margin-top:10px}.assistant-actions button{border:1px solid #d6e4fb;border-radius:9px;padding:8px 11px;background:linear-gradient(125deg,#f4f8ff,#eaf2ff);color:#3566b4;font-size:12px;transition:background .18s,border-color .18s}.assistant-actions button:hover{background:#e4efff;border-color:#98b9ef}.assistant-actions button:first-child{background:#eaf2ff;color:#155de6;font-weight:600}.assistant-actions button:disabled{background:#f6f8fb;color:#9da9bc;border-color:#e9edf4;cursor:default}.assistant-actions button:focus-visible{outline:2px solid #5c91e9;outline-offset:3px}
+    .guidance-media{width:94%;margin-top:12px}.guidance-media summary{font-size:11px;color:#6e88ad;cursor:pointer;padding:7px 0}.guidance-media .reply-images{width:100%;max-width:100%}
+    .guidance-card{box-sizing:border-box;width:94%;margin-top:12px;padding:13px;background:linear-gradient(135deg,#fff,#f4f8ff);border:1px solid #dce7f8;border-radius:13px}.guidance-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;color:#35547f;font-size:12px;font-weight:600}.guidance-badge{font-size:10px;font-weight:500;background:#eaf1ff;color:#5980b9;padding:2px 7px;border-radius:5px;white-space:nowrap}.guidance-stages{list-style:none;padding:0;margin:11px 0;display:grid;gap:7px}.guidance-stages li{display:flex;align-items:center;gap:8px;color:#96a4b9;font-size:11px}.stage-dot{display:grid;place-items:center;width:18px;height:18px;flex-shrink:0;border-radius:50%;background:#edf1f8;font-size:10px}.guidance-stages .current{color:#235eb9;font-weight:600}.current .stage-dot{background:#2468e6;color:#fff;box-shadow:0 0 0 3px #e7efff}.guidance-stages .done{color:#6d8ba7}.done .stage-dot{background:#e5f4ef;color:#409a7f}.guidance-note{font-size:10px;line-height:1.6;color:#8798b0;margin:8px 0 0}
     .streaming .bubble:after{content:'';display:inline-block;width:2px;height:1em;background:#3979df;margin-left:3px;vertical-align:-2px;animation:status-glow .8s ease-in-out infinite}
     @keyframes message-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes status-glow{50%{opacity:.35;box-shadow:0 0 0 4px #6393eb15}}
     @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -160,6 +163,7 @@
     svg.append(path);holder.append(svg);return holder;
   }
   function message(role, text, response) {
+    if(role==='assistant')transcript.querySelectorAll('.assistant-actions button').forEach(button=>{button.disabled=true;});
     const row = element('div', 'message ' + role);
     const identity=element('div','message-role');
     identity.append(roleAvatar(role),element('span','',role==='assistant'?'SmartTITU 智能客服':'您'));
@@ -169,7 +173,15 @@
     if(String(displayText || '').trim() || !response?.images?.length) {
       renderText(bubble,displayText);row.append(bubble);
     }
-    if(response?.images?.length)renderImages(row,response.images);
+    let evidenceParent=row;
+    if(response?.guidance){
+      renderGuidance(row,response.guidance);
+      if(response?.actions?.length)renderAssistantActions(row,response.actions);
+      if(response.guidance.status==='active'&&(response.images?.length||response.citations?.length)){
+        evidenceParent=element('details','guidance-media');evidenceParent.append(element('summary','','查看流程图与用户手册'));row.append(evidenceParent);
+      }
+    }
+    if(response?.images?.length)renderImages(evidenceParent,response.images);
     if (response?.citations?.length) {
       const list = element('div', 'sources');
       response.citations.forEach((source, i) => {
@@ -179,12 +191,38 @@
         b.append(symbol,element('span','source-title',sourceLabel(source)),arrow);
         b.type = 'button'; b.addEventListener('click', () => showSource(source)); list.append(b);
       });
-      row.append(list);
+      evidenceParent.append(list);
     }
+    if(!response?.guidance&&response?.status!=='suggestions'&&response?.actions?.length)renderAssistantActions(row,response.actions);
     if(response?.status==='suggestions')renderSuggestions(row,response);
     if (response?.handoff && response.contact) renderContact(row, response.contact);
     if(role==='assistant'&&response?.status==='suggestions')renderRequestReference(row,response.request_id);
     transcript.append(row); scroll(); return row;
+  }
+  function renderAssistantActions(parent,actions) {
+    const group=element('div','assistant-actions');group.setAttribute('aria-label','对话操作');
+    for(const action of actions.slice(0,6)) {
+      if(!['guide','clarify'].includes(action.type)||typeof action.label!=='string'||typeof action.message!=='string'||action.label.length>80||action.message.length>200)continue;
+      const button=element('button','',action.label);button.type='button';button.onclick=()=>send(action.message);group.append(button);
+    }
+    if(group.childNodes.length)parent.append(group);
+  }
+  function renderGuidance(parent,guide) {
+    if(!Array.isArray(guide.stages)||!Number.isInteger(guide.step)||guide.step<0||guide.step>=guide.stages.length||guide.stages.length>8)return;
+    const card=element('section','guidance-card');card.setAttribute('aria-label','流程陪办');
+    const header=element('div','guidance-heading');
+    header.append(element('span','',guide.title || '分步指导'),element('span','guidance-badge',guide.status==='completed'?'指导已完成':guide.status==='ended'?'已结束':`${guide.step+1} / ${guide.stages.length}`));
+    card.append(header);
+    const stages=element('ol','guidance-stages');
+    guide.stages.forEach((title,index)=>{
+      const done=guide.status==='completed'||index<guide.step;
+      const item=element('li',done?'done':index===guide.step?'current':'');
+      item.append(element('span','stage-dot',done?'✓':String(index+1)),element('span','',String(title).slice(0,80)));
+      if(index===guide.step&&guide.status==='active')item.setAttribute('aria-current','step');stages.append(item);
+    });
+    card.append(stages);
+    if(guide.notice)card.append(element('p','guidance-note',String(guide.notice).slice(0,200)));
+    card.append(element('p','guidance-note','进度依据您的反馈记录，未连接后台办理或核实状态。'));parent.append(card);
   }
   function renderRequestReference(parent,id) {
     if(typeof id!=='string'||!/^[-a-zA-Z0-9_]{8,80}$/.test(id))return;
@@ -372,7 +410,7 @@
       const path=`/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
       const r=config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
-        const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…'};
+        const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
         loading.textContent=labels[stage] || '正在为您解答…';
       },delta=>{
         if(v!==generation)return;

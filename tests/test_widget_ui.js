@@ -5,13 +5,13 @@ const {chromium}=require('playwright');
 (async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
  try {
-  const page=await browser.newPage({viewport:{width:1100,height:900}}),requests=[],errors=[];
+  const page=await browser.newPage({viewport:{width:1100,height:900}}),requests=[],errors=[];let guideStep=0;
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('https://widget.test/**',async route=>{
    const req=route.request(),path=new URL(req.url()).pathname;
    if(path==='/')return route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="zh"><head><meta charset="utf-8"></head><body style="background:#eef3fb"><script src="/widget.js"></script></body></html>'});
    if(path==='/widget.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync('app/static/widget.js','utf8')});
-   if(path==='/media/hub-03.png')return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static/media/hub-03.png')});
+   if(['/media/hub-03.png','/media/business-verification.png'].includes(path))return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static'+path)});
    let data;
    if(path==='/v1/bootstrap')data={welcome:'您好，我是 SmartTITU 智能客服。',quick_questions:['注册流程','企业认证流程','服务订购流程','客户充值流程','账单支付流程','在线开票流程'],capabilities:{streaming:false}};
    else if(path==='/v1/sessions'&&req.method()==='GET')data={items:[]};
@@ -21,6 +21,19 @@ const {chromium}=require('playwright');
     data={answer:'1. 您可以在操作审计页面查看平台操作记录。\n2. 官网：https://www.smarttitu.cn\n\n图片展示：\n![套餐版本介绍](https://widget.test/media/hub-03.png)\n更多详情请参考手册：\nhttps://raw.githubusercontent.com/lsy199904/AI-customer-service/main/docs/sources/manual.pdf',status:'answered',request_id:body.request_id,
       images:[{id:'plan',title:'套餐版本介绍',url:'/media/hub-03.png'},{id:'plan-duplicate',title:'套餐版本介绍',url:'/media/hub-03.png'}],
       citations:[{id:'KB-test','title':'问题44 操作审计'}]};
+    if(body.message==='企业认证流程'){
+      data.answer='登录后完善企业资料，选择在线或线下认证，并根据页面提示办理。';data.images=[];data.actions=[{type:'guide',label:'带我一步步办理',message:'分步指导：企业认证流程'}];
+    }
+    if(body.message==='支付不了'){
+      data.answer='您遇到的是账单支付，还是充值支付的问题？';data.images=[];data.citations=[];data.intent='clarification';data.actions=[{type:'clarify',label:'账单支付流程',message:'账单支付流程'},{type:'clarify',label:'客户充值流程',message:'客户充值流程'}];
+    }
+    if(['分步指导：企业认证流程','这一步已完成','返回上一步','结束指导'].includes(body.message)){
+      guideStep=body.message==='这一步已完成'?1:0;
+      data.answer=body.message==='结束指导'?'已结束这段分步指导。':guideStep?'进入企业认证页面，选择在线认证或线下认证。':'登录后完善企业名称、行业和公司地址等资料，按页面提示提交。';
+      data.guidance={flow_id:'verification',title:'企业认证流程',step:guideStep,total:4,stages:['完善企业资料','选择认证方式','办理认证与审核','查看认证结果'],status:body.message==='结束指导'?'ended':'active'};
+      data.images=[{id:'business-verification',title:'企业认证流程',url:'/media/business-verification.png'}];data.citations=[{id:'KB-test',title:'问题6 企业认证流程'}];
+      data.actions=body.message==='结束指导'?[]:[{type:'guide',label:'这一步已完成',message:'这一步已完成'},{type:'guide',label:'这一步怎么做',message:'这一步怎么做'},...(guideStep?[{type:'guide',label:'返回上一步',message:'返回上一步'}]:[]),{type:'guide',label:'结束指导',message:'结束指导'}];
+    }
     if(body.message==='只显示图片')data.answer='图片展示：\n![套餐版本介绍](https://widget.test/media/hub-03.png)';
     if(body.message==='测试失败')data={answer:'暂时无法完成回答，请稍后重试。',status:'suggestions',request_id:body.request_id,suggestions:['操作审计']};
    }else if(path==='/v1/sources/KB-test')data={id:'KB-test',title:'问题44 操作审计',content:'审计说明',source_file:'用户手册.docx'};
@@ -75,7 +88,7 @@ const {chromium}=require('playwright');
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('.message').last().evaluate(el=>getComputedStyle(el).animationName),'none');
   await page.evaluate(()=>{
-   const original=window.fetch;
+   const original=window.fetch;window.restoreFetch=()=>{window.fetch=original;};
    window.fetch=async(url,options)=>{
     if(String(url).endsWith('/v1/bootstrap')){const response=await original(url,options),body=await response.json();body.capabilities.streaming=true;return new Response(JSON.stringify(body));}
     if(String(url).endsWith('/messages/stream')){
@@ -97,6 +110,27 @@ const {chromium}=require('playwright');
   assert.equal(await page.locator('.message.streaming').count(),0);
   assert.equal(await page.locator('.message.assistant .bubble').last().innerText(),'第一段文字，第二段文字。');
   assert.equal(await page.locator('.message.assistant').last().locator('.image-button').count(),1);
+  await page.evaluate(()=>{window.restoreFetch();return window.SmartTITUAssistant.ask('企业认证流程');});
+  await page.locator('.message.assistant').last().getByRole('button',{name:'带我一步步办理',exact:true}).click();
+  await page.locator('.guidance-card').waitFor();
+  assert.equal(await page.locator('.guidance-card [aria-current="step"]').innerText(),'1\n完善企业资料');
+  await page.locator('.message.assistant').last().getByRole('button',{name:'这一步已完成',exact:true}).click();
+  await page.locator('.guidance-card').last().getByText('选择认证方式',{exact:true}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#smarttitu-assistant-widget').shadowRoot.querySelectorAll('.guidance-card').length===2);
+  assert((await page.locator('.guidance-card [aria-current="step"]').last().innerText()).includes('选择认证方式'));
+  assert(await page.getByRole('button',{name:'这一步已完成',exact:true}).first().isDisabled());
+  if(process.env.V2_SCREENSHOT){
+   await page.setViewportSize({width:1100,height:1000});
+   await page.locator('.guidance-card').last().scrollIntoViewIfNeeded();
+   await page.locator('#smarttitu-panel').screenshot({path:process.env.V2_SCREENSHOT});
+  }
+  await page.locator('.message.assistant').last().getByRole('button',{name:'返回上一步',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#smarttitu-assistant-widget').shadowRoot.querySelectorAll('.guidance-card').length===3);
+  assert((await page.locator('.guidance-card [aria-current="step"]').last().innerText()).includes('完善企业资料'));
+  await page.locator('.message.assistant').last().getByRole('button',{name:'结束指导',exact:true}).click();
+  await page.locator('.guidance-badge').last().getByText('已结束',{exact:true}).waitFor();
+  await page.evaluate(()=>window.SmartTITUAssistant.ask('支付不了'));
+  assert.equal(await page.locator('.message.assistant').last().locator('.assistant-actions button').count(),2);
   assert.deepEqual(errors,[]);
   console.log('Browser checks passed: message avatars and roles, manual labels, clickable URLs, correlation headers, feedback IDs and mobile width');
  } finally {await browser.close();}

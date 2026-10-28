@@ -130,3 +130,9 @@ status有三种：answered正常回答；suggestions尚未回答、等待用户�
 前端收到delta后立即追加到当前机器人消息；complete到达后以其中的最终answer定稿并附加图片和来源，不额外新建重复答案。若生成中途失败，complete可能携带降级提示，应以complete结果替换临时正文；如果收到error或流中断且没有complete，移除临时消息并提示重试。同一个请求编号重试仍复用已保存结果。HTTP JSON接口、SSE事件负载和日志文件仍用JSON传输，这与模型直接输出普通文本是两回事。
 
 请确保反向代理关闭该SSE路径的响应缓冲和压缩缓冲。服务已设置 `X-Accel-Buffering: no` 和心跳；若直连能实时显示而经过代理一次出现，应检查代理配置。
+
+## v2 澄清与陪办
+
+bootstrap新增version=v2及capabilities.guidance/clarification。现有问答接口入参不变，仍只接受message/request_id；不允许客户端指定当前步骤。响应可附带guidance，字段及行为见 [v2使用说明](v2流程陪办.md)。actions新增guide与clarify类型，label用于显示，message作为下一轮用户问题提交。澄清时intent=clarification、reason=clarification；陪办阶段reason=guidance，结束为guidance_complete/guidance_ended。状态仍沿用answered/suggestions/handoff，不把“用户表示完成步骤”标成后台交易成功。
+
+SSE的delta仅为正文，guidance/actions及来源图片在complete中附加。历史消息response包含相同元数据，可恢复显示进度；同一用户的不同会话独立。新版浮窗只允许最新机器人消息的操作按钮可用，防止点击旧步骤；API调用方也应采用相同交互约定。模型继续生成普通文本，不要求JSON，不新增格式重试。

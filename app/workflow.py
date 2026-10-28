@@ -42,6 +42,9 @@ class State(TypedDict,total=False):
     result:dict
     suggestions:list
     actions:list
+    assistance:dict
+    guidance:dict
+    guide_context:dict
 
 @dataclass
 class Context:
@@ -78,10 +81,11 @@ class SupportWorkflow:
             self.saver=SqliteSaver(self._resource);self.saver.setup()
         graph=StateGraph(State,context_schema=Context)
         for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),
-                        ('generate',self.generate),('validate',self.validate)]:graph.add_node(name,fn)
+                        ('generate',self.generate),('clarify',self.clarify),('guide_ack',self.guide_ack),('guide_end',self.guide_end),('validate',self.validate)]:graph.add_node(name,fn)
         graph.add_edge(START,'route')
-        graph.add_conditional_edges('route',lambda s:'validate' if s['intent'] in ('handoff','sensitive') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in REPLIES else 'retrieve')
+        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in REPLIES else 'retrieve')
         graph.add_conditional_edges('retrieve',lambda s:'generate' if s['evidence'] or s['candidates'] else 'validate')
+        graph.add_edge('guide_ack','validate');graph.add_edge('clarify','validate');graph.add_edge('guide_end','validate')
         graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
         self.graph=graph.compile(checkpointer=self.saver,name='smarttitu_support')
 
@@ -94,13 +98,38 @@ class SupportWorkflow:
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
         if intent=='sensitive':values['reason']='sensitive_topic'
         if intent=='handoff':values.update(answer='好的，您可以通过以下方式联系人工客服。',reason='requested_handoff')
+        values.update(assistance={},guidance=None,guide_context=None)
+        if intent in ('knowledge','thanks'):
+            from .assistance import plan
+            try:values['assistance']=plan(state['question'],state['history'],list(self.service.knowledge.rows.values()))
+            except Exception as error:event('assistance_unavailable',level='WARNING',**error_fields(error))
+        if values['assistance']:
+            event('assistance_planned',mode=values.get('assistance',{}).get('kind'),flow_id=(values.get('assistance',{}).get('guidance') or {}).get('flow_id') or values.get('assistance',{}).get('flow_id'))
         event('question_classified',intent=intent,history_messages=len(state['history']))
         return values
+
+    def clarify(self,state:State,runtime:Runtime[Context]):
+        runtime.context.emit('clarifying')
+        plan=state.get('assistance',{})
+        event('clarification_requested',choice_count=len(plan['choices']))
+        return {'answer':plan['answer'],'success':True,'reason':'clarification','intent':'clarification'}
+
+    def guide_ack(self,state:State,runtime:Runtime[Context]):
+        return {'answer':'好的，当前步骤已保留。您可以继续操作，完成后告诉我，或点“这一步怎么做”继续了解。',
+                'success':True,'reason':'guidance_ack','guidance':state['assistance']['guidance']}
+
+    def guide_end(self,state:State,runtime:Runtime[Context]):
+        guidance=state['assistance']['guidance']
+        completed=guidance['status']=='completed'
+        event('guidance_closed',flow_id=guidance['flow_id'],completed=completed)
+        return {'answer':'这段流程指引已走完。实际办理结果请以平台页面或人工确认为准，我没有查询后台状态。' if completed else '已结束这段分步指导，您可以继续问其他问题。',
+                'success':True,'reason':'guidance_complete' if completed else 'guidance_ended','guidance':guidance}
 
     def retrieve(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('retrieving');started=time.monotonic()
         try:
             query=contextual_query(state['question'],state['history']) if self.service.config.retrieval_backend=='semantic' else retrieval_query(state['question'],state['history'])
+            query=state.get('assistance',{}).get('query') or query
             from .chains import retrieve
             from .deadlines import run
             found=run(lambda:retrieve(self.service.knowledge,query),self.service.config.retrieval_timeout)
@@ -115,6 +144,20 @@ class SupportWorkflow:
                   rerank_scores=[round(float(hit[0]),6) for hit in hits],
                   elapsed_ms=round((time.monotonic()-started)*1000,2))
             values={'retrieval':report,'evidence':evidence,'candidates':candidates}
+            if state.get('assistance',{}).get('kind')=='guide':
+                from .assistance import stage_context
+                guidance=state['assistance']['guidance'];current=stage_context(guidance,evidence)
+                from .assistance import chapter,revision,guide_state
+                row=chapter(evidence,guidance['flow_id'])
+                if row and guidance['source_revision']!=revision(row):
+                    guidance=guide_state(guidance['flow_id'],0,row,notice='知识内容已更新，已回到第一步。');current=stage_context(guidance,evidence)
+                if current:
+                    values.update(guidance=guidance,guide_context=current)
+                    event('guidance_step_selected',flow_id=guidance['flow_id'],step=guidance['step']+1,total=guidance['total'])
+                else:
+                    # Never advance a stale guide using a different chapter or no evidence.
+                    values.update(evidence=[],candidates=[],retrieval={**report,'matched':False,'reason':'guidance_source_unavailable'})
+                    event('guidance_source_unavailable',level='WARNING',flow_id=guidance['flow_id'])
             if not evidence and not candidates and state['intent']=='image':
                 values['answer']=NO_ANSWER
             return values
@@ -149,12 +192,14 @@ class SupportWorkflow:
         if s.config.mode!='llm':
             if conversation:return {'answer':REPLIES[intent],'reason':intent,'success':True}
             if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'images':[s.media.public(r) for r in state['candidates']]}
-            if state['evidence']:return {'selected':[state['evidence'][0]],'answer':state['evidence'][0]['content'],'reason':'extractive','success':True}
+            if state['evidence']:
+                text=state['guide_context']['stage_evidence'] if state.get('guide_context') else state['evidence'][0]['content']
+                return {'selected':[state['evidence'][0]],'answer':text,'reason':'guidance' if state.get('guide_context') else 'extractive','success':True}
             return {}
         started=time.monotonic()
         try:
-            context={**state['page_context'],'_intent':intent,'_media':state['candidates'],'_on_delta':runtime.context.delta if runtime.context.observer else None}
-            result=s.model.answer(state['question'],state['history'],state['evidence'],context)
+            context={**state['page_context'],'_intent':intent,'_media':state['candidates'],'_on_delta':runtime.context.delta if runtime.context.observer else None,'_guidance':state.get('guide_context')}
+            result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],state['evidence'],context)
             runtime.context.check()
             event('generation_completed',citations=len(result.get('citation_ids',[])),
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2))
@@ -162,7 +207,7 @@ class SupportWorkflow:
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
             allowed=s.media.bound(selected) if selected else state['candidates'] if intent=='image' else []
             images=[s.media.public(r) for r in allowed if r['id'] in result.get('image_ids',[])]
-            return {'selected':selected,'images':images,'answer':result['answer'],'reason':intent,'success':True}
+            return {'selected':selected,'images':images,'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
         except RequestCancelled:raise
         except Exception as error:
             event('generation_failed',level='ERROR',evidence_count=len(state['evidence']),
@@ -184,6 +229,16 @@ class SupportWorkflow:
                 related_titles=state['retrieval'].get('_suggestion_titles',[])),
                 actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
             if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
+        from .assistance import FLOWS,actions_for,chapter
+        plan=state.get('assistance',{})
+        if state['success'] and plan.get('kind')=='clarify':
+            values['actions']=[{'type':'clarify','label':q,'message':q} for q in plan['choices']]
+        elif state['success'] and state.get('guidance'):
+            values['actions']=actions_for(state['guidance'],list(s.knowledge.rows.values()))
+        elif state['success'] and plan.get('kind') in ('offer','choice') and plan.get('flow_id') and chapter(state['selected'],plan['flow_id']):
+            flow=FLOWS[plan['flow_id']]
+            values['actions']=[{'type':'guide','label':'带我一步步办理','message':'分步指导：'+flow['title']}]
+        if not state['success']:values['guidance']=None
         event('response_assembled',success=state['success'],reason=state['reason'],
               selected_count=len(values.get('selected',state['selected'])),image_count=len(values['images']),
               suggestion_count=len(values['suggestions']))
