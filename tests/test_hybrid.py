@@ -21,10 +21,26 @@ class HybridRetrievalTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.sources=self.root/'sources';self.sources.mkdir()
   (self.sources/'customer.md').write_text('# 问题4 企业注册与认证流程\n手机号和验证码登录，填写企业资料，再完成企业认证。\n配图：enterprise-register\n原文链接：https://example.com/register\n# 问题10 第6页 TITU Hub概况\n聚合多模型，提供统一API接入、配额、限流、用量、计费、日志和安全审计。\n原文链接：https://example.com/hub\n# 问题16 TITU Edge概况\n企业侧资源与权限管理，支持本地部署。\n# 问题50 TITU Hub核心能力-聚合优选模型与模型内路由\n统一API网关对接不同供应商。\n# 问题51 TITU Hub核心能力-资源管理运营\n提供用量统计与操作追溯。\n',encoding='utf-8')
-  self.config=RAGSettings(index_path=str(self.root/'rag.db'),source_dir=str(self.sources),rerank_enabled=False,http_origins=('http://127.0.0.1:11434',),min_similarity=.45)
+  self.config=RAGSettings(index_path=str(self.root/'rag.db'),source_dir=str(self.sources),rerank_enabled=False,http_origins=('http://127.0.0.1:11434',),min_similarity=.45,rerank_min_score=0)
   self.embed=AdverseEmbedding();ingest_documents(self.config,embedder=self.embed)
   self.rank=AdverseReranker();self.config.rerank_enabled=True;self.config.rerank_url='http://127.0.0.1:11434/v1/rerank'
   self.k=SemanticKnowledge(self.config,self.embed,self.rank)
+ def test_rerank_threshold_filters_before_title_selection(self):
+  self.config.min_similarity=0
+  self.config.rerank_min_score=.6
+  result=self.k.assess('TITUHub概况')
+  self.assertTrue(result['matched'])
+  self.assertTrue(all(score>=.6 for score,_,_ in result['hits']))
+  self.assertFalse(any(row['title']=='问题10 第6页 TITU Hub概况' for _,row,_ in result['hits']))
+ def test_rerank_threshold_keeps_boundary_and_can_remove_all(self):
+  class Scores:
+   def __init__(self,score):self.score=score
+   def rank(self,q,docs):return [(i,self.score) for i in range(len(docs))]
+  self.config.rerank_min_score=.6
+  self.k.reranker=Scores(.6)
+  self.assertTrue(self.k.assess('TITUHub概况')['matched'])
+  self.k.reranker=Scores(.5999)
+  self.assertFalse(self.k.assess('TITUHub概况')['matched'])
  def tearDown(self):self.temp.cleanup()
  def test_audit_procedure_excludes_sandbox_even_with_adverse_reranking(self):
   path=self.sources/'audit.md'

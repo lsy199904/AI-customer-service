@@ -39,7 +39,7 @@ class RAGSettings:
     rerank_enabled: bool=field(default_factory=lambda:os.getenv('RERANK_ENABLED','true').lower()=='true')
     http_origins: tuple=field(default_factory=lambda:tuple(v.strip().rstrip('/') for v in os.getenv('MODEL_HTTP_ORIGINS','').split(',') if v.strip()))
     min_similarity: float=field(default_factory=lambda:float(os.getenv('SEMANTIC_MIN_SIMILARITY','0.75')))
-    rerank_min_score: float=field(default_factory=lambda:float(os.getenv('RERANK_MIN_SCORE','0')))
+    rerank_min_score: float=field(default_factory=lambda:float(os.getenv('RERANK_MIN_SCORE','0.6')))
     top_k: int=field(default_factory=lambda:int(os.getenv('RAG_TOP_K','12')))
     context_k: int=field(default_factory=lambda:int(os.getenv('RAG_CONTEXT_K','3')))
     embedding_timeout: float=field(default_factory=lambda:float(os.getenv('EMBEDDING_TIMEOUT','30')))
