@@ -118,6 +118,8 @@ class DailyFiles(logging.Handler):
                 if self.prefix=='app':
                     # Purge expired content even after content collection is disabled.
                     policies['debug']=max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3'))))
+                from .conversation_logs import prune_conversations
+                prune_conversations(self.directory,day,int(os.getenv('LOG_RETENTION_DAYS','30')),max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3')))))
                 for path in self.directory.iterdir():
                     match = re.fullmatch(r'(app|debug)-(\d{4}-\d{2}-\d{2})-\d+\.jsonl(?:\.[1-4])?', path.name)
                     if not match or match[1] not in policies:continue
@@ -140,6 +142,7 @@ class DailyFiles(logging.Handler):
 
 
 def configure(directory=None):
+    from .conversation_logs import ConversationFiles,conversation_parts
     with _lock:
         if _log.handlers:
             return
@@ -161,6 +164,10 @@ def configure(directory=None):
             try:
                 files = DailyFiles(directory, timezone, days)
                 files.setFormatter(formatter);files.addFilter(BufferedSteps())
+                from .conversation_logs import ConversationFiles,conversation_parts
+                files.addFilter(lambda record:conversation_parts(getattr(record,'operation_document',None)) is None)
+                conversations=ConversationFiles(directory,timezone)
+                conversations.setFormatter(formatter);_log.addHandler(conversations)
                 _log.addHandler(files)
             except OSError:
                 event('log_storage_unavailable', level='ERROR')
@@ -171,8 +178,12 @@ def configure(directory=None):
             _debug_log.setLevel(logging.INFO);_debug_log.propagate=False
             if directory:
                 try:
-                    debug_files=DailyFiles(directory,timezone,debug_days,prefix='debug')
+                    debug_files=ConversationFiles(directory,timezone,content=True)
                     debug_files.setFormatter(formatter);debug_files.addFilter(BufferedSteps());_debug_log.addHandler(debug_files)
+                    unassigned=DailyFiles(directory,timezone,debug_days,prefix='debug')
+                    unassigned.setFormatter(formatter);unassigned.addFilter(BufferedSteps())
+                    unassigned.addFilter(lambda record:conversation_parts(getattr(record,'operation_document',None)) is None)
+                    _debug_log.addHandler(unassigned)
                     event('debug_logging_enabled',retention_days=debug_days)
                 except OSError:event('debug_log_storage_unavailable',level='ERROR')
             else:event('debug_log_storage_unavailable',level='ERROR')

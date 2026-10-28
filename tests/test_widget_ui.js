@@ -13,7 +13,7 @@ const {chromium}=require('playwright');
    if(path==='/widget.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync('app/static/widget.js','utf8')});
    if(path==='/media/hub-03.png')return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static/media/hub-03.png')});
    let data;
-   if(path==='/v1/bootstrap')data={welcome:'您好，我是 SmartTITU 智能客服。',quick_questions:['操作审计','账单支付流程'],capabilities:{streaming:false}};
+   if(path==='/v1/bootstrap')data={welcome:'您好，我是 SmartTITU 智能客服。',quick_questions:['注册流程','企业认证流程','服务订购流程','客户充值流程','账单支付流程','在线开票流程'],capabilities:{streaming:false}};
    else if(path==='/v1/sessions'&&req.method()==='GET')data={items:[]};
    else if(path==='/v1/sessions')data={session_id:'preview-session'};
    else if(path.endsWith('/messages')){
@@ -47,7 +47,16 @@ const {chromium}=require('playwright');
   assert(!reply.includes('图片展示')&&!reply.includes('更多详情')&&!reply.includes('raw.githubusercontent.com'));
   assert.equal(requests[0].headers['x-request-id'],requests[0].body.request_id);
   assert(requests[0].headers['x-widget-id'].startsWith('window-'));
-  if(process.env.UI_SCREENSHOT)await page.locator('#smarttitu-panel').screenshot({path:process.env.UI_SCREENSHOT});
+  assert.equal(await page.locator('.composer .quick button').count(),6);
+  assert.equal(await page.locator('.media-card .original-link').count(),1);
+  assert.equal(await page.locator('.media-footer .image-caption').innerText(),'套餐版本介绍');
+  if(process.env.UI_SCREENSHOT){
+   await page.getByRole('button',{name:'用户手册：操作审计',exact:true}).scrollIntoViewIfNeeded();
+   await page.locator('#smarttitu-panel').screenshot({path:process.env.UI_SCREENSHOT});
+   await page.getByRole('button',{name:'放大窗口',exact:true}).click();
+   await page.locator('#smarttitu-panel').screenshot({path:process.env.UI_SCREENSHOT.replace(/\.png$/,'-放大.png')});
+   await page.getByRole('button',{name:'还原窗口',exact:true}).click();
+  }
   await page.getByRole('button',{name:'用户手册：操作审计',exact:true}).click();
   assert.equal(await page.locator('.source-content h3').innerText(),'用户手册：操作审计');
   await page.getByRole('button',{name:'← 返回对话'}).click();
@@ -62,6 +71,9 @@ const {chromium}=require('playwright');
   assert(await page.locator('#smarttitu-panel').evaluate(el=>el.getBoundingClientRect().width<=window.innerWidth));
   await page.getByRole('button',{name:'放大窗口',exact:true}).click();
   assert(await page.locator('#smarttitu-panel').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}));
+  if(process.env.UI_SCREENSHOT)await page.locator('#smarttitu-panel').screenshot({path:process.env.UI_SCREENSHOT.replace(/\.png$/,'-手机.png')});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await page.locator('.message').last().evaluate(el=>getComputedStyle(el).animationName),'none');
   assert.deepEqual(errors,[]);
   console.log('Browser checks passed: message avatars and roles, manual labels, clickable URLs, correlation headers, feedback IDs and mobile width');
  } finally {await browser.close();}

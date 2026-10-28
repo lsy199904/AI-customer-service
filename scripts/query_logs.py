@@ -134,29 +134,51 @@ def field(record,key):
 def main():
     parser=argparse.ArgumentParser(description='按问题编号查看节点排查报告或原始日志')
     parser.add_argument('--directory',default=str(Path(__file__).resolve().parent.parent/'var/logs'))
+    parser.add_argument('--month',help='月份 YYYY-MM')
     parser.add_argument('--date',help='日期 YYYY-MM-DD（北京时间）')
     for name in ('request-id','http-request-id','user-ref','tenant-ref','session-ref','window-id','question-category','event'):
         parser.add_argument('--'+name)
+    parser.add_argument('--list-sessions',action='store_true',help='列出匹配用户的会话时间、问答数量和文件位置')
     parser.add_argument('--errors',action='store_true',help='只看 WARNING / ERROR')
     parser.add_argument('--report',action='store_true',help='按时间生成中文节点排查报告，须提供 --request-id')
-    parser.add_argument('--debug-content',action='store_true',help='同时读取独立调试文件中的输入输出正文')
+    parser.add_argument('--debug-content',action='store_true',help='读取会话文件或旧调试文件中的输入输出正文')
     args=parser.parse_args()
     if args.date and not re.fullmatch(r'\d{4}-\d{2}-\d{2}',args.date):parser.error('日期格式应为 YYYY-MM-DD')
-    if (args.report or args.debug_content) and not args.request_id:parser.error('--report / --debug-content 需要 --request-id')
+    if args.month and not re.fullmatch(r'\d{4}-\d{2}',args.month):parser.error('月份格式应为 YYYY-MM')
+    if args.report and not args.request_id:parser.error('--report 需要 --request-id')
+    if args.debug_content and not (args.request_id or args.user_ref or args.session_ref):parser.error('--debug-content 需要 --request-id、--user-ref 或 --session-ref')
     directory=Path(args.directory)
     if not directory.is_dir():parser.exit(1,'日志目录不存在；确认服务已更新并启动。\n')
-    ignored=('directory','date','errors','report','debug_content')
+    ignored=('directory','date','month','errors','report','debug_content','list_sessions')
     filters={key:value for key,value in vars(args).items() if value is not None and key not in ignored}
-    records=[]
-    for prefix in (('app','debug') if args.debug_content else ('app',)):
-        for path in sorted(directory.glob(prefix+'-'+(args.date or '*')+'-*.jsonl*')):
-            if not re.fullmatch(prefix+r'-\d{4}-\d{2}-\d{2}-\d+\.jsonl(?:\.[1-4])?',path.name):continue
+    records=[];session_files={}
+    for prefix in (('app','debug','conversation') if args.debug_content else ('app','conversation')):
+        if prefix=='conversation':
+            import sys
+            sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
+            from app.conversation_logs import conversation_paths
+            paths=list(conversation_paths(directory))
+        else:paths=sorted(directory.glob(prefix+'-'+(args.date or '*')+'-*.jsonl*'))
+        for path in paths:
+            if prefix!='conversation' and not re.fullmatch(prefix+r'-\d{4}-\d{2}-\d{2}-\d+\.jsonl(?:\.[1-4])?',path.name):continue
             if path.is_symlink():continue
+            if prefix=='conversation':
+                if args.month and path.parents[2].name!=args.month:continue
+                if args.tenant_ref and path.parents[1].name!='tenant-'+args.tenant_ref:continue
+                if args.user_ref and path.parent.name!='user-'+args.user_ref:continue
+                if args.session_ref and path.stem!='session-'+args.session_ref:continue
             with path.open(encoding='utf-8') as source:
                 for line in source:
                     try:record=json.loads(line)
                     except ValueError:continue
                     if not isinstance(record,dict):continue
+                    stamp=record.get('时间',record.get('timestamp',''))
+                    if args.date and prefix=='conversation' and not stamp.startswith(args.date):continue
+                    if args.month and not (stamp or path.name[4:]).startswith(args.month):continue
+                    if prefix=='conversation' and not args.debug_content and is_document(record):
+                        record={**record,'输入':{k:v for k,v in record['输入'].items() if k!='问题'},
+                                '处理流程':[step for step in record['处理流程'] if '数据' not in step],
+                                '输出':{k:v for k,v in record['输出'].items() if k!='最终响应'}}
                     if args.errors:
                         failed=(bool(record['输出'].get('失败节点')) or any(step.get('级别') in ('WARNING','ERROR','CRITICAL') for step in record['处理流程'])) if is_document(record) else record.get('level') in ('WARNING','ERROR','CRITICAL')
                         if not failed:continue
@@ -165,8 +187,22 @@ def main():
                         if key=='event' and is_document(record):return value in field(record,'event')
                         return field(record,key)==value
                     if all(matches(key,value) for key,value in filters.items()):
-                        if args.report or args.debug_content:records.append(record)
+                        if args.report or args.debug_content or args.list_sessions:
+                            records.append(record)
+                            if is_document(record):session_files[(field(record,'tenant_ref'),field(record,'user_ref'),field(record,'session_ref'),record['时间'][:7])]=str(path)
                         else:print(json.dumps(record,ensure_ascii=False))
+    if args.list_sessions:
+        sessions={};seen=set()
+        for record in records:
+            if not is_document(record):continue
+            key=(field(record,'tenant_ref'),field(record,'user_ref'),field(record,'session_ref'),record['时间'][:7])
+            identity=(key,record['时间'],field(record,'request_id'))
+            if identity in seen:continue
+            seen.add(identity)
+            item=sessions.setdefault(key,{'企业':key[0],'用户':key[1],'会话':key[2],'月份':key[3],'开始时间':record['时间'],'最近时间':record['时间'],'问答数量':0,'文件':session_files[key]})
+            item['开始时间']=min(item['开始时间'],record['时间']);item['最近时间']=max(item['最近时间'],record['时间']);item['问答数量']+=1
+        for item in sorted(sessions.values(),key=lambda value:value['最近时间'],reverse=True):print(json.dumps(item,ensure_ascii=False))
+        return
     documents={}
     legacy=[]
     for record in records:
