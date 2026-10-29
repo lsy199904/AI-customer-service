@@ -26,8 +26,11 @@ class APIError(Exception):
         self.status, self.code, self.message = status, code, message
         super().__init__(message)
 
+DEMO_TENANT='__smarttitu_demo__'
+
 @dataclass
 class Settings:
+    demo_auto_login: bool = field(default_factory=lambda:os.getenv('DEMO_AUTO_LOGIN','false').lower()=='true')
     database_url: str = field(default_factory=lambda: os.getenv('DATABASE_URL',''))
     db: str = field(default_factory=lambda: os.getenv('DATABASE_PATH', str(BASE / 'var' / 'assistant.db')))
     knowledge: str = field(default_factory=lambda: os.getenv('KNOWLEDGE_PATH', str(BASE / 'data' / 'knowledge.jsonl')))

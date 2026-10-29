@@ -26,7 +26,7 @@ from starlette.exceptions import HTTPException
 from starlette.datastructures import Headers, MutableHeaders
 import uvicorn
 
-from .core import APIError, BASE, Service, Settings, authenticate
+from .core import APIError, BASE, Service, Settings, authenticate, issue_token, DEMO_TENANT
 
 LOG=logging.getLogger('assistant')
 MAX_BODY=16384
@@ -165,6 +165,7 @@ def actor(request:Request,credentials:HTTPAuthorizationCredentials=Depends(beare
     if credentials is None or credentials.scheme.lower()!='bearer':
         raise APIError(401,'unauthorized','请提供登录凭证')
     claims=authenticate(service.config.secret,credentials.credentials)
+    if claims['tenant_id']==DEMO_TENANT and not service.config.demo_auto_login:raise APIError(401,'unauthorized','测试免填凭证入口已关闭')
     from .observability import reference
     fields={'tenant_ref':reference(service.config.secret,claims['tenant_id']),
             'user_ref':reference(service.config.secret,claims['tenant_id']+'\0'+claims['sub'])}
@@ -252,7 +253,27 @@ def create_app(config=None,model=None,service=None):
         return {'status':'ready' if request.app.state.ready else 'starting'}
 
     @app.get('/widget/config',include_in_schema=False)
-    def frame_config():return {'frame_origins':list(config.frame_origins)}
+    def frame_config():return JSONResponse({'frame_origins':list(config.frame_origins),'demo_auto_login':config.demo_auto_login},headers={'Cache-Control':'no-store'})
+
+    @app.get('/widget/demo-auth',include_in_schema=False)
+    def demo_auth(request:Request):
+        if not config.demo_auto_login:raise APIError(404,'not_found','测试免填凭证入口未开启')
+        # No identity arguments are accepted. Each browser gets a signed test-only identity.
+        identity=None
+        candidates=[request.headers.get('authorization','').removeprefix('Bearer '),request.cookies.get('smarttitu_demo_identity','')]
+        for token in candidates:
+            if not token:continue
+            try:
+                claims=authenticate(config.secret,token)
+                if claims['tenant_id']==DEMO_TENANT and re.fullmatch(r'demo-[a-f0-9]{32}',claims['sub']):identity=claims['sub'];break
+            except APIError:pass
+        identity=identity or 'demo-'+uuid4().hex
+        response=JSONResponse({'token':issue_token(config.secret,DEMO_TENANT,identity,3600),'expires_in':3600},
+                              headers={'Cache-Control':'no-store','Pragma':'no-cache'})
+        response.set_cookie('smarttitu_demo_identity',issue_token(config.secret,DEMO_TENANT,identity,86400),
+                            max_age=86400,httponly=True,secure=request.url.scheme=='https',samesite='lax',path='/widget/demo-auth')
+        event('demo_token_issued')
+        return response
 
     def asset(path,service):
         registered={**STATIC,**service.media.assets}
