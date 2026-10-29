@@ -13,6 +13,12 @@ class DemoAccessTests(unittest.TestCase):
   self.temp=tempfile.TemporaryDirectory();self.config=Settings(retrieval_backend='lexical',secret=SECRET,db=str(Path(self.temp.name)/'chat.db'),demo_auto_login=True)
   self.app=create_app(self.config);self.client=TestClient(self.app);self.client.__enter__()
  def tearDown(self):self.client.__exit__(None,None,None);self.temp.cleanup()
+ def test_launcher_image_is_served_without_credentials(self):
+  response=self.client.get('/media/support-robot.png')
+  self.assertEqual(response.status_code,200)
+  self.assertEqual(response.headers['content-type'],'image/png')
+  self.assertTrue(response.content.startswith(b'\x89PNG\r\n\x1a\n'))
+  self.assertEqual(self.client.head('/media/support-robot.png').status_code,200)
  def token(self,client=None):return (client or self.client).get('/widget/demo-auth').json()['token']
  def test_default_is_disabled_and_never_exposes_default_token(self):
   self.config.demo_auto_login=False

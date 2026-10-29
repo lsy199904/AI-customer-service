@@ -31,6 +31,7 @@ from .core import APIError, BASE, Service, Settings, authenticate, issue_token, 
 LOG=logging.getLogger('assistant')
 MAX_BODY=16384
 STATIC={
+    '/media/support-robot.png':('media/support-robot.png','image/png'),
     '/chatbot':('frame.html','text/html; charset=utf-8'),
     '/widget/frame.js':('frame.js','application/javascript; charset=utf-8'),
     '/widget/frame.css':('frame.css','text/css; charset=utf-8'),
