@@ -17,7 +17,7 @@ class ConversationTests(unittest.TestCase):
   self.count+=1;return self.s.chat(ACTOR,self.sid,{'message':q,'request_id':'conversation-%04d'%self.count})
  def test_contact_questions_skip_retrieval_and_return_configured_contact(self):
   with patch.object(self.s.knowledge,'assess',side_effect=AssertionError('contact must not search')):
-   for q in ('人工电话','客服电话是多少？','咨询电话','客服热线','客服邮箱','怎么获取人工联系方式'):
+   for q in ('人工','电话','客服','热线','邮箱','电话是多少','邮箱是多少','怎么联系你们','人工电话','客服电话是多少？','咨询电话','客服热线','客服邮箱','怎么获取人工联系方式'):
     result=self.ask(q)
     self.assertEqual(result['status'],'handoff')
     self.assertEqual(result['contact'],self.s.contact())

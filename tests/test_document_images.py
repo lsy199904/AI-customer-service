@@ -105,16 +105,18 @@ class DocumentImageTests(unittest.TestCase):
 class DocumentImageParserTests(unittest.TestCase):
  def test_updated_word(self):
   result=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx')
-  self.assertEqual(len(result.chunks),57)
+  self.assertEqual(len(result.chunks),58)
   import re
   numbers=[int(re.match(r'问题(\d+)',c['title']).group(1)) for c in result.chunks]
-  self.assertEqual(numbers,list(range(1,58)))
+  self.assertEqual(numbers,list(range(1,59)))
   from app.retrieval import title_text
-  self.assertEqual(len({title_text(c['title']) for c in result.chunks}),57)
+  self.assertEqual(len({title_text(c['title']) for c in result.chunks}),58)
   topics=['注册','登录','企业认证','在线签约','服务订购','星级评定','客户交付','客户充值','账单支付','在线开票']
   ids=['register','login','verification','contract','subscription','rating','delivery','recharge','payment','invoice']
   self.assertEqual([c['title'] for c in result.chunks[3:13]],[f'问题{i+4} {name}流程' for i,name in enumerate(topics)])
   self.assertEqual([c['image_ids'] for c in result.chunks[3:13]],[['business-'+key] for key in ids])
+  self.assertIn('4008841883',result.chunks[-1]['content'])
+  self.assertIn('help@china-entercom.net',result.chunks[-1]['content'])
   self.assertEqual(result.version,'2026-10-26 v5')
   self.assertEqual(result.chunks[14]['title'],'问题15 SmartTITU服务体系与架构')
   self.assertEqual(result.chunks[14]['image_ids'],['product-04'])
