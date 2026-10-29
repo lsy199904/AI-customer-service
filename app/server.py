@@ -398,12 +398,7 @@ def create_app(config=None,model=None,service=None):
 
     @app.get('/v1/documents/{document_id}/revisions/{revision}/download',tags=['knowledge'])
     def document(document_id:str,revision:str,user=Depends(actor),service=Depends(current_service)):
-        if not re.fullmatch(r'DOC-[a-f0-9]+',document_id) or not re.fullmatch(r'[a-f0-9]{64}',revision):
-            raise APIError(404,'not_found','文档版本不存在')
-        filename,raw=service.document(document_id,revision)
-        types={'.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.pdf':'application/pdf','.md':'text/markdown; charset=utf-8','.txt':'text/plain; charset=utf-8'}
-        return Response(raw,media_type=types.get(Path(filename).suffix.lower(),'application/octet-stream'),
-                        headers={'Content-Disposition':"attachment; filename*=UTF-8''"+quote(filename,safe='')})
+        raise APIError(404,'not_found','文档下载未开放')
 
     @app.get('/openapi.json',include_in_schema=False)
     def schema(user=Depends(actor)):return app.openapi()

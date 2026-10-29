@@ -503,7 +503,7 @@ class Service:
         return {'id':row['id'],'title':row['title'],'display_title':'用户手册：'+chapter,
                 'section_title':chapter,'source_file':row['source_file'],
                 'pages':row.get('source_pages',[]),'version':row.get('version'),
-                'url':url,'document_url':document_url,'download_url':row.get('download_url'),'document_id':row.get('document_id'),'revision':row.get('revision'),'source_locator':row.get('source_locator'),'source_references':row.get('source_references',[])}
+                'url':url,'document_id':row.get('document_id'),'revision':row.get('revision')}
 
     def source(self, key):
         row=self.knowledge.get(key) if hasattr(self.knowledge,'get') else self.knowledge.rows.get(key)
@@ -512,7 +512,9 @@ class Service:
             row=Knowledge(self.config.knowledge).rows.get(key)
         if row is None:
             raise APIError(404,'not_found','来源不存在')
-        return {**self.citation(row), 'content':row['content']}
+        content='\n'.join(line for line in row['content'].splitlines() if not re.match(r'^\s*(?:图片\s*URL|原文链接|来源)\s*[:：]',line,re.I))
+        content=re.sub(r'https?://raw\.githubusercontent\.com/[^\s<>]+','[内部地址已隐藏]',content,flags=re.I)
+        return {**self.citation(row), 'content':content}
 
     def document(self,document_id,revision):
         row=self.knowledge.store.download(document_id,revision) if hasattr(self.knowledge,'store') else None

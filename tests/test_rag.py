@@ -147,10 +147,10 @@ class SemanticHTTPTests(unittest.TestCase):
     _,raw=req('/v1/sessions',{});sid=json.loads(raw)['session_id'];path='/v1/sessions/'+sid+'/messages'
     count=len(embed.calls);_,raw=req(path,{'message':'你好','request_id':'greeting-001'});self.assertEqual(json.loads(raw)['retrieval']['method'],'skipped');self.assertEqual(len(embed.calls),count)
     _,raw=req(path,{'message':'start onboarding','request_id':'question-001'});answer=json.loads(raw)
-    self.assertEqual(answer['status'],'answered');citation=answer['citations'][0];download=citation['download_url']
-    self.assertEqual(req(download,auth=False)[0],401);self.assertEqual(req(download)[1],(source/'开户.md').read_bytes())
+    self.assertEqual(answer['status'],'answered');citation=answer['citations'][0];self.assertNotIn('download_url',citation);download='/v1/documents/'+citation['document_id']+'/revisions/'+citation['revision']+'/download'
+    self.assertEqual(req(download,auth=False)[0],401);self.assertEqual(req(download)[0],404)
     self.assertEqual(req(citation['url'])[0],200)
-    server.service.knowledge.store.deactivate(citation['document_id']);self.assertEqual(req(download)[0],200)
+    server.service.knowledge.store.deactivate(citation['document_id']);self.assertEqual(req(download)[0],404)
     _,raw=req(path,{'message':'退款规则是什么','request_id':'unknown-001'});answer=json.loads(raw)
     self.assertFalse(answer['handoff']);self.assertEqual(answer['status'],'suggestions');self.assertIsNone(answer['contact'])
    finally:server.shutdown();thread.join();server.server_close();server.service.db.close()

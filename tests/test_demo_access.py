@@ -19,6 +19,17 @@ class DemoAccessTests(unittest.TestCase):
   self.assertEqual(response.headers['content-type'],'image/png')
   self.assertTrue(response.content.startswith(b'\x89PNG\r\n\x1a\n'))
   self.assertEqual(self.client.head('/media/support-robot.png').status_code,200)
+ def test_source_hides_internal_metadata(self):
+  service=self.app.state.service
+  key=next(iter(service.knowledge.rows))
+  original=service.knowledge.rows[key]
+  row={**original,'content':'正常操作步骤\n图片URL:https://raw.githubusercontent.com/private/image.png\n原文链接:https://private.example/manual.pdf','download_url':'/secret','source_references':['private'],'source_locator':'internal'}
+  service.knowledge.rows[key]=row
+  try:
+   response=service.source(key)
+   self.assertEqual(response['content'],'正常操作步骤')
+   for field in ('download_url','document_url','source_locator','source_references'):self.assertNotIn(field,response)
+  finally:service.knowledge.rows[key]=original
  def token(self,client=None):return (client or self.client).get('/widget/demo-auth').json()['token']
  def test_default_is_disabled_and_never_exposes_default_token(self):
   self.config.demo_auto_login=False
