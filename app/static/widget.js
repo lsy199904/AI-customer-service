@@ -517,6 +517,9 @@
     if(transcript) transcript.replaceChildren();if(quick) quick.replaceChildren();if(sourcePane) {sourcePane.replaceChildren();sourcePane.hidden=true;}
     if(input) input.value='';if(status) clearStatus();close(false);
   }
+  function brandLogo(className) {
+    const img=element('img',className);img.src=new URL('/media/smarttitu-logo.png',config.apiBase).href;img.alt='SmartTITU';img.width=150;img.height=40;return img;
+  }
   function mount() {
     if(host) return;
     host=document.createElement('div');host.id='smarttitu-assistant-widget';root=host.attachShadow({mode:'open'});
@@ -525,11 +528,15 @@
       .launch{display:none!important}.panel{position:fixed;inset:0;width:100%;height:100dvh;min-height:0;border:0;border-radius:0;box-shadow:none}
       @media(max-width:500px){.panel{inset:0;width:100%;height:100dvh;min-height:0;border-radius:0}}
     `;
+    css.textContent+=`
+      .header-logo{display:block;width:150px;height:40px;object-fit:contain;object-position:left center}.brand-heading .subtitle{margin-top:4px;font-size:10px}.launch{background:#fff;color:#23364f;border:1px solid #e0e6ef;gap:12px}.launch-logo{display:block;width:104px;height:28px;object-fit:contain}.launch:hover{background:#f8faff}.launch>span{font-size:12px;border-left:1px solid #dfe5ee;padding-left:12px}
+      @media(max-width:500px){.header-logo{width:128px;height:34px}.brand-heading .subtitle{font-size:9px}.launch{padding:10px 15px}}
+    `;
     root.append(css);
     launcher=element('button','launch');launcher.type='button';launcher.setAttribute('aria-label','打开智能客服');launcher.setAttribute('aria-expanded','false');launcher.setAttribute('aria-controls','smarttitu-panel');
-    launcher.append(element('span','icon','✦'),element('span','','智能客服'));launcher.onclick=()=>opened?close():open();root.append(launcher);
+    launcher.append(brandLogo('launch-logo'),element('span','','智能客服'));launcher.onclick=()=>opened?close():open();root.append(launcher);
     panel=element('section','panel');panel.id='smarttitu-panel';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','SmartTITU智能客服');
-    const header=element('header');const title=element('div');title.append(element('h2','','SmartTITU 智能客服'),element('div','subtitle','产品答疑 · 接入指引 · 故障排查'));
+    const header=element('header');const title=element('div');title.className='brand-heading';title.append(brandLogo('header-logo'),element('div','subtitle','智能客服 · 产品答疑与接入指引'));
     const actions=element('div','head-actions');
     const fresh=element('button','ghost','＋');fresh.title='新建会话';fresh.setAttribute('aria-label','新建会话');fresh.onclick=()=>{
       if(busy) return;sessionId=null;retry=null;transcript.replaceChildren();message('assistant','新对话已开始。请问有什么可以帮您？');input.focus();
@@ -540,7 +547,7 @@
     resizeLabel();resize.onclick=()=>{expanded=!expanded;if(config.layout==='iframe')config.onResize?.(expanded);else panel.classList.toggle('expanded',expanded);resizeLabel();};
     if(config.layout==='iframe'&&!config.onResize)resize.hidden=true;
     actions.append(fresh,historyButton,resize,minimize);
-    header.append(element('div','avatar','✦'),title,actions);panel.append(header);
+    header.append(title,actions);panel.append(header);
     transcript=element('div','body');transcript.setAttribute('role','log');transcript.setAttribute('aria-live','polite');panel.append(transcript);
     const composer=element('div','composer');quick=element('div','quick');status=element('div','notice');status.setAttribute('role','status');status.hidden=true;
     const entry=element('div','entry');input=element('textarea');input.placeholder='输入您的问题…';input.maxLength=2000;input.setAttribute('aria-label','客服问题');
