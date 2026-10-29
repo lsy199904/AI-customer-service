@@ -14,11 +14,11 @@ class DemoAccessTests(unittest.TestCase):
   self.app=create_app(self.config);self.client=TestClient(self.app);self.client.__enter__()
  def tearDown(self):self.client.__exit__(None,None,None);self.temp.cleanup()
  def test_launcher_image_is_served_without_credentials(self):
-  response=self.client.get('/media/support-robot.png')
+  response=self.client.get('/media/support-robot-b.png')
   self.assertEqual(response.status_code,200)
   self.assertEqual(response.headers['content-type'],'image/png')
   self.assertTrue(response.content.startswith(b'\x89PNG\r\n\x1a\n'))
-  self.assertEqual(self.client.head('/media/support-robot.png').status_code,200)
+  self.assertEqual(self.client.head('/media/support-robot-b.png').status_code,200)
  def test_source_hides_internal_metadata(self):
   service=self.app.state.service
   key=next(iter(service.knowledge.rows))

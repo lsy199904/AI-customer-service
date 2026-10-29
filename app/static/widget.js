@@ -526,16 +526,16 @@
     `;
     css.textContent+=`
       .header-logo{display:block;width:150px;height:40px;object-fit:contain;object-position:left center}.brand-heading .subtitle{margin-top:4px;font-size:10px}
-      .launch{width:88px;height:100px;padding:0;border:0;border-radius:20px;background:transparent;box-shadow:none;display:grid;place-items:center}.launch[aria-expanded="true"]{width:56px;height:60px}.launch:hover{background:transparent;transform:none}.launch:focus-visible{outline:3px solid #709cff;outline-offset:5px}.launch-mascot{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 5px #2455ad22);image-rendering:pixelated;animation:mascot-hop 2.8s ease-in-out infinite;transform-origin:50% 100%;pointer-events:none}.launch:hover .launch-mascot,.launch:focus-visible .launch-mascot,.launch[aria-expanded="true"] .launch-mascot{animation:none}
+      .launch{width:88px;height:80px;padding:0;border:0;border-radius:20px;background:transparent;box-shadow:none;display:grid;place-items:center}.launch[aria-expanded="true"]{width:56px;height:52px}.launch:hover{background:transparent;transform:none}.launch:focus-visible{outline:3px solid #709cff;outline-offset:5px}.launch-mascot{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 5px #2455ad22);animation:mascot-hop 3.6s ease-in-out infinite;transform-origin:50% 100%;pointer-events:none}.launch:hover .launch-mascot,.launch:focus-visible .launch-mascot,.launch[aria-expanded="true"] .launch-mascot{animation:none}
       .contact-row{display:flex;align-items:center;gap:10px;margin-top:8px}.contact-value{flex:1;min-width:0;overflow-wrap:anywhere;user-select:text}.contact-copy{flex-shrink:0;border:1px solid #d5e1f5;border-radius:7px;padding:4px 10px;background:#fff;color:#245ba4;font-size:11px}.contact-copy:hover{background:#e7efff}
       .launch-fallback{width:64px;height:64px;border-radius:22px;background:#155de6;color:#fff;border:0;box-shadow:0 8px 24px #155de633}.launch-fallback svg{width:40px;height:40px}
-      @keyframes mascot-hop{0%,55%,100%{transform:translateY(0)}65%{transform:translateY(0) scale(1.04,.96)}76%{transform:translateY(-10px) scale(.98,1.02)}88%{transform:translateY(0) scale(1.03,.97)}}
-      @media(max-width:500px){.header-logo{width:128px;height:34px}.brand-heading .subtitle{font-size:9px}.launch{width:62px;height:72px;padding:0}}
+      @keyframes mascot-hop{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+      @media(max-width:500px){.header-logo{width:128px;height:34px}.brand-heading .subtitle{font-size:9px}.launch{width:62px;height:56px;padding:0}}
       @media(prefers-reduced-motion:reduce){.launch-mascot{animation:none}}
     `;
     root.append(css);
     launcher=element('button','launch');launcher.type='button';launcher.setAttribute('aria-label','打开智能客服');launcher.setAttribute('aria-expanded','false');launcher.setAttribute('aria-controls','smarttitu-panel');
-    const mascot=element('img','launch-mascot');mascot.src=new URL('/media/support-robot.png',config.apiBase).href;mascot.alt='';mascot.width=88;mascot.height=100;launcher.title='智能客服';mascot.onerror=()=>{const fallback=roleAvatar('assistant');fallback.classList.add('launch-fallback');launcher.replaceChildren(fallback);};launcher.append(mascot);launcher.onclick=()=>opened?close():open();root.append(launcher);
+    const mascot=element('img','launch-mascot');mascot.src=new URL('/media/support-robot-b.png',config.apiBase).href;mascot.alt='';mascot.width=88;mascot.height=80;launcher.title='智能客服';mascot.onerror=()=>{const fallback=roleAvatar('assistant');fallback.classList.add('launch-fallback');launcher.replaceChildren(fallback);};launcher.append(mascot);launcher.onclick=()=>opened?close():open();root.append(launcher);
     panel=element('section','panel');panel.id='smarttitu-panel';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','SmartTITU智能客服');
     const header=element('header');const title=element('div');title.className='brand-heading';title.append(brandLogo('header-logo'),element('div','subtitle','智能客服 · 产品答疑与接入指引'));
     const actions=element('div','head-actions');
