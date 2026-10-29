@@ -15,6 +15,14 @@ class ConversationTests(unittest.TestCase):
  def tearDown(self):self.s.db.close();self.tmp.cleanup()
  def ask(self,q):
   self.count+=1;return self.s.chat(ACTOR,self.sid,{'message':q,'request_id':'conversation-%04d'%self.count})
+ def test_contact_questions_skip_retrieval_and_return_configured_contact(self):
+  with patch.object(self.s.knowledge,'assess',side_effect=AssertionError('contact must not search')):
+   for q in ('人工电话','客服电话是多少？','咨询电话','客服热线','客服邮箱','怎么获取人工联系方式'):
+    result=self.ask(q)
+    self.assertEqual(result['status'],'handoff')
+    self.assertEqual(result['contact'],self.s.contact())
+    self.assertEqual(result['citations'],[])
+  self.assertEqual(intent_of('企业认证时填写的电话怎么修改'),'knowledge')
  def test_greeting_skips_retrieval(self):
   with patch.object(self.s.knowledge,'assess',side_effect=AssertionError('no search')):
    for q in ('你好','您好呀～','hello!','你是谁','你能做什么','谢谢你','再见'):

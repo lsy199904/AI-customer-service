@@ -67,7 +67,7 @@ def intent_of(question):
     if compact in {'你能做什么','你有什么功能','你可以做什么','你能帮我什么','你会什么','怎么使用你'}:return 'capabilities'
     if re.fullmatch(r'(好的|好|嗯|嗯嗯)?(谢谢|谢谢你|感谢|多谢|谢谢啦|谢谢您)+(啦|了|呀|哦)?',compact):return 'thanks'
     if compact in {'再见','拜拜','下次聊','bye','goodbye','先这样','没问题了'}:return 'farewell'
-    if re.search(r'转人工|人工客服|联系人工|联系客服',question):return 'handoff'
+    if re.search(r'转人工|人工客服|联系人工|联系客服|(?:人工|客服|咨询|服务)(?:联系)?(?:电话|热线|邮箱|邮件地址)|联系方式',compact):return 'handoff'
     if (re.search(r'(我的|我们|本企业|本公司|当前).{0,15}(余额|订单|认证状态|剩余)|创建.{0,5}工单',question)
             and not re.search(r'如何|怎么|哪里',question)):return 'business'
     if re.search(r'图片|截图|示意图|架构图|产品图|流程图|二维码|logo|标识|来张图|给.*图',question,re.I):return 'image'
