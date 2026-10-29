@@ -335,12 +335,22 @@
   }
   function renderContact(parent, contact) {
     const box = element('div', 'contact');box.append(element('div', '', '联系人工客服'));
-    if (/^[+\d -]{3,30}$/.test(contact.phone || '')) {
-      const a = element('a', '', '电话：' + contact.phone); a.href='tel:'+contact.phone.replace(/[^+\d]/g,'');box.append(a);
+    function copyRow(label,value) {
+      const line=element('div','contact-row');const text=element('span','contact-value',label+'：'+value);
+      const copy=element('button','contact-copy','复制');copy.type='button';copy.setAttribute('aria-label','复制'+label);
+      const result=element('span','hint');result.setAttribute('role','status');
+      copy.onclick=async()=>{
+        let copied=false;
+        try{await navigator.clipboard.writeText(value);copied=true;}catch{
+          const field=element('textarea');field.value=value;field.setAttribute('readonly','');field.style.cssText='position:fixed;left:0;top:0;width:1px;height:1px;opacity:0';box.append(field);
+          try{field.focus();field.select();copied=document.execCommand('copy');}catch{}finally{field.remove();copy.focus();}
+        }
+        copy.textContent=copied?'已复制':'复制';result.textContent=copied?'':'复制失败，请选中号码或邮箱手动复制';
+      };
+      line.append(text,copy);box.append(line,result);
     }
-    if (/^[a-zA-Z0-9_.+%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(contact.email || '')) {
-      const a = element('a', '', contact.email); a.href='mailto:'+contact.email;box.append(a);
-    }
+    if (/^[+\d -]{3,30}$/.test(contact.phone || '')) copyRow('电话',contact.phone);
+    if (/^[a-zA-Z0-9_.+%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(contact.email || '')) copyRow('邮箱',contact.email);
     const qr = safeImage(contact.wechat_qr_url);
     if (qr) {
       const img = element('img');img.src=qr;img.alt='企业微信人工客服二维码';img.referrerPolicy='no-referrer';box.append(img);
@@ -531,6 +541,7 @@
     css.textContent+=`
       .header-logo{display:block;width:150px;height:40px;object-fit:contain;object-position:left center}.brand-heading .subtitle{margin-top:4px;font-size:10px}
       .launch{width:88px;height:100px;padding:0;border:0;border-radius:20px;background:transparent;box-shadow:none;display:grid;place-items:center}.launch[aria-expanded="true"]{width:56px;height:60px}.launch:hover{background:transparent;transform:none}.launch:focus-visible{outline:3px solid #709cff;outline-offset:5px}.launch-mascot{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 5px #2455ad22);image-rendering:pixelated;animation:mascot-hop 2.8s ease-in-out infinite;transform-origin:50% 100%;pointer-events:none}.launch:hover .launch-mascot,.launch:focus-visible .launch-mascot,.launch[aria-expanded="true"] .launch-mascot{animation:none}
+      .contact-row{display:flex;align-items:center;gap:10px;margin-top:8px}.contact-value{flex:1;min-width:0;overflow-wrap:anywhere;user-select:text}.contact-copy{flex-shrink:0;border:1px solid #d5e1f5;border-radius:7px;padding:4px 10px;background:#fff;color:#245ba4;font-size:11px}.contact-copy:hover{background:#e7efff}
       .launch-fallback{width:64px;height:64px;border-radius:22px;background:#155de6;color:#fff;border:0;box-shadow:0 8px 24px #155de633}.launch-fallback svg{width:40px;height:40px}
       @keyframes mascot-hop{0%,55%,100%{transform:translateY(0)}65%{transform:translateY(0) scale(1.04,.96)}76%{transform:translateY(-10px) scale(.98,1.02)}88%{transform:translateY(0) scale(1.03,.97)}}
       @media(max-width:500px){.header-logo{width:128px;height:34px}.brand-heading .subtitle{font-size:9px}.launch{width:62px;height:72px;padding:0}}

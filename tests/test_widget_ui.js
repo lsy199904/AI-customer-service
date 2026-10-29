@@ -21,6 +21,7 @@ const {chromium}=require('playwright');
     data={answer:'1. 您可以在操作审计页面查看平台操作记录。\n2. 官网：https://www.smarttitu.cn\n\n图片展示：\n![套餐版本介绍](https://widget.test/media/hub-03.png)\n更多详情请参考手册：\nhttps://raw.githubusercontent.com/lsy199904/AI-customer-service/main/docs/sources/manual.pdf',status:'answered',request_id:body.request_id,
       images:[{id:'plan',title:'套餐版本介绍',url:'/media/hub-03.png'},{id:'plan-duplicate',title:'套餐版本介绍',url:'/media/hub-03.png'}],
       citations:[{id:'KB-test','title':'问题44 操作审计'}]};
+    if(body.message==='转人工客服'){data.handoff=true;data.contact={phone:'4008841883',email:'help@china-entercom.net'};}
     if(body.message==='企业认证流程'){
       data.answer='登录后完善企业资料，选择在线或线下认证，并根据页面提示办理。';data.images=[];data.actions=[{type:'guide',label:'带我一步步办理',message:'分步指导：企业认证流程'}];
     }
@@ -131,6 +132,12 @@ const {chromium}=require('playwright');
   await page.locator('.guidance-badge').last().getByText('已结束',{exact:true}).waitFor();
   await page.evaluate(()=>window.SmartTITUAssistant.ask('支付不了'));
   assert.equal(await page.locator('.message.assistant').last().locator('.assistant-actions button').count(),2);
+  await page.evaluate(()=>{window.copiedContacts=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>window.copiedContacts.push(value)}});return window.SmartTITUAssistant.ask('转人工客服');});
+  await page.getByRole('button',{name:'复制电话',exact:true}).click();
+  await page.getByRole('button',{name:'复制邮箱',exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>window.copiedContacts),['4008841883','help@china-entercom.net']);
+  assert.equal(await page.locator('.contact a').count(),0);
+  assert.equal(await page.getByRole('button',{name:'复制电话',exact:true}).innerText(),'已复制');
   assert.deepEqual(errors,[]);
   console.log('Browser checks passed: message avatars and roles, manual labels, clickable URLs, correlation headers, feedback IDs and mobile width');
  } finally {await browser.close();}
