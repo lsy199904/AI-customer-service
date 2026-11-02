@@ -34,7 +34,7 @@ class LiveStreamTests(unittest.TestCase):
    on_delta('第二段。');finished.set();return '第一段，第二段。'
   try:
    with patch.object(Model,'_complete_request',generate):
-    with self.client.stream('POST',f'/v1/sessions/{self.sid}/messages/stream',json={'message':'429错误怎么办','request_id':'live-stream-123'}) as response:
+    with self.client.stream('POST',f'/v1/sessions/{self.sid}/messages/stream',json={'message':'你好','request_id':'live-stream-123'}) as response:
      chunks=[];result=None
      for kind,payload in self.frames(response):
       if kind=='delta':
@@ -42,8 +42,8 @@ class LiveStreamTests(unittest.TestCase):
        if len(chunks)==1:
         self.assertFalse(finished.is_set());self.assertEqual(payload['text'],'第一段，');release.set()
       if kind=='complete':result=payload
-    self.assertEqual(''.join(chunks),'第一段，第二段。');self.assertEqual(result['answer'],'第一段，第二段。');self.assertTrue(result['citations'])
-    retry=self.client.post(f'/v1/sessions/{self.sid}/messages',json={'message':'429错误怎么办','request_id':'live-stream-123'})
+    self.assertEqual(''.join(chunks),'第一段，第二段。');self.assertEqual(result['answer'],'第一段，第二段。');self.assertEqual(result['citations'],[])
+    retry=self.client.post(f'/v1/sessions/{self.sid}/messages',json={'message':'你好','request_id':'live-stream-123'})
     self.assertEqual(retry.json()['answer'],result['answer']);self.assertEqual(len(calls),1)
   finally:release.set()
  def test_many_chunks_not_dropped_or_duplicated(self):
@@ -63,6 +63,18 @@ class LiveStreamTests(unittest.TestCase):
   with patch.object(Model,'_complete_request',generate):
    with self.client.stream('POST',f'/v1/sessions/{self.sid}/messages/stream',json={'message':'429错误怎么办','request_id':'live-stream-fail'}) as response:
     frames=list(self.frames(response))
-  self.assertTrue(any(kind=='delta' for kind,_ in frames))
+  self.assertNotIn('尚未生成完整的文字',''.join(data['text'] for kind,data in frames if kind=='delta'))
   result=next(data for kind,data in frames if kind=='complete')
   self.assertEqual(result['reason'],'model_unavailable');self.assertEqual(result['images'],[])
+
+ def test_unsupported_technical_answer_never_reaches_customer_delta(self):
+  def generate(model,messages,on_delta=None):
+   text='执行 `kubectl apply -f fabricated-install.yaml`，使用 v0.13.7，地址池192.168.1.240/30。'
+   on_delta(text);return text
+  with patch.object(Model,'_complete_request',generate):
+   with self.client.stream('POST',f'/v1/sessions/{self.sid}/messages/stream',json={'message':'429错误怎么办','request_id':'live-stream-guard'}) as response:
+    frames=list(self.frames(response))
+  self.assertNotIn('fabricated-install',''.join(data['text'] for kind,data in frames if kind=='delta'))
+  result=next(data for kind,data in frames if kind=='complete')
+  self.assertEqual(result['reason'],'unsupported_answer');self.assertEqual(result['citations'],[])
+  self.assertNotIn('fabricated-install',result['answer'])

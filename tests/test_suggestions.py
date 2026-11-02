@@ -71,3 +71,15 @@ class SuggestionsTests(unittest.TestCase):
   self.assertEqual(reply['status'],'suggestions');self.assertFalse(reply['retrieval']['matched'])
   self.assertEqual(reply['suggestions'][0],'企业注册与认证流程');self.assertEqual(reply['citations'],[])
   self.assertNotIn('_suggestion_titles',reply['retrieval'])
+
+ def test_candidate_decisions_are_logged_but_not_returned_to_customer(self):
+  decisions=[{'id':'KB-candidate','title':'附录-安装组件','similarity':.7628,'rerank_score':.49,
+              'selected':False,'reason':'below_rerank_threshold'}]
+  report={'matched':False,'hits':[],'method':'hybrid_rrf_rerank','similarity':.7628,
+          'similarity_knowledge_id':'KB-candidate','_candidate_decisions':decisions,'_diagnostics':{'internal':'details'}}
+  with patch.object(self.service.knowledge,'assess',return_value=report),patch('app.workflow.event') as logged:
+   reply=self.ask('安装组件的具体要求')
+  self.assertNotIn('_candidate_decisions',reply['retrieval']);self.assertNotIn('_diagnostics',reply['retrieval'])
+  selected=next(call for call in logged.call_args_list if call.args[0]=='retrieval_candidates')
+  self.assertEqual(selected.kwargs['candidates'],decisions)
+  self.assertEqual(selected.kwargs['similarity_knowledge_id'],'KB-candidate')

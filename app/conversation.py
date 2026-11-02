@@ -78,7 +78,8 @@ def intent_of(question):
 def contextual_query(question,history):
     query=question
     if len(question)<24 and re.search(r'这个|那个|它|上述|刚才|然后|接下来|还有呢',question):
-        previous=next((h['content'] for h in reversed(history) if h['role']=='user'), '')
+        previous=next((h['content'] for h in reversed(history) if h['role']=='user'
+                       and not (len(h['content'])<24 and re.search(r'这个|那个|它|上述|刚才|然后|接下来|还有呢',h['content']))), '')
         if previous:query=previous+' '+question
     return query
 
@@ -140,3 +141,27 @@ class MediaCatalog:
 
     def public(self, row):
         return {k:row.get(k,'') for k in ('id','url','title','alt')}
+
+
+def suggestion_sources(knowledge,suggestions):
+    """Bind displayed questions to unique active records, without accepting client IDs."""
+    from .retrieval import topic
+    rows=list(knowledge.rows.values());result=[]
+    for question in suggestions:
+        matches=[r for r in rows if topic(r['title'])==topic(question,question=True)]
+        if len(matches)==1:
+            r=matches[0]
+            result.append({'question':question,'knowledge_id':r['id'],'revision':r.get('revision')})
+    return result
+
+
+def recommended_selection(knowledge,question,history):
+    from .retrieval import topic,title_text
+    previous=next((h for h in reversed(history) if h['role']=='assistant'),{})
+    response=previous.get('response') or {}
+    binding=next((r for r in response.get('suggestion_sources',[]) if topic(r['question'],question=True)==topic(question,question=True)),None)
+    if not binding:return question,None
+    # Recheck active revision at click time: an old recommendation cannot resurrect a deleted chapter.
+    row=knowledge.rows.get(binding['knowledge_id'])
+    if not row or row.get('revision')!=binding.get('revision') or topic(row['title'])!=topic(question,question=True):return question,None
+    return title_text(row['title']),row['id']

@@ -225,6 +225,7 @@ _trace = ContextVar('request_trace', default=None)
 _NODE_NAMES = {
     'chat_started':'接收问题','question_classified':'问题分类',
     'retrieval_model_started':'检索模型调用开始','retrieval_model_completed':'检索模型调用完成',
+    'retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'回答依据校验未通过',
     'retrieval_model_failed':'检索模型调用失败','retrieval_completed':'知识检索完成',
     'retrieval_failed':'知识检索失败','model_request_started':'回答模型调用开始',
     'model_request_completed':'回答模型调用完成','model_request_failed':'回答模型调用失败',

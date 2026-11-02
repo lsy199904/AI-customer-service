@@ -25,22 +25,22 @@ class HybridRetrievalTests(unittest.TestCase):
   self.embed=AdverseEmbedding();ingest_documents(self.config,embedder=self.embed)
   self.rank=AdverseReranker();self.config.rerank_enabled=True;self.config.rerank_url='http://127.0.0.1:11434/v1/rerank'
   self.k=SemanticKnowledge(self.config,self.embed,self.rank)
- def test_rerank_threshold_filters_before_title_selection(self):
+ def test_unique_title_is_preserved_before_rerank_filter(self):
   self.config.min_similarity=0
   self.config.rerank_min_score=.6
   result=self.k.assess('TITUHub概况')
   self.assertTrue(result['matched'])
-  self.assertTrue(all(score>=.6 for score,_,_ in result['hits']))
-  self.assertFalse(any(row['title']=='问题10 第6页 TITU Hub概况' for _,row,_ in result['hits']))
+  self.assertEqual([row['title'] for _,row,_ in result['hits']],['问题10 第6页 TITU Hub概况'])
+  self.assertTrue(result['_candidate_decisions'][0]['reason'])
  def test_rerank_threshold_keeps_boundary_and_can_remove_all(self):
   class Scores:
    def __init__(self,score):self.score=score
    def rank(self,q,docs):return [(i,self.score) for i in range(len(docs))]
   self.config.rerank_min_score=.6
   self.k.reranker=Scores(.6)
-  self.assertTrue(self.k.assess('TITUHub概况')['matched'])
+  self.assertTrue(self.k.assess('How do I onboard my organization?')['matched'])
   self.k.reranker=Scores(.5999)
-  self.assertFalse(self.k.assess('TITUHub概况')['matched'])
+  self.assertFalse(self.k.assess('How do I onboard my organization?')['matched'])
  def tearDown(self):self.temp.cleanup()
  def test_audit_procedure_excludes_sandbox_even_with_adverse_reranking(self):
   path=self.sources/'audit.md'

@@ -13,7 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from .ingestion import PIPELINE_VERSION,SUPPORTED,parse_document
-from .retrieval import TEXT_VERSION,retrieval_text,fuse
+from .retrieval import TEXT_VERSION,retrieval_text,fuse,topic
 
 BASE=Path(__file__).resolve().parent.parent
 
@@ -294,10 +294,11 @@ class SemanticKnowledge:
     @property
     def rows(self):return {r['id']:r for r,_ in self.store.snapshot(include_vectors=False)[1]}
     def get(self,key):return self.store.get(key)
-    def assess(self,question,diagnostics=False):
+    supports_selection=True
+    def assess(self,question,diagnostics=False,preferred_id=None):
         from .deadlines import run
-        return run(lambda:self._assess(question,diagnostics),self.config.retrieval_timeout)
-    def _assess(self,question,diagnostics=False):
+        return run(lambda:self._assess(question,diagnostics,preferred_id),self.config.retrieval_timeout)
+    def _assess(self,question,diagnostics=False,preferred_id=None):
         from .deadlines import check
         check()
         c=self.config;state,rows=self.store.snapshot(include_vectors=self.vectors is None)
@@ -314,6 +315,9 @@ class SemanticKnowledge:
             scores=self.vectors.search(query,[r for r,_ in rows],c.top_k)
             ranked=sorted([(scores.get(record['id'],-1.0),record) for record,_ in rows],key=lambda x:x[0],reverse=True)
         report['similarity']=round(ranked[0][0],4)
+        report['similarity_knowledge_id']=ranked[0][1]['id']
+        report['query']=question
+        report['rerank_threshold']=c.rerank_min_score if c.rerank_enabled else None
         # Below the answer gate, nearby topics may still be offered as questions.
         # This never marks them as matched evidence or lowers the answer threshold.
         report['_suggestion_titles']=[record['title'] for score,record in ranked[:3]
@@ -324,7 +328,13 @@ class SemanticKnowledge:
             report['_diagnostics']={'dense_top':[{'id':r['id'],'title':r['title'],'score':round(score,6)} for score,r in ranked[:c.top_k]],
                 'candidates':[{'id':s['row']['id'],'title':s['row']['title'],'dense':round(s['dense'],6),
                                'bm25':round(s['lexical'],6),'rrf':round(s['rrf'],6),'title_match':s['title_match']} for s in candidates]}
-        if not candidates:report['reason']='no_candidates';return report
+        if not candidates:
+            report['reason']='no_candidates'
+            report['_candidate_decisions']=[{'id':row['id'],'title':row['title'],'channels':[],
+                'similarity':round(dense,6),'bm25':None,'rrf':None,'rerank_score':None,
+                'rerank_threshold':c.rerank_min_score if c.rerank_enabled else None,'selected':False,
+                'reason':'below_dense_gate_and_no_qualified_lexical_recall'} for dense,row in ranked[:c.top_k]]
+            return report
         if c.rerank_enabled:
             order=self.reranker.rank(question,[retrieval_text(s['row']) for s in candidates])
             check()
@@ -333,17 +343,50 @@ class SemanticKnowledge:
         else:
             ranked_candidates=[{**s,'score':s['rrf']} for s in candidates]
             eligible=ranked_candidates
-        # A complete chapter-title request should not be replaced by related feature sections.
-        # Semantic and lexical candidates still compete normally for all other questions.
-        anchors=[s for s in eligible if s['title_match']]
+        # Protect a unique, explicitly named subject BEFORE applying the rerank gate.
+        # This is navigation to active knowledge, not a hard-coded answer or global threshold bypass.
+        strong=[s for s in ranked_candidates if s.get('strong_title')]
+        preferred=next((s for s in strong if s['row']['id']==preferred_id),None)
+        groups={(s['row'].get('document_id',''),topic(s['row']['title'])) for s in strong}
+        primary_group=(preferred['row'].get('document_id',''),topic(preferred['row']['title'])) if preferred else next(iter(groups)) if len(groups)==1 else None
+        primary=[s for s in strong if (s['row'].get('document_id',''),topic(s['row']['title']))==primary_group] if primary_group is not None else []
+        anchors=primary or [s for s in eligible if s['title_match']]
         final=(anchors or eligible)[:c.context_k]
-        report['title_matched']=bool(anchors)
+        final_ids={s['row']['id'] for s in final};primary_ids={s['row']['id'] for s in primary}
+        report['title_candidate_matched']=any(s['title_match'] for s in ranked_candidates)
+        report['title_ambiguous']=len(groups)>1 and preferred is None
+        report['title_matched']=any(s['title_match'] for s in final)
+        report['primary_ids']=[s['row']['id'] for s in final if s['row']['id'] in primary_ids]
+        report['selection_policy']='suggested_knowledge' if preferred else 'unique_title' if primary else 'ranked_evidence'
+        decisions=[]
+        for s in ranked_candidates:
+            selected=s['row']['id'] in final_ids
+            if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_ranked_evidence'
+            elif primary:reason='different_subject_from_primary'
+            elif c.rerank_enabled and s['score']<c.rerank_min_score:reason='below_rerank_threshold'
+            elif anchors and not s['title_match']:reason='different_subject_from_title'
+            else:reason='outside_context_limit'
+            decisions.append({'id':s['row']['id'],'title':s['row']['title'],'channels':s.get('channels',[]),
+                'similarity':round(s['dense'],6),'bm25':round(s['lexical'],6),'rrf':round(s['rrf'],6),
+                'rerank_score':s['score'] if c.rerank_enabled else None,'rerank_threshold':c.rerank_min_score if c.rerank_enabled else None,
+                'title_match':s['title_match'],'title_match_type':s.get('title_match_type'),
+                'within_dense_gate':s['dense']>=c.min_similarity,'rerank_passed':s['score']>=c.rerank_min_score if c.rerank_enabled else None,
+                'selected':selected,'reason':reason,'rerank_gate_bypassed':selected and s['row']['id'] in primary_ids and c.rerank_enabled and s['score']<c.rerank_min_score})
+        # Include dense neighbours excluded before fusion so the highest score is traceable too.
+        seen={d['id'] for d in decisions}
+        for dense,row in ranked[:c.top_k]:
+            if row['id'] not in seen:decisions.append({'id':row['id'],'title':row['title'],'similarity':round(dense,6),
+                'rerank_score':None,'selected':False,'reason':'below_dense_gate_and_no_qualified_lexical_recall'})
+        report['_candidate_decisions']=decisions
         report['hits']=[(s['score'],{**s['row'],'_similarity':round(s['dense'],4),
                          '_rerank_score':s['score'] if c.rerank_enabled else None,
-                         '_title_match':s['title_match']},s['dense']) for s in final]
+                         '_title_match':s['title_match'],'_primary_title':s['row']['id'] in primary_ids},s['dense']) for s in final]
         report['matched']=bool(report['hits'])
+        if not report['matched']:report['reason']='all_below_rerank_threshold' if c.rerank_enabled else 'no_selected_evidence'
         if diagnostics:report['_diagnostics']['reranked']=[{'id':s['row']['id'],'title':s['row']['title'],
-            'score':s['score'],'title_match':s['title_match'],'selected':s in final} for s in ranked_candidates]
+            'score':s['score'],'title_match':s['title_match'],'selected':s['row']['id'] in final_ids,
+            'reason':next(d['reason'] for d in decisions if d['id']==s['row']['id'])} for s in ranked_candidates]
+
         return report
 
 

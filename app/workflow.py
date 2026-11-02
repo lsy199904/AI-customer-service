@@ -41,6 +41,7 @@ class State(TypedDict,total=False):
     retrieval_failed:bool
     result:dict
     suggestions:list
+    suggestion_sources:list
     actions:list
     assistance:dict
     guidance:dict
@@ -132,11 +133,18 @@ class SupportWorkflow:
             query=state.get('assistance',{}).get('query') or query
             from .chains import retrieve
             from .deadlines import run
-            found=run(lambda:retrieve(self.service.knowledge,query),self.service.config.retrieval_timeout)
+            def retrieve_current():
+                from .conversation import recommended_selection
+                resolved,preferred=recommended_selection(self.service.knowledge,query,state['history'])
+                return retrieve(self.service.knowledge,resolved,preferred_id=preferred) if preferred else retrieve(self.service.knowledge,resolved)
+            found=run(retrieve_current,self.service.config.retrieval_timeout)
             runtime.context.check()
             evidence=found['evidence'];candidates=self.service.media.candidates(state['question'],evidence)
             report=found['retrieval']
             hits=report.get('hits',[])
+            event('retrieval_candidates',selection_policy=report.get('selection_policy'),
+                similarity_knowledge_id=report.get('similarity_knowledge_id'),
+                candidates=report.get('_candidate_decisions',[]))
             debug_event('retrieval_evidence',query=query,evidence=evidence,report={k:v for k,v in report.items() if k!='hits'})
             event('retrieval_completed',matched=report.get('matched'),similarity=report.get('similarity'),
                   threshold=report.get('threshold'),title_matched=report.get('title_matched'),
@@ -200,13 +208,29 @@ class SupportWorkflow:
             return {}
         started=time.monotonic()
         try:
-            context={**state['page_context'],'_intent':intent,'_media':state['candidates'],'_on_delta':runtime.context.delta if runtime.context.observer else None,'_guidance':state.get('guide_context')}
+            # Keep upstream streaming/cancellation, but release knowledge prose only after validation.
+            chunks=[]
+            def draft_delta(text):
+                runtime.context.check();chunks.append(text)
+            context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
+                '_resolved_question':state['retrieval'].get('query',state['question']),
+                '_on_delta':(runtime.context.delta if conversation else draft_delta) if runtime.context.observer else None,
+                '_guidance':state.get('guide_context')}
             result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],state['evidence'],context)
             runtime.context.check()
             event('generation_completed',citations=len(result.get('citation_ids',[])),
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2))
             if not result['answerable']:return {'reason':'insufficient_evidence'}
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
+            if not conversation:
+                from .grounding import unsupported_literals
+                violations=unsupported_literals(result['answer'],selected,state.get('guide_context'))
+                if violations:
+                    event('generation_grounding_rejected',level='WARNING',violations=violations)
+                    return {'reason':'unsupported_answer'}
+                if runtime.context.observer:
+                    # Preserve original chunks when the transport emitted the complete answer.
+                    for text in chunks if ''.join(chunks)==result['answer'] else [result['answer']]:runtime.context.delta(text)
             allowed=s.media.bound(selected) if selected else state['candidates'] if intent=='image' else []
             images=[s.media.public(r) for r in allowed if r['id'] in result.get('image_ids',[])]
             return {'selected':selected,'images':images,'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
@@ -224,13 +248,20 @@ class SupportWorkflow:
         if state['success'] and state['selected']:
             bound=[s.media.public(r) for r in s.media.bound(state['selected'])]
             images=list({r['id']:r for r in bound+images}.values())[:4]
-        values={'images':images,'suggestions':[],'actions':[]}
+        values={'images':images,'suggestions':[],'suggestion_sources':[],'actions':[]}
         if not state['success'] and state['intent']!='handoff':
             values.update(images=[],selected=[],suggestions=recommended_questions(s.knowledge,state['question'],
                 state['evidence'],sensitive=state['intent']=='sensitive' or state['retrieval_failed'],
                 related_titles=state['retrieval'].get('_suggestion_titles',[])),
                 actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
-            if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
+            if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic','unsupported_answer'):values['answer']=NO_ANSWER
+        if state['reason']=='unsupported_answer':
+            from .retrieval import topic
+            values['suggestions']=[q for q in values['suggestions'] if topic(q,question=True)!=topic(state['question'],question=True)]
+        if values['suggestions'] and state['intent']!='sensitive' and not state['retrieval_failed']:
+            from .conversation import suggestion_sources
+            try:values['suggestion_sources']=suggestion_sources(s.knowledge,values['suggestions'])
+            except Exception:pass
         from .assistance import FLOWS,actions_for,chapter
         plan=state.get('assistance',{})
         if state['success'] and plan.get('kind')=='clarify':

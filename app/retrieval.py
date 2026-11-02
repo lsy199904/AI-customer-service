@@ -29,8 +29,10 @@ def retrieval_text(record):
 
 def topic(value,question=False):
     text=title_text(value).lower()
+    # Structural chapter labels are not part of the customer's requested subject.
+    text=re.sub(r'^(?:附录(?:[a-z0-9一二三四五六七八九十]+)?|第[0-9一二三四五六七八九十]+[章节])[\s:：—–-]+','',text)
     if question:
-        text=re.sub(r'^(?:请问|请|麻烦|我想了解|我想知道|介绍一下|介绍下|给我看一下|给我|看一下)+','',text)
+        text=re.sub(r'^(?:请问|请|麻烦|我想了解|我想知道|介绍一下|介绍下|给我看一下|给我|看一下|如何|怎么|怎样)+','',text)
         text=re.sub(r'[？?！!。.,，\s]+$','',text)
         for _ in range(2):
             text=re.sub(r'(?:是什么|是干什么的|是做什么的|是怎样的|是怎么样的|有哪些|介绍一下|介绍下|的介绍|介绍|呢|吗)[？?！!。.,，\s]*$','',text)
@@ -51,30 +53,31 @@ def terms(value):
     return result
 
 
-def title_matches(question, titles):
-    """Resolve a named procedure to its chapter without widening to shared keywords.
-
-    Exact subjects outrank expanded headings (e.g. a report about that subject).
-    Generic '流程' by itself must never anchor an arbitrary chapter.
-    """
+def title_signals(question,titles):
+    """Structural equality/procedure equality is strong; shared prefixes are weak."""
     subject=topic(question,question=True)
     procedure=re.sub(r'(?:流程|步骤|操作方法|使用方法)$','',subject)
     procedural=procedure!=subject and len(procedure)>=4
-    scores=[]
+    signals=[]
     for title in titles:
         target=topic(title)
-        score=3 if len(subject)>=4 and subject==target else 0
-        if procedural and not score:
-            if procedure==target:score=2
-            elif target.startswith(procedure):score=1
-        scores.append(score)
-    best=max(scores,default=0)
-    return [best>0 and score==best for score in scores]
+        kind='normalized_title' if len(subject)>=4 and subject==target else None
+        if procedural and kind is None:
+            if procedure==target:kind='procedure_title'
+            elif target.startswith(procedure):kind='related_prefix'
+        signals.append({'kind':kind,'strength':{'normalized_title':3,'procedure_title':2,'related_prefix':1}.get(kind,0),
+                        'strong':kind in ('normalized_title','procedure_title')})
+    best=max((s['strength'] for s in signals),default=0)
+    return [{**s,'matched':best>0 and s['strength']==best} for s in signals]
+
+
+def title_matches(question,titles):
+    return [s['matched'] for s in title_signals(question,titles)]
 
 
 def lexical_ranking(question,rows):
     query=set(terms(question))
-    matches=title_matches(question,[row['title'] for _,row in rows])
+    matches=title_signals(question,[row['title'] for _,row in rows])
     counts=[Counter(terms(title_text(row['title']))*3+terms(clean_content(row['content']))) for _,row in rows]
     df=Counter(t for counter in counts for t in counter)
     avg=sum(sum(counter.values()) for counter in counts)/max(len(counts),1) or 1
@@ -85,9 +88,9 @@ def lexical_ranking(question,rows):
         score=sum(math.log(1+(len(rows)-df[t]+.5)/(df[t]+.5))*counter[t]*2.2/
                   (counter[t]+1.2*(.25+.75*length/avg)) for t in overlap)
         # Partial lexical similarity complements vectors; it is not a keyword gate.
-        eligible=matched or (coverage>=.6 and len(overlap)>=2)
+        eligible=matched['matched'] or (coverage>=.6 and len(overlap)>=2)
         result.append({'row':row,'dense':dense,'lexical':score,'coverage':coverage,
-                       'title_match':matched,'lexical_eligible':eligible})
+                       'title_match':matched['matched'],'title_match_type':matched['kind'],'strong_title':matched['strong'] and matched['matched'],'lexical_eligible':eligible})
     return result
 
 
@@ -96,9 +99,10 @@ def fuse(question,ranked,minimum,top_k):
     dense=[s for s in signals if s['dense']>=minimum][:top_k]
     lexical=sorted([s for s in signals if s['lexical_eligible']],key=lambda s:(s['title_match'],s['lexical']),reverse=True)[:top_k]
     pool={}
-    for ranking in (dense,lexical):
+    for channel,ranking in (('dense',dense),('bm25',lexical)):
         for rank,signal in enumerate(ranking,1):
             key=signal['row']['id']
-            if key not in pool:pool[key]={**signal,'rrf':0.0}
+            if key not in pool:pool[key]={**signal,'rrf':0.0,'channels':[]}
             pool[key]['rrf']+=1/(60+rank)
+            pool[key]['channels'].append(channel)
     return sorted(pool.values(),key=lambda s:(s['title_match'],s['rrf'],s['dense']),reverse=True)[:top_k*2]

@@ -170,9 +170,9 @@ class RetrievalConfiguration(unittest.TestCase):
    module.ROOT=Path(temp);env=module.ROOT/'.env'
    original='AUTH_SECRET=private-value\nPORT=8200\nSESSION_RETENTION_DAYS=14\nexport SEMANTIC_MIN_SIMILARITY=0.75\nSEMANTIC_MIN_SIMILARITY=0.8\nRERANK_MIN_SCORE=0.6\n'
    env.write_text(original);output=io.StringIO()
-   with contextlib.redirect_stdout(output):module.main()
+   with patch('sys.argv',['configure_retrieval.py','--semantic','0.60','--rerank','0.60']),contextlib.redirect_stdout(output):module.main()
    text=env.read_text()
    for line in ['AUTH_SECRET=private-value','PORT=8200','SESSION_RETENTION_DAYS=14']:self.assertIn(line,text)
-   for key,value in module.VALUES.items():self.assertEqual(text.count(key+'='),1);self.assertIn(key+'='+value,text)
+   for key,value in {'SEMANTIC_MIN_SIMILARITY':'0.6','RERANK_MIN_SCORE':'0.6'}.items():self.assertEqual(text.count(key+'='),1);self.assertIn(key+'='+value,text)
    self.assertEqual(next(module.ROOT.glob('backups/*/env.before')).read_text(),original)
    self.assertEqual(env.stat().st_mode&0o777,0o600);self.assertNotIn('private-value',output.getvalue())
