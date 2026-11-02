@@ -6,7 +6,7 @@ import re
 import shutil
 import tempfile
 ROOT=Path(__file__).resolve().parent.parent
-POLICIES={'SEMANTIC_MIN_SIMILARITY':'0.75','SESSION_RETENTION_DAYS':'7',
+POLICIES={'SEMANTIC_MIN_SIMILARITY':'0.60','SESSION_RETENTION_DAYS':'7',
           'SESSION_CONTEXT_ROUNDS':'20','TENANT_MESSAGES_PER_MINUTE':'20',
           'RETRIEVAL_TIMEOUT_SECONDS':'15'}
 
@@ -28,7 +28,7 @@ def main():
         os.chmod(temp,0o600);os.replace(temp,path)
     finally:
         if os.path.exists(temp):os.unlink(temp)
-    print('已更新相似度0.75、历史7天、上下文20轮、企业20条/分钟、检索15秒。')
+    print('已更新相似度0.60、历史7天、上下文20轮、企业20条/分钟、检索15秒。')
     print('原配置已备份：'+str(directory/'env.before'))
     print('执行 enterprise.sh start 重建应用容器以加载新环境变量；不需要重新入库。')
 

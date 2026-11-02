@@ -24,8 +24,8 @@ RERANK_ENABLED|是否启用候选重排：true启用，false关闭；关闭后Re
 RERANK_URL|重排接口完整地址，例如/v1/rerank。
 RERANK_MODEL|重排模型名称，必须与重排服务一致。
 RERANK_API_KEY|重排接口访问密钥，无鉴权时可按服务要求留空。
-SEMANTIC_MIN_SIMILARITY|向量召回相似度门槛，默认0.75；不等于回答准确率。
-RETRIEVAL_MIN_SIMILARITY|传统lexical检索的匹配门槛，代码默认0.14；不是语义检索的0.75门槛。
+SEMANTIC_MIN_SIMILARITY|向量召回相似度门槛，默认0.60；不等于回答准确率。
+RETRIEVAL_MIN_SIMILARITY|传统lexical检索的匹配门槛，代码默认0.14；不是语义检索的0.60门槛。
 RERANK_MIN_SCORE|启用重排时的最低得分门槛，默认0.6；低于此值的候选被过滤。
 RAG_TOP_K|每路召回上限，默认12；两路融合去重后最多为该值的2倍。
 RAG_CONTEXT_K|交给回答模型的知识片段上限，默认3；不保证每次取满，不能大于RAG_TOP_K。

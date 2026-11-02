@@ -30,7 +30,7 @@ class Policies(unittest.TestCase):
   with patch.dict(os.environ,{},clear=True):
    c=Settings();rag=RAGSettings()
    self.assertEqual((c.retention_days,c.context_rounds,c.requests_per_minute,c.retrieval_timeout),(7,20,20,15))
-   self.assertEqual(rag.min_similarity,.75)
+   self.assertEqual(rag.min_similarity,.60)
   for key,value in [('retention_days',0),('context_rounds',0),('requests_per_minute',0),('retrieval_timeout',float('nan'))]:
    c=Settings(secret=SECRET,**{key:value})
    with self.assertRaises(ValueError):c.validate()
@@ -161,3 +161,18 @@ class Configuration(unittest.TestCase):
    backups=list(module.ROOT.glob('backups/*/env.before'));self.assertEqual(len(backups),2)
    self.assertIn(original,[p.read_text() for p in backups]);self.assertEqual(env.stat().st_mode&0o777,0o600)
    self.assertNotIn('private-value',output.getvalue());self.assertNotIn('private-db',output.getvalue())
+
+class RetrievalConfiguration(unittest.TestCase):
+ def test_only_thresholds_change_and_original_is_preserved(self):
+  path=Path(__file__).resolve().parents[1]/'scripts/configure_retrieval.py'
+  spec=importlib.util.spec_from_file_location('retrieval_config',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  with tempfile.TemporaryDirectory() as temp:
+   module.ROOT=Path(temp);env=module.ROOT/'.env'
+   original='AUTH_SECRET=private-value\nPORT=8200\nSESSION_RETENTION_DAYS=14\nexport SEMANTIC_MIN_SIMILARITY=0.75\nSEMANTIC_MIN_SIMILARITY=0.8\nRERANK_MIN_SCORE=0.6\n'
+   env.write_text(original);output=io.StringIO()
+   with contextlib.redirect_stdout(output):module.main()
+   text=env.read_text()
+   for line in ['AUTH_SECRET=private-value','PORT=8200','SESSION_RETENTION_DAYS=14']:self.assertIn(line,text)
+   for key,value in module.VALUES.items():self.assertEqual(text.count(key+'='),1);self.assertIn(key+'='+value,text)
+   self.assertEqual(next(module.ROOT.glob('backups/*/env.before')).read_text(),original)
+   self.assertEqual(env.stat().st_mode&0o777,0o600);self.assertNotIn('private-value',output.getvalue())
