@@ -17,7 +17,7 @@
     panel.hidden=true;window.SmartTITUAssistant.open();
   }
   async function connect(){
-    if(!embedded){status.textContent='请输入短期测试凭证以体验完整对话。';document.getElementById('login').hidden=false;return;}
+    if(!embedded){location.replace('/widget/demo');return;}
     const candidate=new URLSearchParams(location.search).get('parent_origin');
     let parsed;try{parsed=new URL(candidate);}catch{throw new Error('嵌入地址缺少有效的 parent_origin');}
     if(!['http:','https:'].includes(parsed.protocol)||parsed.origin!==candidate)throw new Error('嵌入来源无效');

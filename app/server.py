@@ -257,6 +257,18 @@ def create_app(config=None,model=None,service=None):
     @app.get('/widget/config',include_in_schema=False)
     def frame_config():return JSONResponse({'frame_origins':list(config.frame_origins),'demo_auto_login':config.demo_auto_login},headers={'Cache-Control':'no-store'})
 
+    @app.post('/widget/user-auth',include_in_schema=False)
+    async def fixed_user_auth(request:Request):
+        if not config.demo_auto_login:raise APIError(404,'not_found','测试身份入口未开启')
+        try:body=await request.json()
+        except Exception:raise APIError(400,'invalid_user','请输入有效用户ID')
+        user=body.get('user_id','') if isinstance(body,dict) else ''
+        if not isinstance(user,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}',user):
+            raise APIError(400,'invalid_user','用户ID须为1至64位字母、数字或_.@-，区分大小写')
+        # Explicit test identity namespace; never impersonates a platform account.
+        return JSONResponse({'token':issue_token(config.secret,DEMO_TENANT,'fixed-v3:'+user,3600),'expires_in':3600},
+                            headers={'Cache-Control':'no-store','Pragma':'no-cache'})
+
     @app.get('/widget/demo-auth',include_in_schema=False)
     def demo_auth(request:Request):
         if not config.demo_auto_login:raise APIError(404,'not_found','测试免填凭证入口未开启')
