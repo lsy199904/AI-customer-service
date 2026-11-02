@@ -36,6 +36,17 @@ class ConversationTests(unittest.TestCase):
   self.s.config.mode='llm';self.s.model=Fake()
   with patch.object(self.s.knowledge,'assess',side_effect=AssertionError('no search')):r=self.ask('你好')
   self.assertEqual(calls[0][0],[]);self.assertEqual(calls[0][1]['_intent'],'greeting');self.assertFalse(r['handoff'])
+ def test_identity_uses_service_reply_even_with_vendor_model(self):
+  from app.conversation import REPLIES
+  self.s.config.mode='llm'
+  with patch.object(self.s.model,'answer',side_effect=AssertionError('identity must not call vendor model')) as model, patch.object(self.s.knowledge,'assess',side_effect=AssertionError('identity must not search')):
+   for q in ('介绍一下你自己','介绍一下自己','你是谁','请介绍一下你自己','自我介绍'):
+    r=self.ask(q)
+    self.assertEqual(r['intent'],'identity');self.assertEqual(r['answer'],REPLIES['identity'])
+    self.assertEqual(r['status'],'answered');self.assertEqual(r['citations'],[])
+    self.assertIn('平台相关的操作指引',r['answer']);self.assertNotIn('阿里云',r['answer'])
+   model.assert_not_called()
+  self.assertEqual(intent_of('介绍一下你自己，然后告诉我如何开票'),'knowledge')
  def test_greeting_with_product_question_still_retrieves(self):
   r=self.ask('你好，如何开通账号?');self.assertEqual(r['intent'],'knowledge');self.assertTrue(r['citations'])
  def test_no_match_never_calls_llm_and_recommends_before_contact(self):

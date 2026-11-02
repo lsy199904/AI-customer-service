@@ -189,6 +189,8 @@ class SupportWorkflow:
 
     def generate(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('generating');s=self.service;intent=state['intent'];conversation=intent in REPLIES
+        # The product identity is owned by the service, independent of the model vendor.
+        if intent=='identity':return {'answer':REPLIES[intent],'reason':intent,'success':True}
         if s.config.mode!='llm':
             if conversation:return {'answer':REPLIES[intent],'reason':intent,'success':True}
             if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'images':[s.media.public(r) for r in state['candidates']]}

@@ -7,7 +7,7 @@ from pathlib import Path
 WELCOME = '您好呀，我是 SmartTITU 的智能客服。产品使用、模型接入、费用或调用问题，都可以问我哦～'
 REPLIES = {
     'greeting': WELCOME,
-    'identity': '我是 SmartTITU 的智能客服，可以帮您了解产品、模型接入、API 密钥和常见问题。您想先了解哪一项呢？',
+    'identity': '您好，我是 SmartTITU 智能客服，可以为您提供平台相关的操作指引、使用建议和咨询信息，包括账号注册、企业认证、服务订购、充值支付、开票及常见问题解答。请问有什么可以帮您？',
     'capabilities': '您可以问我产品介绍、账号开通、模型接入、计费和常见故障。我也可以帮您查找相关说明或人工联系方式。您现在遇到什么问题啦？',
     'thanks': '不客气呀，能帮到您就好～还有其他问题，随时问我。',
     'farewell': '好的，有需要随时来找我。祝您使用顺利～',
@@ -63,7 +63,7 @@ def recommended_questions(knowledge,question,evidence=(),sensitive=False,related
 def intent_of(question):
     compact=re.sub(r'[\s\W_]+','',question.lower())
     if re.fullmatch(r'(你好|您好|哈喽|嗨|hello|hi|早上好|早安|下午好|晚上好|在吗|有人吗|你在吗)+(呀|啊|呢|哦|哇|哟)?',compact):return 'greeting'
-    if compact in {'你是谁','你叫什么','你是什么助手','你是什么','介绍一下你自己','你是机器人吗','你是人工吗'}:return 'identity'
+    if compact in {'你是谁','你叫什么','你是什么助手','你是什么','介绍一下你自己','介绍一下自己','介绍你自己','自我介绍','请介绍一下你自己','请介绍一下自己','介绍一下你','你是机器人吗','你是人工吗'}:return 'identity'
     if compact in {'你能做什么','你有什么功能','你可以做什么','你能帮我什么','你会什么','怎么使用你'}:return 'capabilities'
     if re.fullmatch(r'(好的|好|嗯|嗯嗯)?(谢谢|谢谢你|感谢|多谢|谢谢啦|谢谢您)+(啦|了|呀|哦)?',compact):return 'thanks'
     if compact in {'再见','拜拜','下次聊','bye','goodbye','先这样','没问题了'}:return 'farewell'
