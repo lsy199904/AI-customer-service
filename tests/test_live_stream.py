@@ -67,7 +67,7 @@ class LiveStreamTests(unittest.TestCase):
   result=next(data for kind,data in frames if kind=='complete')
   self.assertEqual(result['reason'],'model_unavailable');self.assertEqual(result['images'],[])
 
- def test_final_validation_replaces_unsupported_streamed_draft(self):
+ def test_grounding_warning_preserves_streamed_answer_and_history(self):
   def generate(model,messages,on_delta=None):
    text='执行 `kubectl apply -f fabricated-install.yaml`，使用 v0.13.7，地址池192.168.1.240/30。'
    on_delta(text);return text
@@ -76,10 +76,10 @@ class LiveStreamTests(unittest.TestCase):
     frames=list(self.frames(response))
   self.assertIn('fabricated-install',''.join(data['text'] for kind,data in frames if kind=='delta'))
   result=next(data for kind,data in frames if kind=='complete')
-  self.assertEqual(result['reason'],'unsupported_answer');self.assertEqual(result['citations'],[])
-  self.assertNotIn('fabricated-install',result['answer'])
+  self.assertEqual(result['reason'],'knowledge');self.assertTrue(result['citations'])
+  self.assertEqual(result['answer'],''.join(data['text'] for kind,data in frames if kind=='delta'))
   saved=self.server.service.history({'tenant_id':'tenant','sub':'user'},self.sid)['items'][-1]['response']
-  self.assertNotIn('fabricated-install',saved['answer'])
+  self.assertEqual(saved['answer'],result['answer']);self.assertEqual(saved['citations'],result['citations'])
 
  def test_text_and_sources_arrive_before_parallel_visual_finishes(self):
   from tests import test_image_policy as fixture

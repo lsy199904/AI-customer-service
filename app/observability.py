@@ -190,7 +190,7 @@ def configure(directory=None):
 
 
 def event(name, level='INFO', **fields):
-    # Call sites supply metadata only. Never pass request bodies or exception strings.
+    # Ordinary callers supply metadata only. grounding_warning is the explicit, sanitized diagnostic-content exception.
     values={**_context.get(),**fields}
     trace=_trace.get()
     if trace is not None:trace.record(name,values,level)
@@ -228,7 +228,7 @@ _NODE_NAMES = {
     'question_resolved':'追问与主题解析完成','question_resolution_unavailable':'追问解析回退',
     'image_planning_started':'配图语义判断开始','image_planning_unavailable':'配图判断不可用',
     'image_selection_started':'配图最终校验开始','image_selection_completed':'本轮配图选择完成',
-    'retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'回答依据校验未通过',
+    'retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'旧版回答依据拦截','generation_grounding_warning':'回答依据告警（不阻断）','generation_grounding_check_unavailable':'依据检查不可用',
     'retrieval_model_failed':'检索模型调用失败','retrieval_completed':'知识检索完成',
     'retrieval_failed':'知识检索失败','model_request_started':'回答模型调用开始',
     'model_request_completed':'回答模型调用完成','model_request_failed':'回答模型调用失败',
@@ -269,7 +269,7 @@ class BufferedSteps(logging.Filter):
         return not getattr(record,'request_buffered',False)
 
 
-def _safe_snapshot(fields):
+def _safe_snapshot(fields,limit=16000):
     value=json.dumps(fields,ensure_ascii=False,default=lambda item:'<'+type(item).__name__+'>')
     for key,secret in os.environ.items():
         if secret and len(secret)>=8 and re.search(r'SECRET|PASSWORD|TOKEN|API_KEY|PRIVATE_KEY|DATABASE_URL|AUTHORIZATION',key,re.I):
@@ -277,7 +277,7 @@ def _safe_snapshot(fields):
     value=re.sub(r'(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+',r'\1[REDACTED]',value)
     value=re.sub(r'(?i)(https?://)[^\s/@]+:[^\s/@]+@',r'\1[REDACTED]@',value)
     value=re.sub(r'(?i)([?&](?:token|api_key|key|password|secret|authorization)=)[^&\s"\\]+',r'\1[REDACTED]',value)
-    if len(value)>16000:return {'内容':value[:16000],'已截断':True}
+    if len(value)>limit:return {'内容':value[:limit],'已截断':True}
     return json.loads(value)
 
 
@@ -331,7 +331,7 @@ class RequestTrace:
                 safe_output['已恢复异常' if recovered else '失败节点']=self.failures[0]
             if self.truncated:safe_output['流程已截断']=True
             if '状态' not in safe_output:safe_output['状态']='未完成'
-            # Keep ordinary files and stdout content-free, but still one JSON per request.
+            # One JSON per request; only the explicitly sanitized grounding warning includes diagnostic excerpts/evidence.
             document={'时间':self.time,'输入':metadata_input,'处理流程':self.steps,'输出':safe_output}
             _log.info('request_completed',extra={'operation_document':document,'operation_fields':dict(self.metadata)})
             if self.content and _debug_log.handlers:
@@ -357,3 +357,12 @@ def capture_request(enabled=True):
     finally:
         try:trace.finish()
         finally:_trace.reset(token)
+
+
+
+def grounding_warning(issues,evidence,guidance=None):
+    """Requested content-bearing diagnostic: redact secrets, retain concrete evidence once."""
+    fields=_safe_snapshot({'warning_only':True,'violations':issues,
+        'evidence':[{'id':r.get('id'),'title':r.get('title'),'revision':r.get('revision'),'content':r.get('content','')} for r in evidence],
+        'stage_evidence':(guidance or {}).get('stage_evidence')},limit=256000)
+    event('generation_grounding_warning',level='WARNING',**fields)

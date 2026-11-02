@@ -304,6 +304,8 @@ class SemanticKnowledge:
         c=self.config;state,rows=self.store.snapshot(include_vectors=self.vectors is None)
         report={'matched':False,'hits':[],'method':'hybrid_rrf_rerank' if c.rerank_enabled else 'hybrid_rrf',
                 'threshold':c.min_similarity,'similarity':None,'generation':state['generation']}
+        from .retrieval_config import thresholds
+        report['_configuration']=thresholds(c)
         if not rows:report['reason']='index_empty';return report
         if state['fingerprint']!=c.fingerprint:raise RAGError('当前Embedding配置与索引不一致,请先重建')
         check()

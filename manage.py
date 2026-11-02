@@ -81,6 +81,7 @@ def main():
     prune=sub.add_parser('prune-checkpoints',help='清理过期工作流检查点，保留聊天消息')
     prune.add_argument('--days',type=int,default=30)
     sub.add_parser('prune-sessions',help='按会话保留期限清理在线历史及检查点')
+    sub.add_parser('retrieval-config',help='仅输出运行环境、.env及代码默认的检索阈值，不修改配置、不输出密钥')
     sub.add_parser('check',help='校验配置和知识,不发送外网请求')
     backup=sub.add_parser('backup',help='一致性备份SQLite,默认写入backups目录')
     backup.add_argument('--output')
@@ -92,7 +93,11 @@ def main():
         if (BASE/'.env').is_file():load_env(BASE/'.env')
         elif not os.getenv('AUTH_SECRET'):raise ValueError('未找到.env或AUTH_SECRET环境变量,请先初始化配置')
         config=Settings();config.validate()
-        if args.command=='check':
+        if args.command=='retrieval-config':
+            from app.rag import RAGSettings
+            from app.retrieval_config import inspect
+            print(json.dumps(inspect(RAGSettings(),BASE/'.env'),ensure_ascii=False,indent=2))
+        elif args.command=='check':
             if config.retrieval_backend=='semantic':
                 from app.rag import RAGSettings,SemanticKnowledge
                 rag=RAGSettings();rag.validate();kb=SemanticKnowledge(rag)
@@ -102,6 +107,7 @@ def main():
             print(json.dumps({'frameworks':frameworks,'configuration':'valid','mode':config.mode,'retrieval_backend':config.retrieval_backend,'model_configured':bool(config.model_key and config.model),'knowledge_count':len(kb.rows),'database':config.db if not config.database_url else 'postgresql',
                 'vector_backend':rag.vector_backend if config.retrieval_backend=='semantic' else 'lexical',
                 'policies':{'semantic_min_similarity':rag.min_similarity if config.retrieval_backend=='semantic' else None,
+                    'rerank_min_score':rag.rerank_min_score if config.retrieval_backend=='semantic' else None,
                     'session_retention_days':config.retention_days,'session_context_rounds':config.context_rounds,
                     'tenant_messages_per_minute':config.requests_per_minute,'retrieval_timeout_seconds':config.retrieval_timeout},
                 'workflow':'langgraph','next_step':'知识数量为0时先执行ingest' if not kb.rows else '可以启动服务'},ensure_ascii=False,indent=2))

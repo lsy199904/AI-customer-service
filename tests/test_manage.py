@@ -37,3 +37,15 @@ class ManageTests(unittest.TestCase):
   import manage
   with tempfile.TemporaryDirectory() as d,patch('manage.BASE',Path(d)),patch.dict(os.environ,{'AUTH_SECRET':'test-secret-abcdefghijklmnopqrstuvwxyz-0123456789','ANSWER_MODE':'extractive','RETRIEVAL_BACKEND':'lexical'},clear=True),patch('sys.argv',['manage.py','check']),patch('sys.stdout',new_callable=io.StringIO) as out:
    manage.main();self.assertEqual(json.loads(out.getvalue())['configuration'],'valid')
+
+ def test_retrieval_config_is_read_only_and_does_not_print_credentials(self):
+  import io
+  import manage
+  with tempfile.TemporaryDirectory() as d:
+   path=Path(d)/'.env';text='RERANK_MIN_SCORE=0.6\nMODEL_API_KEY=private-key\n';path.write_text(text)
+   env={'AUTH_SECRET':'test-secret-abcdefghijklmnopqrstuvwxyz-0123459','ANSWER_MODE':'extractive','RETRIEVAL_BACKEND':'lexical','RERANK_MIN_SCORE':'0.0'}
+   with patch('manage.BASE',Path(d)),patch.dict(os.environ,env,clear=True),patch('sys.argv',['manage.py','retrieval-config']),patch('sys.stdout',new_callable=io.StringIO) as output:
+    manage.main()
+   values=json.loads(output.getvalue())['thresholds']['RERANK_MIN_SCORE']
+   self.assertEqual(values['effective'],0);self.assertFalse(values['file_matches_effective'])
+   self.assertNotIn('private-key',output.getvalue());self.assertEqual(path.read_text(),text)

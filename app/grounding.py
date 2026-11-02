@@ -35,8 +35,17 @@ def unsupported_literals(answer,evidence,guidance=None):
     source='\n'.join(sources)
     normalized=compact(source)
     source_values={kind:{value for k,value in literal_checks(source) if k==kind} for kind in ('url','version','address')}
-    return [{'kind':kind} for kind,value in literal_checks(answer)
-            if (value not in source_values[kind] if kind in source_values else compact(value) not in normalized)]
+    ids=[r.get('id') for r in evidence if r.get('id')]
+    issues=[]
+    for kind,value in literal_checks(answer):
+        missing=value not in source_values[kind] if kind in source_values else compact(value) not in normalized
+        if not missing:continue
+        excerpt=next((line.strip() for line in answer.splitlines() if value in line or (kind=='version' and 'v'+value in line)),value)
+        issues.append({'kind':kind,'text':value,'answer_excerpt':excerpt,
+            'evidence_ids':ids,'evidence_scope':'current_stage' if guidance and guidance.get('stage_evidence') else 'current_turn',
+            'reason':'literal_value_missing_from_current_evidence' if kind in source_values else 'command_or_config_line_missing_from_current_evidence'})
+    return issues
+
 
 
 def citation_ids(answer,evidence):

@@ -172,7 +172,7 @@ class SupportWorkflow:
             hits=report.get('hits',[])
             event('retrieval_candidates',selection_policy=report.get('selection_policy'),
                 similarity_knowledge_id=report.get('similarity_knowledge_id'),
-                candidates=report.get('_candidate_decisions',[]))
+                candidates=report.get('_candidate_decisions',[]),configuration=report.get('_configuration'))
             debug_event('retrieval_evidence',query=report.get('query'),evidence=evidence,report={k:v for k,v in report.items() if k!='hits'})
             event('retrieval_completed',matched=report.get('matched'),similarity=report.get('similarity'),
                   threshold=report.get('threshold'),title_matched=report.get('title_matched'),
@@ -237,7 +237,7 @@ class SupportWorkflow:
             return {}
         started=time.monotonic()
         try:
-            # Forward tokens immediately. Complete remains authoritative after final validation.
+            # Forward every token immediately. Grounding diagnostics never replace successful prose.
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
                 '_resolved_question':state['retrieval'].get('query',state['question']),
                 '_on_delta':runtime.context.delta if runtime.context.observer else None,
@@ -249,16 +249,16 @@ class SupportWorkflow:
             if not result['answerable']:return {'reason':'insufficient_evidence'}
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
             if not conversation:
-                from .grounding import unsupported_literals
-                violations=unsupported_literals(result['answer'],selected,state.get('guide_context'))
-                if violations:
-                    event('generation_grounding_rejected',level='WARNING',violations=violations)
-                    return {'reason':'unsupported_answer'}
-            if not conversation:
-                from .grounding import citation_ids
+                from .grounding import unsupported_literals,citation_ids
+                from .observability import grounding_warning
+                # Diagnostics are advisory, including checker failures; model/transport errors above remain errors.
+                try:
+                    violations=unsupported_literals(result['answer'],state['evidence'],state.get('guide_context'))
+                    if violations:grounding_warning(violations,state['evidence'],state.get('guide_context'))
+                except Exception as error:event('generation_grounding_check_unavailable',level='WARNING',**error_fields(error))
                 supporting=set(citation_ids(result['answer'],selected))
                 narrowed=[r for r in selected if r['id'] in supporting]
-                if not unsupported_literals(result['answer'],narrowed,state.get('guide_context')):selected=narrowed
+                if narrowed:selected=narrowed
                 runtime.context.metadata(citations=[s.citation(r) for r in selected],images=[],media_pending=self.visual_pending(state))
             return {'selected':selected,'images':[],'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
         except RequestCancelled:raise
@@ -298,10 +298,7 @@ class SupportWorkflow:
                 state['evidence'],sensitive=state['intent']=='sensitive' or state['retrieval_failed'],
                 related_titles=state['retrieval'].get('_suggestion_titles',[])),
                 actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
-            if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic','unsupported_answer'):values['answer']=NO_ANSWER
-        if state['reason']=='unsupported_answer':
-            from .retrieval import topic
-            values['suggestions']=[q for q in values['suggestions'] if topic(q,question=True)!=topic(state['question'],question=True)]
+            if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
         if values['suggestions'] and state['intent']!='sensitive' and not state['retrieval_failed']:
             from .conversation import suggestion_sources
             try:values['suggestion_sources']=suggestion_sources(s.knowledge,values['suggestions'])
