@@ -6,6 +6,9 @@ No autonomous write tools or unbounded agent loops are enabled.
 from dataclasses import dataclass
 import hashlib
 import json
+import os
+from contextvars import copy_context
+from concurrent.futures import ThreadPoolExecutor,TimeoutError as FutureTimeout
 import sqlite3
 import threading
 import time
@@ -46,6 +49,7 @@ class State(TypedDict,total=False):
     assistance:dict
     guidance:dict
     guide_context:dict
+    resolved_question:str
 
 @dataclass
 class Context:
@@ -57,6 +61,10 @@ class Context:
         self.check()
         if self.observer:self.observer({'type':'delta','text':text})
 
+    def metadata(self,**fields):
+        self.check()
+        if self.observer:self.observer({'type':'metadata',**fields})
+
     def emit(self,stage):
         self.check()
         if self.observer:self.observer({'type':'status','stage':stage})
@@ -65,6 +73,8 @@ class Context:
 class SupportWorkflow:
     def __init__(self,service):
         self.service=service;self._resource=None
+        self._visual_pool=ThreadPoolExecutor(max_workers=4,thread_name_prefix="visual-plan")
+        self._visual_slots=threading.BoundedSemaphore(4);self._visual_lock=threading.Lock();self._visual_jobs={}
         if service.config.database_url:
             from psycopg_pool import ConnectionPool
             from langgraph.checkpoint.postgres import PostgresSaver
@@ -102,7 +112,9 @@ class SupportWorkflow:
         values.update(assistance={},guidance=None,guide_context=None)
         if intent in ('knowledge','thanks'):
             from .assistance import plan
-            try:values['assistance']=plan(state['question'],state['history'],list(self.service.knowledge.rows.values()))
+            try:
+                from .query_context import guidance_history
+                values['assistance']=plan(state['question'],guidance_history(state['question'],state['history']),list(self.service.knowledge.rows.values()))
             except Exception as error:event('assistance_unavailable',level='WARNING',**error_fields(error))
         if values['assistance']:
             event('assistance_planned',mode=values.get('assistance',{}).get('kind'),flow_id=(values.get('assistance',{}).get('guidance') or {}).get('flow_id') or values.get('assistance',{}).get('flow_id'))
@@ -129,15 +141,31 @@ class SupportWorkflow:
     def retrieve(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('retrieving');started=time.monotonic()
         try:
-            query=contextual_query(state['question'],state['history']) if self.service.config.retrieval_backend=='semantic' else retrieval_query(state['question'],state['history'])
-            query=state.get('assistance',{}).get('query') or query
             from .chains import retrieve
-            from .deadlines import run
+            from .deadlines import run,check
             def retrieve_current():
+                from .query_context import resolve,local_query
                 from .conversation import recommended_selection
+                try:
+                    resolution=resolve(self.service.model if self.service.config.mode=='llm' and hasattr(self.service.model,'complete') else None,
+                        state['question'],state['history'])
+                except Exception as error:
+                    check()
+                    event('question_resolution_unavailable',level='WARNING',**error_fields(error))
+                    resolution={'kind':'followup','question':local_query(state['question'],state['history']),'clarification':''}
+                check()
+                event('question_resolved',resolution_kind=resolution['kind'],used_context=resolution['question']!=state['question'])
+                debug_event('resolved_question',original_question=state['question'],**resolution)
+                if resolution['kind']=='clarify':return {'clarification':resolution['clarification']}
+                query=state.get('assistance',{}).get('query') or resolution['question']
+                if self.service.config.retrieval_backend!='semantic' and resolution['kind']=='independent':query=retrieval_query(query,[])
                 resolved,preferred=recommended_selection(self.service.knowledge,query,state['history'])
-                return retrieve(self.service.knowledge,resolved,preferred_id=preferred) if preferred else retrieve(self.service.knowledge,resolved)
+                found=retrieve(self.service.knowledge,resolved,preferred_id=preferred) if preferred else retrieve(self.service.knowledge,resolved)
+                found['retrieval'].setdefault('query',resolved)
+                return found
             found=run(retrieve_current,self.service.config.retrieval_timeout)
+            if found.get('clarification'):
+                return {'success':True,'intent':'clarification','reason':'followup_clarification','answer':found['clarification'],'evidence':[],'candidates':[]}
             runtime.context.check()
             evidence=found['evidence'];candidates=self.service.media.candidates(state['question'],evidence)
             report=found['retrieval']
@@ -145,13 +173,13 @@ class SupportWorkflow:
             event('retrieval_candidates',selection_policy=report.get('selection_policy'),
                 similarity_knowledge_id=report.get('similarity_knowledge_id'),
                 candidates=report.get('_candidate_decisions',[]))
-            debug_event('retrieval_evidence',query=query,evidence=evidence,report={k:v for k,v in report.items() if k!='hits'})
+            debug_event('retrieval_evidence',query=report.get('query'),evidence=evidence,report={k:v for k,v in report.items() if k!='hits'})
             event('retrieval_completed',matched=report.get('matched'),similarity=report.get('similarity'),
                   threshold=report.get('threshold'),title_matched=report.get('title_matched'),
                   evidence_count=len(evidence),evidence_ids=[r['id'] for r in evidence],
                   rerank_scores=[round(float(hit[0]),6) for hit in hits],
                   elapsed_ms=round((time.monotonic()-started)*1000,2))
-            values={'retrieval':report,'evidence':evidence,'candidates':candidates}
+            values={'retrieval':report,'evidence':evidence,'candidates':candidates,'resolved_question':report.get('query',state['question'])}
             if state.get('assistance',{}).get('kind')=='guide':
                 from .assistance import stage_context
                 guidance=state['assistance']['guidance'];current=stage_context(guidance,evidence)
@@ -197,6 +225,7 @@ class SupportWorkflow:
 
     def generate(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('generating');s=self.service;intent=state['intent'];conversation=intent in REPLIES
+        self.start_visual(state)
         # The product identity is owned by the service, independent of the model vendor.
         if intent=='identity':return {'answer':REPLIES[intent],'reason':intent,'success':True}
         if s.config.mode!='llm':
@@ -225,6 +254,12 @@ class SupportWorkflow:
                 if violations:
                     event('generation_grounding_rejected',level='WARNING',violations=violations)
                     return {'reason':'unsupported_answer'}
+            if not conversation:
+                from .grounding import citation_ids
+                supporting=set(citation_ids(result['answer'],selected))
+                narrowed=[r for r in selected if r['id'] in supporting]
+                if not unsupported_literals(result['answer'],narrowed,state.get('guide_context')):selected=narrowed
+                runtime.context.metadata(citations=[s.citation(r) for r in selected],images=[],media_pending=self.visual_pending(state))
             return {'selected':selected,'images':[],'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
         except RequestCancelled:raise
         except Exception as error:
@@ -240,18 +275,10 @@ class SupportWorkflow:
         # Citations, visual intent and asset choice are separate decisions. Never re-add bound images.
         selected=state['selected'];images=[]
         if state['success'] and state['candidates']:
-            from .image_policy import semantic_decision,conservative_decision,select_images
-            event('image_planning_started')
+            from .image_policy import conservative_decision,select_images
+            event('image_selection_started')
             if s.config.mode=='llm' and hasattr(s.model,'complete'):
-                try:
-                    decision=semantic_decision(s.model,state['question'],state['answer'],state['history'],
-                        state['evidence'],state['candidates'],state.get('guide_context'))
-                    proposed=[r for r in state['evidence'] if r['id'] in decision['source_ids']]
-                    from .grounding import unsupported_literals
-                    if not unsupported_literals(state['answer'],proposed,state.get('guide_context')):selected=proposed
-                except Exception as error:
-                    event('image_planning_unavailable',level='WARNING',**error_fields(error))
-                    decision={'need_images':False,'reason':'planning_unavailable','flow_ids':[],'image_ids':[]}
+                decision=self.finish_visual(state)
             else:
                 decision=conservative_decision(state['question'],state['answer'],selected,state['candidates'])
             runtime.context.check()
@@ -262,6 +289,7 @@ class SupportWorkflow:
                 selected=[r for r in selected if chosen_ids & set(r.get('image_ids',[]))]
             event('image_selection_completed',**report)
         else:
+            self.discard_visual(state)
             event('image_selection_completed',need_images=False,reason='no_successful_visual_evidence',
                 primary_flows=[],candidates=[],selected_images=[],excluded_images=[])
         values={'selected':selected,'images':images,'suggestions':[],'suggestion_sources':[],'actions':[]}
@@ -300,23 +328,62 @@ class SupportWorkflow:
             self.service.db.execute('INSERT INTO workflow_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated',(key,state['session_id'],state['request_id'],'running',now,now))
         config={'configurable':{'thread_id':key},'recursion_limit':12}
         context=Context(observer,cancelled)
-        with tracing_context(enabled=False):
-            previous=self.graph.get_state(config)
-            if previous.values:
-                if previous.values.get('question')!=state['question']:raise WorkflowConflict('工作流请求编号冲突')
-                if any(h.get('created_at',0)<self.service.cutoff() for h in previous.values.get('history',[])):
-                    # A resumed request must never reintroduce expired conversation text.
-                    self.saver.delete_thread(key)
-                    previous=self.graph.get_state(config)
-                # Resume only the same authorized request; checkpoints never override identity checks.
-                result=(self.graph.invoke(state,config,context=context) if not previous.values else
-                        self.graph.invoke(None,config,context=context) if previous.next else previous.values)
-            else:result=self.graph.invoke(state,config,context=context)
+        try:
+            with tracing_context(enabled=False):
+                previous=self.graph.get_state(config)
+                if previous.values:
+                    if previous.values.get('question')!=state['question']:raise WorkflowConflict('工作流请求编号冲突')
+                    if any(h.get('created_at',0)<self.service.cutoff() for h in previous.values.get('history',[])):
+                        # A resumed request must never reintroduce expired conversation text.
+                        self.saver.delete_thread(key)
+                        previous=self.graph.get_state(config)
+                    # Resume only the same authorized request; checkpoints never override identity checks.
+                    result=(self.graph.invoke(state,config,context=context) if not previous.values else
+                            self.graph.invoke(None,config,context=context) if previous.next else previous.values)
+                else:result=self.graph.invoke(state,config,context=context)
+        finally:self.discard_visual(state)
         return result,key
+
+    def start_visual(self,state):
+        s=self.service
+        if not state['candidates'] or s.config.mode!='llm' or not hasattr(s.model,'complete'):return
+        if not self._visual_slots.acquire(blocking=False):
+            event('image_planning_unavailable',reason='visual_capacity');return
+        from .image_policy import semantic_decision
+        ctx=copy_context();key=self.key(state)
+        event('image_planning_started',parallel=True)
+        try:
+            job=self._visual_pool.submit(ctx.run,semantic_decision,s.model,state['question'],'',state['history'],
+                state['evidence'],state['candidates'],state.get('guide_context'),state.get('resolved_question'))
+        except Exception:
+            self._visual_slots.release();return
+        job.add_done_callback(lambda future:self._visual_slots.release())
+        with self._visual_lock:self._visual_jobs[key]=job
+
+    def visual_pending(self,state):
+        with self._visual_lock:job=self._visual_jobs.get(self.key(state))
+        return job is not None and not job.done()
+
+    def finish_visual(self,state):
+        with self._visual_lock:job=self._visual_jobs.pop(self.key(state),None)
+        if job is not None:
+            try:return job.result(timeout=min(2.0,max(0.0,float(os.getenv('MEDIA_FINAL_WAIT_SECONDS','0.35')))))
+            except FutureTimeout:
+                job.cancel();event('image_planning_unavailable',reason='visual_wait_timeout')
+            except Exception as error:event('image_planning_unavailable',level='WARNING',**error_fields(error))
+        return {'need_images':False,'reason':'planning_unavailable','flow_ids':[],'image_ids':[]}
+
+    def discard_visual(self,state):
+        with self._visual_lock:job=self._visual_jobs.pop(self.key(state),None)
+        if job is not None:job.cancel()
 
     @staticmethod
     def key(state):
         return hashlib.sha256(json.dumps([state['actor']['tenant_id'],state['actor']['sub'],state['session_id'],state['request_id']],ensure_ascii=False).encode()).hexdigest()
 
     def close(self):
+        with self._visual_lock:
+            for job in self._visual_jobs.values():job.cancel()
+            self._visual_jobs.clear()
+        self._visual_pool.shutdown(wait=False,cancel_futures=True)
         if self._resource is not None:self._resource.close();self._resource=None

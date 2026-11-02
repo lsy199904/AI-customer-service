@@ -80,3 +80,30 @@ class LiveStreamTests(unittest.TestCase):
   self.assertNotIn('fabricated-install',result['answer'])
   saved=self.server.service.history({'tenant_id':'tenant','sub':'user'},self.sid)['items'][-1]['response']
   self.assertNotIn('fabricated-install',saved['answer'])
+
+ def test_text_and_sources_arrive_before_parallel_visual_finishes(self):
+  from tests import test_image_policy as fixture
+  visual_started=threading.Event();release_visual=threading.Event();visual_finished=threading.Event()
+  generated=threading.Event();release_text=threading.Event()
+  decision={'need_images':True,'reason':'full_procedure','flow_ids':['subscription'],'multiple_flows':False,'image_ids':[],'source_ids':[]}
+  class Model:
+   def complete(me,*args,**kwargs):
+    visual_started.set();release_visual.wait(3);visual_finished.set();return json.dumps(decision)
+   def answer(me,q,h,e,c):
+    self.assertTrue(visual_started.wait(1));c['_on_delta']('打开服务订购，')
+    if not release_text.wait(3):raise AssertionError('text was buffered')
+    c['_on_delta']('选择套餐并提交。');generated.set()
+    return {'answerable':True,'answer':'打开服务订购，选择套餐并提交。','citation_ids':['subscription'],'image_ids':[]}
+  self.server.service.knowledge=fixture.Evidence([fixture.row('subscription','subscription','打开服务订购，选择套餐并提交。')])
+  self.server.service.model=Model()
+  try:
+   with self.client.stream('POST',f'/v1/sessions/{self.sid}/messages/stream',json={'message':'怎么买套餐','request_id':'parallel-real-http'}) as response:
+    seen_metadata=False
+    for kind,data in self.frames(response):
+     if kind=='delta' and not generated.is_set():release_text.set()
+     if kind=='metadata':
+      self.assertTrue(generated.is_set());self.assertFalse(visual_finished.is_set());self.assertTrue(data['citations'])
+      self.assertTrue(data['media_pending']);seen_metadata=True;release_visual.set()
+     if kind=='complete':result=data
+   self.assertTrue(seen_metadata);self.assertEqual([r['id'] for r in result['images']],['business-subscription'])
+  finally:release_text.set();release_visual.set()

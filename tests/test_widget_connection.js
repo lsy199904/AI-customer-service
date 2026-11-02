@@ -27,10 +27,10 @@ function setup(override={}){
  s=setup({fetch:()=>new Promise(()=>{})});p=s.context.request('/v1/bootstrap');rejected=assert.rejects(p,/请求已取消/);s.context.controller.abort();await rejected;assert.equal(s.timers.size,0);
  s=setup({fetch:async()=>{throw new TypeError('Failed to fetch');}});await assert.rejects(s.context.request('/v1/bootstrap'),/无法连接客服/);assert.equal(s.timers.size,0);
  s=setup({fetch:async()=>({ok:false,json:async()=>({error:{message:'登录凭证已过期'}})})});await assert.rejects(s.context.request('/v1/bootstrap'),/登录凭证已过期/);
- const bytes=new TextEncoder().encode('event: status\ndata: {"stage":"retrieving"}\n\nevent: complete\ndata: {"answer":"你好"}\n\n');
- let offset=0;const stages=[];
+ const bytes=new TextEncoder().encode('event: status\ndata: {"stage":"retrieving"}\n\nevent: metadata\ndata: {"citations":[{"id":"source-1"}],"media_pending":true}\n\nevent: complete\ndata: {"answer":"你好"}\n\n');
+ let offset=0;const stages=[],metadata=[];
  s=setup({fetch:async()=>({ok:true,body:{getReader:()=>({read:async()=>offset<bytes.length?{value:bytes.slice(offset,offset+=7),done:false}:{done:true}})}})});
- assert.equal((await s.context.streamReply('/v1/sessions/test/messages',{},stage=>stages.push(stage))).answer,'你好');assert.equal(stages.join(','),'retrieving');assert.equal(s.timers.size,0);
+ assert.equal((await s.context.streamReply('/v1/sessions/test/messages',{},stage=>stages.push(stage),()=>{},value=>metadata.push(value))).answer,'你好');assert.equal(stages.join(','),'retrieving');assert.equal(metadata[0].citations[0].id,'source-1');assert.equal(metadata[0].media_pending,true);assert.equal(s.timers.size,0);
  s=setup({token:()=>new Promise(()=>{})});p=s.context.streamReply('/v1/sessions/test/messages',{},()=>{});rejected=assert.rejects(p,/取消或超时/);await flush();s.expire();await rejected;
  s=setup({token:()=>new Promise(()=>{})});s.context.controller.abort();await assert.rejects(s.context.streamReply('/v1/sessions/test/messages',{},()=>{}),/取消或超时/);assert.equal(s.timers.size,0);
  const sent=[],parent={children:[],append(child){this.children.push(child);}},buttonElement=(tag,cls,text)=>({tag,cls,text,children:[],append(child){this.children.push(child);},setAttribute(){}});

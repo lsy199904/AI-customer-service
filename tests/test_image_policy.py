@@ -55,8 +55,9 @@ class VisualWorkflowTests(unittest.TestCase):
   self.assertEqual(result['answer'],answer)
   metadata=next(c.kwargs for c in logged.call_args_list if c.args[0]=='image_selection_completed')
   for key in ('need_images','reason','primary_flows','candidates','selected_images','excluded_images'):self.assertIn(key,metadata)
-  self.assertEqual(set(r['id'] for r in result['citations']),set(sources))
-  self.assertEqual(model.plans[0]['question'],question);self.assertEqual(model.plans[0]['answer'],answer)
+  self.assertTrue(set(r['id'] for r in result['citations'])<=set(sources));self.assertTrue(result['citations'])
+  visual=next(p for p in model.plans if 'candidate_images' in p)
+  self.assertEqual(visual['question'],question);self.assertEqual(visual['answer'],'')
   return result,model,metadata
  def test_subscription_paraphrases_and_registration_as_background(self):
   for question in ('如何订购服务','怎么买套餐','注册完成后怎么订购','想开一个套餐，应该从哪里操作？'):
@@ -85,7 +86,7 @@ class VisualWorkflowTests(unittest.TestCase):
   first,_,_=self.ask('如何订购服务',['subscription'])
   result,model,_=self.ask('这一步谁来处理',['subscription'],need=False,reason='local_followup')
   self.assertEqual(result['images'],[])
-  self.assertIn('如何订购服务',model.plans[0]['recent_user_questions'])
+  self.assertIn('如何订购服务',next(p for p in model.plans if 'candidate_images' in p)['recent_user_questions'])
   history=self.s.history(ACTOR,self.sid)['items']
   self.assertEqual(history[-3]['response']['images'],first['images']);self.assertEqual(history[-1]['response']['images'],[])
   self.s.close();self.s=Service(self.config)

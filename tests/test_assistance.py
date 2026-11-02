@@ -137,7 +137,16 @@ class AssistanceTests(unittest.TestCase):
   stages=[]
   with patch.object(Model,'_complete_request',complete):
    result=self.s.chat(A,self.sid,{'message':'分步指导：企业认证流程','request_id':'v2-real-model-stream'},observer=stages.append)
-  self.assertEqual(len(calls),2);self.assertIn('candidate_images',calls[1]);self.assertEqual(calls[0]['guidance']['stage'],'完善企业资料')
+  self.assertEqual(len(calls),2)
+  generation=next(c for c in calls if 'evidence' in c)
+  planning=next(c for c in calls if 'candidate_images' in c)
+  self.assertEqual(planning['answer'],'');self.assertEqual(generation['guidance']['stage'],'完善企业资料')
   self.assertEqual(result['reason'],'guidance');self.assertTrue(any(item['type']=='delta' for item in stages))
  def test_guidance_state_cannot_be_supplied_by_browser(self):
   with self.assertRaises(APIError):self.s.chat(A,self.sid,{'message':'下一步','request_id':'v2-inject-state','guidance':{'step':100}})
+
+ def test_new_payment_subject_does_not_stay_in_verification_guidance(self):
+  self.ask('分步指导：企业认证流程')
+  result=self.ask('支付流程是什么？')
+  self.assertEqual(result['reason'],'clarification');self.assertIsNone(result.get('guidance'))
+  self.assertEqual({a['message'] for a in result['actions']},{'账单支付流程','客户充值流程'})

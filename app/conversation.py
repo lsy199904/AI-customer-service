@@ -76,12 +76,8 @@ def intent_of(question):
 
 
 def contextual_query(question,history):
-    query=question
-    if len(question)<24 and re.search(r'这个|那个|它|上述|刚才|然后|接下来|还有呢',question):
-        previous=next((h['content'] for h in reversed(history) if h['role']=='user'
-                       and not (len(h['content'])<24 and re.search(r'这个|那个|它|上述|刚才|然后|接下来|还有呢',h['content']))), '')
-        if previous:query=previous+' '+question
-    return query
+    from .query_context import local_query
+    return local_query(question,history)
 
 
 def retrieval_query(question, history):

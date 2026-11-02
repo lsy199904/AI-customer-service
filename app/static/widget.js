@@ -110,7 +110,7 @@
       clearTimeout(timer);parent?.removeEventListener('abort',onAbort);
     }
   }
-  async function streamReply(path,body,onStage,onDelta=()=>{}) {
+  async function streamReply(path,body,onStage,onDelta=()=>{},onMetadata=()=>{}) {
     const scope=new AbortController(),parent=controller?.signal;
     const abort=()=>scope.abort();parent?.addEventListener('abort',abort,{once:true});
     if(parent?.aborted)scope.abort();
@@ -131,7 +131,7 @@
           const frame=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);
           const kind=frame.split('\n').find(line=>line.startsWith('event: '))?.slice(7);
           const raw=frame.split('\n').filter(line=>line.startsWith('data: ')).map(line=>line.slice(6)).join('\n');
-          if(raw){const payload=JSON.parse(raw);if(kind==='status')onStage(payload.stage);if(kind==='delta'&&typeof payload.text==='string')onDelta(payload.text);if(kind==='complete')result=payload;if(kind==='error')throw new Error(payload.message || '服务暂时不可用');}
+          if(raw){const payload=JSON.parse(raw);if(kind==='status')onStage(payload.stage);if(kind==='delta'&&typeof payload.text==='string')onDelta(payload.text);if(kind==='metadata')onMetadata(payload);if(kind==='complete')result=payload;if(kind==='error')throw new Error(payload.message || '服务暂时不可用');}
         }
         if(buffer.length>1000000)throw new Error('客服响应过大');
         if(part.done)break;
@@ -152,6 +152,17 @@
       .replace(/^\d+(?:\.\d+)*[.、\s]+/, '').trim();
     return '用户手册：'+(title || '知识说明');
   }
+  function renderSources(evidenceParent,citations) {
+      const list = element('div', 'sources');
+      citations.forEach((source, i) => {
+        const b = element('button', 'source');b.setAttribute('aria-label',sourceLabel(source));
+        const symbol=element('span','source-symbol','▤');symbol.setAttribute('aria-hidden','true');
+        const arrow=element('span','source-arrow','›');arrow.setAttribute('aria-hidden','true');
+        b.append(symbol,element('span','source-title',sourceLabel(source)),arrow);
+        b.type = 'button'; b.addEventListener('click', () => showSource(source)); list.append(b);
+      });
+      evidenceParent.append(list);
+    }
   function roleAvatar(role) {
     const holder=element('span','message-avatar');holder.setAttribute('aria-hidden','true');
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -182,17 +193,7 @@
       }
     }
     if(response?.images?.length)renderImages(evidenceParent,response.images);
-    if (response?.citations?.length) {
-      const list = element('div', 'sources');
-      response.citations.forEach((source, i) => {
-        const b = element('button', 'source');b.setAttribute('aria-label',sourceLabel(source));
-        const symbol=element('span','source-symbol','▤');symbol.setAttribute('aria-hidden','true');
-        const arrow=element('span','source-arrow','›');arrow.setAttribute('aria-hidden','true');
-        b.append(symbol,element('span','source-title',sourceLabel(source)),arrow);
-        b.type = 'button'; b.addEventListener('click', () => showSource(source)); list.append(b);
-      });
-      evidenceParent.append(list);
-    }
+    if(response?.citations?.length)renderSources(evidenceParent,response.citations);
     if(!response?.guidance&&response?.status!=='suggestions'&&response?.actions?.length)renderAssistantActions(row,response.actions);
     if(response?.status==='suggestions')renderSuggestions(row,response);
     if (response?.handoff && response.contact) renderContact(row, response.contact);
@@ -421,12 +422,18 @@
       const r=config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
         const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
-        loading.textContent=labels[stage] || '正在为您解答…';
+        loading.textContent=stage==='assembling'&&!loading.hidden?'正在加载相关图示…':(labels[stage] || '正在为您解答…');
       },delta=>{
         if(v!==generation)return;
         loading.hidden=true;
         if(!live){live=message('assistant','');live.classList.add('streaming');}
         liveText+=delta;live.querySelector('.bubble').textContent=liveText;scroll();
+      },metadata=>{
+        if(v!==generation)return;
+        if(live&&metadata.citations?.length){live.querySelector('.sources')?.remove();renderSources(live,metadata.citations);}
+        loading.hidden=!metadata.media_pending;
+        if(metadata.media_pending){loading.textContent='正在加载相关图示…';transcript.append(loading);}
+        scroll();
       }) : await request(path,'POST',payload);
       if (v!==generation) return;
       const finished=message('assistant',r.answer,r);if(live){live.remove();live=null;finished.style.animation='none';}retry=null;activity();

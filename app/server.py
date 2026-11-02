@@ -345,6 +345,7 @@ def create_app(config=None,model=None,service=None):
                     if item in done:
                         payload=item.result();kind=payload.get('type','status')
                         if kind=='delta':streamed=True;yield event('delta',{'text':payload['text']})
+                        elif kind=='metadata':yield event('metadata',{k:v for k,v in payload.items() if k!='type'})
                         else:yield event('status',{'stage':payload.get('stage')})
                     else:
                         item.cancel()
@@ -354,6 +355,7 @@ def create_app(config=None,model=None,service=None):
                 while not queue.empty():
                     payload=queue.get_nowait()
                     if payload.get('type')=='delta':streamed=True;yield event('delta',{'text':payload['text']})
+                    elif payload.get('type')=='metadata':yield event('metadata',{k:v for k,v in payload.items() if k!='type'})
                     else:yield event('status',{'stage':payload.get('stage')})
                 result=await task
                 log_event('response_ready',request_id=body.request_id,outcome=result['status'],
