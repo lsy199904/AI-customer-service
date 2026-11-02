@@ -33,7 +33,7 @@ class AssistanceTests(unittest.TestCase):
   self.count+=1
   return self.s.chat(actor,sid or self.sid,{'message':text,'request_id':rid or f'v2-request-{self.count:06}'})
  def test_latest_doc_all_six_flows_and_source_excerpts(self):
-  self.assertEqual(len(self.k.rows),57)
+  self.assertEqual(len(self.k.rows),60)
   self.assertEqual(len(available(list(self.k.rows.values()))),6)
   for key,flow in FLOWS.items():
    with self.subTest(flow=key):
@@ -42,6 +42,15 @@ class AssistanceTests(unittest.TestCase):
     self.assertEqual(result['status'],'answered');self.assertTrue(result['citations']);self.assertTrue(result['images'])
     row=next(row for row in self.k.rows.values() if title_text(row['title'])==flow['title'])
     self.assertEqual(result['answer'],stage_context(result['guidance'],[row])['stage_evidence'])
+ def test_subscription_guidance_works_without_internal_fifth_step(self):
+  self.ask('带我一步步完成服务订购')
+  self.ask('这一步已完成')
+  result=self.ask('这一步已完成')
+  self.assertEqual(result['guidance']['step'],2)
+  self.assertEqual(result['status'],'answered')
+  self.assertIn('API Key',result['answer'])
+  self.assertNotIn('计费方式',result['answer'])
+  self.assertNotIn('5.',result['answer'])
  def test_plain_chapter_question_stays_overview_with_opt_in(self):
   result=self.ask('账单支付流程')
   self.assertIsNone(result['guidance']);self.assertEqual(result['reason'],'extractive')
