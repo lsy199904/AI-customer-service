@@ -208,13 +208,10 @@ class SupportWorkflow:
             return {}
         started=time.monotonic()
         try:
-            # Keep upstream streaming/cancellation, but release knowledge prose only after validation.
-            chunks=[]
-            def draft_delta(text):
-                runtime.context.check();chunks.append(text)
+            # Forward tokens immediately. Complete remains authoritative after final validation.
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
                 '_resolved_question':state['retrieval'].get('query',state['question']),
-                '_on_delta':(runtime.context.delta if conversation else draft_delta) if runtime.context.observer else None,
+                '_on_delta':runtime.context.delta if runtime.context.observer else None,
                 '_guidance':state.get('guide_context')}
             result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],state['evidence'],context)
             runtime.context.check()
@@ -228,9 +225,6 @@ class SupportWorkflow:
                 if violations:
                     event('generation_grounding_rejected',level='WARNING',violations=violations)
                     return {'reason':'unsupported_answer'}
-                if runtime.context.observer:
-                    # Preserve original chunks when the transport emitted the complete answer.
-                    for text in chunks if ''.join(chunks)==result['answer'] else [result['answer']]:runtime.context.delta(text)
             return {'selected':selected,'images':[],'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
         except RequestCancelled:raise
         except Exception as error:
