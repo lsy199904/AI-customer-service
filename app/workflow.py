@@ -201,7 +201,7 @@ class SupportWorkflow:
         if intent=='identity':return {'answer':REPLIES[intent],'reason':intent,'success':True}
         if s.config.mode!='llm':
             if conversation:return {'answer':REPLIES[intent],'reason':intent,'success':True}
-            if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'images':[s.media.public(r) for r in state['candidates']]}
+            if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'selected':state['evidence']}
             if state['evidence']:
                 text=state['guide_context']['stage_evidence'] if state.get('guide_context') else state['evidence'][0]['content']
                 return {'selected':[state['evidence'][0]],'answer':text,'reason':'guidance' if state.get('guide_context') else 'extractive','success':True}
@@ -231,9 +231,7 @@ class SupportWorkflow:
                 if runtime.context.observer:
                     # Preserve original chunks when the transport emitted the complete answer.
                     for text in chunks if ''.join(chunks)==result['answer'] else [result['answer']]:runtime.context.delta(text)
-            allowed=s.media.bound(selected) if selected else state['candidates'] if intent=='image' else []
-            images=[s.media.public(r) for r in allowed if r['id'] in result.get('image_ids',[])]
-            return {'selected':selected,'images':images,'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
+            return {'selected':selected,'images':[],'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
         except RequestCancelled:raise
         except Exception as error:
             event('generation_failed',level='ERROR',evidence_count=len(state['evidence']),
@@ -244,11 +242,35 @@ class SupportWorkflow:
         finally:s.observe('generation',time.monotonic()-started)
 
     def validate(self,state:State,runtime:Runtime[Context]):
-        runtime.context.emit('assembling');s=self.service;images=state['images']
-        if state['success'] and state['selected']:
-            bound=[s.media.public(r) for r in s.media.bound(state['selected'])]
-            images=list({r['id']:r for r in bound+images}.values())[:4]
-        values={'images':images,'suggestions':[],'suggestion_sources':[],'actions':[]}
+        runtime.context.emit('assembling');s=self.service
+        # Citations, visual intent and asset choice are separate decisions. Never re-add bound images.
+        selected=state['selected'];images=[]
+        if state['success'] and state['candidates']:
+            from .image_policy import semantic_decision,conservative_decision,select_images
+            event('image_planning_started')
+            if s.config.mode=='llm' and hasattr(s.model,'complete'):
+                try:
+                    decision=semantic_decision(s.model,state['question'],state['answer'],state['history'],
+                        state['evidence'],state['candidates'],state.get('guide_context'))
+                    proposed=[r for r in state['evidence'] if r['id'] in decision['source_ids']]
+                    from .grounding import unsupported_literals
+                    if not unsupported_literals(state['answer'],proposed,state.get('guide_context')):selected=proposed
+                except Exception as error:
+                    event('image_planning_unavailable',level='WARNING',**error_fields(error))
+                    decision={'need_images':False,'reason':'planning_unavailable','flow_ids':[],'image_ids':[]}
+            else:
+                decision=conservative_decision(state['question'],state['answer'],selected,state['candidates'])
+            runtime.context.check()
+            chosen,report=select_images(decision,state['candidates'],selected,state['evidence'])
+            images=[s.media.public(r) for r in chosen]
+            if s.config.mode!='llm' and state['reason']=='image':
+                chosen_ids={r['id'] for r in chosen}
+                selected=[r for r in selected if chosen_ids & set(r.get('image_ids',[]))]
+            event('image_selection_completed',**report)
+        else:
+            event('image_selection_completed',need_images=False,reason='no_successful_visual_evidence',
+                primary_flows=[],candidates=[],selected_images=[],excluded_images=[])
+        values={'selected':selected,'images':images,'suggestions':[],'suggestion_sources':[],'actions':[]}
         if not state['success'] and state['intent']!='handoff':
             values.update(images=[],selected=[],suggestions=recommended_questions(s.knowledge,state['question'],
                 state['evidence'],sensitive=state['intent']=='sensitive' or state['retrieval_failed'],

@@ -43,7 +43,7 @@ def citation_ids(answer,evidence):
     """Select per-paragraph supporting records, instead of citing every candidate."""
     if len(evidence)<=1:return [r['id'] for r in evidence]
     selected=set()
-    for paragraph in re.split(r'\n\s*\n',answer):
+    for paragraph in re.split(r'\n+|(?<=[。！？；])',answer):
         query=set(terms(paragraph))
         scores=[len(query & set(terms(r['content']))) for r in evidence]
         best=max(scores,default=0)

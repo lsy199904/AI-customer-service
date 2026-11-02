@@ -123,19 +123,21 @@ class AssistanceTests(unittest.TestCase):
  def test_direct_flow_overview_can_exit_current_guidance(self):
   self.ask('分步指导：企业认证流程')
   result=self.ask('企业认证流程');self.assertIsNone(result['guidance']);self.assertEqual(result['reason'],'extractive')
- def test_model_receives_current_stage_and_stream_callback_not_extra_generation(self):
+ def test_model_receives_current_stage_and_independent_visual_decision(self):
   from app.core import Model
   self.s.config.mode='llm';self.s.model=Model(self.config)
   calls=[]
   def complete(model,messages,on_delta=None):
    data=json.loads(messages[-1]['content']);calls.append(data)
+   if 'candidate_images' in data:
+    return json.dumps({'need_images':False,'reason':'local_followup','flow_ids':['verification'],'multiple_flows':False,'image_ids':[],'source_ids':[r['id'] for r in data['sources']]})
    text='请按当前页面填写企业资料。'
    if on_delta:on_delta(text)
    return text
   stages=[]
   with patch.object(Model,'_complete_request',complete):
    result=self.s.chat(A,self.sid,{'message':'分步指导：企业认证流程','request_id':'v2-real-model-stream'},observer=stages.append)
-  self.assertEqual(len(calls),1);self.assertEqual(calls[0]['guidance']['stage'],'完善企业资料')
+  self.assertEqual(len(calls),2);self.assertIn('candidate_images',calls[1]);self.assertEqual(calls[0]['guidance']['stage'],'完善企业资料')
   self.assertEqual(result['reason'],'guidance');self.assertTrue(any(item['type']=='delta' for item in stages))
  def test_guidance_state_cannot_be_supplied_by_browser(self):
   with self.assertRaises(APIError):self.s.chat(A,self.sid,{'message':'下一步','request_id':'v2-inject-state','guidance':{'step':100}})

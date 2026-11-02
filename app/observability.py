@@ -225,6 +225,8 @@ _trace = ContextVar('request_trace', default=None)
 _NODE_NAMES = {
     'chat_started':'接收问题','question_classified':'问题分类',
     'retrieval_model_started':'检索模型调用开始','retrieval_model_completed':'检索模型调用完成',
+    'image_planning_started':'配图语义判断开始','image_planning_unavailable':'配图判断不可用',
+    'image_selection_completed':'本轮配图选择完成',
     'retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'回答依据校验未通过',
     'retrieval_model_failed':'检索模型调用失败','retrieval_completed':'知识检索完成',
     'retrieval_failed':'知识检索失败','model_request_started':'回答模型调用开始',
@@ -247,6 +249,7 @@ _NODE_NAMES = {
 }
 
 _DETAIL_NAMES={
+    'need_images':'本轮是否需要配图','primary_flows':'主要业务流程','selected_images':'选中图片','excluded_images':'未选图片及原因',
     'intent':'问题意图','matched':'是否命中','similarity':'向量相似度','threshold':'相似度门槛',
     'title_matched':'标题匹配','evidence_count':'命中数量','evidence_ids':'知识编号',
     'rerank_scores':'重排分数','history_messages':'历史消息数','question_chars':'问题字数',

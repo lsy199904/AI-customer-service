@@ -121,6 +121,9 @@ class MediaCatalog:
                 if not isinstance(row.get(field,''),str) or len(row.get(field,''))>200:raise ValueError('图片说明无效')
             if any(not isinstance(row.get(k,[]),list) for k in ('keywords','knowledge_ids')):
                 raise ValueError('图片关键词与知识ID必须为数组')
+            if not isinstance(row.get('flow_ids',[]),list) or any(not isinstance(v,str) for v in row.get('flow_ids',[])):
+                raise ValueError('图片业务流程标识必须为字符串数组')
+            if type(row.get('flow_priority',0)) is not int:raise ValueError('图片优先级必须为整数')
             if any(not isinstance(v,str) for v in row.get('keywords',[])+row.get('knowledge_ids',[])):
                 raise ValueError('图片关键词和知识ID必须为字符串')
             self.rows[key]=row
@@ -132,12 +135,12 @@ class MediaCatalog:
         if bound or intent_of(question)!='image':return bound
         q=question.lower()
         return [r for r in self.rows.values()
-                if any(k.lower() in q for k in r.get('keywords',[]) if k)][:4]
+                if any(k.lower() in q for k in r.get('keywords',[]) if k)]
 
     def bound(self,evidence):
         # Stable operator IDs come from document metadata, never from generated URLs.
         keys=dict.fromkeys(key for row in evidence for key in row.get('image_ids',[]))
-        return [self.rows[key] for key in keys if key in self.rows][:4]
+        return [self.rows[key] for key in keys if key in self.rows]
 
     def public(self, row):
         return {k:row.get(k,'') for k in ('id','url','title','alt')}
