@@ -3,16 +3,8 @@ import hashlib
 import re
 from .retrieval import title_text,terms
 
-FLOWS={
- 'register':{'title':'注册流程','aliases':['注册','开户'], 'stages':[('填写注册信息',[1]),('提交与校验',[2,3]),('登录与后续办理',[4])]},
- 'verification':{'title':'企业认证流程','aliases':['企业认证','企业实名'], 'stages':[('完善企业资料',[1]),('选择认证方式',[2]),('办理认证与审核',[3,4,5]),('查看认证结果',[6])]},
- 'subscription':{'title':'服务订购流程','aliases':['服务订购','套餐订购','订购'], 'stages':[('选择服务与模型',[1]),('办理签约',[2,3]),('查看生效与服务开通',[4])]},
- 'recharge':{'title':'客户充值流程','aliases':['充值'], 'stages':[('选择充值方式',[1]),('完成支付或汇款',[2,3]),('核对充值结果',[4,5])]},
- 'payment':{'title':'账单支付流程','aliases':['账单支付','账单付款','付账单'], 'stages':[('选择待支付账单',[1]),('完成支付或汇款',[2,3]),('核对账单结算结果',[4,5])]},
- 'invoice':{'title':'在线开票流程','aliases':['在线开票','开票','发票申请'], 'stages':[('维护开票信息',[1]),('选择记录与抬头',[2,3]),('提交申请与核对',[4,5]),('查看或下载发票',[6])]},
-}
+from .business_flows import GUIDED_FLOWS as FLOWS, NEXT
 NOTE='进度仅根据您的反馈记录，未查询或办理后台业务。'
-NEXT={'register':['verification'],'verification':['subscription'],'subscription':['recharge'],'recharge':['payment'],'payment':['invoice'],'invoice':[]}
 
 
 def chapter(rows,flow_id):

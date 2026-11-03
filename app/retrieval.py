@@ -57,22 +57,8 @@ def title_signals(question,titles):
     """Structural equality/procedure equality is strong; shared prefixes are weak."""
     subject=topic(question,question=True)
     procedure=re.sub(r'(?:流程|步骤|操作方法|使用方法)$','',subject)
-    procedural=procedure!=subject and len(procedure)>=4
-    signals=[]
-    for title in titles:
-        target=topic(title)
-        kind='normalized_title' if len(subject)>=4 and subject==target else None
-        # A bounded operation + product abbreviation may omit a generic role noun.
-        operation=re.fullmatch(r'(安装|部署|配置|升级|卸载)([a-z][a-z0-9]{2,})',procedure)
-        reverse=re.fullmatch(r'([a-z][a-z0-9]{2,})(?:如何|怎么)?(安装|部署|配置|升级|卸载)',procedure)
-        canonical=operation[1]+operation[2] if operation else reverse[2]+reverse[1] if reverse else None
-        if kind is None and canonical and re.fullmatch(re.escape(canonical)+r'(?:负载均衡器|负载均衡|数据库|服务器|组件|服务|缓存|集群)',target):
-            kind='operation_product_alias'
-        if procedural and kind is None:
-            if procedure==target:kind='procedure_title'
-            elif target.startswith(procedure):kind='related_prefix'
-        signals.append({'kind':kind,'strength':{'normalized_title':3,'procedure_title':2,'operation_product_alias':2,'related_prefix':1}.get(kind,0),
-                        'strong':kind in ('normalized_title','procedure_title','operation_product_alias')})
+    from .title_policy import classify
+    signals=[classify(subject,procedure,topic(title)) for title in titles]
     best=max((s['strength'] for s in signals),default=0)
     return [{**s,'matched':best>0 and s['strength']==best} for s in signals]
 

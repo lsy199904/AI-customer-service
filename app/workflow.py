@@ -72,6 +72,8 @@ class Context:
 
 class SupportWorkflow:
     def __init__(self,service):
+        from .image_policy import ImagePolicy
+        self.image_policy=ImagePolicy()
         self.service=service;self._resource=None
         self._visual_pool=ThreadPoolExecutor(max_workers=4,thread_name_prefix="visual-plan")
         self._visual_slots=threading.BoundedSemaphore(4);self._visual_lock=threading.Lock();self._visual_jobs={}
@@ -275,14 +277,13 @@ class SupportWorkflow:
         # Citations, visual intent and asset choice are separate decisions. Never re-add bound images.
         selected=state['selected'];images=[]
         if state['success'] and state['candidates']:
-            from .image_policy import conservative_decision,select_images
             event('image_selection_started')
-            if s.config.mode=='llm' and hasattr(s.model,'complete'):
+            if self.image_policy.parallel(s.config.mode,s.model):
                 decision=self.finish_visual(state)
             else:
-                decision=conservative_decision(state['question'],state['answer'],selected,state['candidates'])
+                decision=self.image_policy.propose(s.config.mode,s.model,state['question'],state['answer'],state['history'],selected,state['candidates'],state.get('guide_context'),state.get('resolved_question'))
             runtime.context.check()
-            chosen,report=select_images(decision,state['candidates'],selected,state['evidence'])
+            chosen,report=self.image_policy.assemble(decision,state['candidates'],selected,state['evidence'])
             images=[s.media.public(r) for r in chosen]
             if s.config.mode!='llm' and state['reason']=='image':
                 chosen_ids={r['id'] for r in chosen}
@@ -343,14 +344,13 @@ class SupportWorkflow:
 
     def start_visual(self,state):
         s=self.service
-        if not state['candidates'] or s.config.mode!='llm' or not hasattr(s.model,'complete'):return
+        if not state['candidates'] or not self.image_policy.parallel(s.config.mode,s.model):return
         if not self._visual_slots.acquire(blocking=False):
             event('image_planning_unavailable',reason='visual_capacity');return
-        from .image_policy import semantic_decision
         ctx=copy_context();key=self.key(state)
         event('image_planning_started',parallel=True)
         try:
-            job=self._visual_pool.submit(ctx.run,semantic_decision,s.model,state['question'],'',state['history'],
+            job=self._visual_pool.submit(ctx.run,self.image_policy.propose,s.config.mode,s.model,state['question'],'',state['history'],
                 state['evidence'],state['candidates'],state.get('guide_context'),state.get('resolved_question'))
         except Exception:
             self._visual_slots.release();return
@@ -368,7 +368,7 @@ class SupportWorkflow:
             except FutureTimeout:
                 job.cancel();event('image_planning_unavailable',reason='visual_wait_timeout')
             except Exception as error:event('image_planning_unavailable',level='WARNING',**error_fields(error))
-        return {'need_images':False,'reason':'planning_unavailable','flow_ids':[],'image_ids':[]}
+        return self.image_policy.unavailable()
 
     def discard_visual(self,state):
         with self._visual_lock:job=self._visual_jobs.pop(self.key(state),None)

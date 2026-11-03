@@ -14,7 +14,7 @@ REPLIES = {
 }
 
 
-QUICK_QUESTIONS = ['注册流程', '企业认证流程', '服务订购流程', '客户充值流程', '账单支付流程', '在线开票流程']
+from .business_flows import QUICK_QUESTIONS, image_binding
 NO_ANSWER = '你当前的问题我无法回答哦，你可以向我提问：'
 
 
@@ -122,7 +122,7 @@ class MediaCatalog:
             if type(row.get('flow_priority',0)) is not int:raise ValueError('图片优先级必须为整数')
             if any(not isinstance(v,str) for v in row.get('keywords',[])+row.get('knowledge_ids',[])):
                 raise ValueError('图片关键词和知识ID必须为字符串')
-            self.rows[key]=row
+            self.rows[key]={**row,**image_binding(key)}
 
     def candidates(self, question, evidence):
         # Knowledge replies use only this turn's document-owned media. A keyword

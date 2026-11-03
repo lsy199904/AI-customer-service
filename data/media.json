@@ -8,12 +8,7 @@
       "企业注册流程图",
       "企业认证流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "register",
-      "verification"
-    ],
-    "flow_priority": 10
+    "knowledge_ids": []
   },
   {
     "id": "hub-03",
@@ -21,11 +16,7 @@
     "alt": "套餐订购-套餐版本介绍",
     "url": "/media/hub-03.png",
     "keywords": [],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "subscription"
-    ],
-    "flow_priority": 10
+    "knowledge_ids": []
   },
   {
     "id": "hub-05",
@@ -268,11 +259,7 @@
       "开票流程图",
       "账单与发票流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "invoice"
-    ],
-    "flow_priority": 10
+    "knowledge_ids": []
   },
   {
     "id": "recharge-balance-flow",
@@ -285,12 +272,7 @@
       "充值结算流程图",
       "充值、结算流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "recharge",
-      "payment"
-    ],
-    "flow_priority": 10
+    "knowledge_ids": []
   },
   {
     "id": "business-register",
@@ -300,11 +282,7 @@
     "keywords": [
       "注册流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "register"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-login",
@@ -314,11 +292,7 @@
     "keywords": [
       "登录流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "login"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-verification",
@@ -328,11 +302,7 @@
     "keywords": [
       "企业认证流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "verification"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-contract",
@@ -342,11 +312,7 @@
     "keywords": [
       "在线签约流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "contract"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-subscription",
@@ -356,11 +322,7 @@
     "keywords": [
       "服务订购流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "subscription"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-rating",
@@ -370,11 +332,7 @@
     "keywords": [
       "星级评定流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "rating"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-delivery",
@@ -384,11 +342,7 @@
     "keywords": [
       "客户交付流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "delivery"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-recharge",
@@ -398,11 +352,7 @@
     "keywords": [
       "客户充值流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "recharge"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-payment",
@@ -412,11 +362,7 @@
     "keywords": [
       "账单支付流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "payment"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   },
   {
     "id": "business-invoice",
@@ -426,10 +372,6 @@
     "keywords": [
       "在线开票流程图"
     ],
-    "knowledge_ids": [],
-    "flow_ids": [
-      "invoice"
-    ],
-    "flow_priority": 100
+    "knowledge_ids": []
   }
 ]
