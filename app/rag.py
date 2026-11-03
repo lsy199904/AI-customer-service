@@ -228,7 +228,7 @@ def ingest_documents(config,rebuild=False,embedder=None):
             catalog=MediaCatalog(os.getenv('MEDIA_PATH',str(BASE/'data/media.json')),BASE/'app/static/media')
             if required_images-catalog.rows.keys():
                 raise ValueError('文档配图ID未在data/media.json登记:'+','.join(sorted(required_images-catalog.rows.keys())))
-        revision=hashlib.sha256((parsed.sha256+config.fingerprint).encode()).hexdigest()
+        revision=hashlib.sha256((parsed.sha256+config.fingerprint+parsed.parser_revision).encode()).hexdigest()
         old=existing.get(relative)
         if old and old['active'] and old['current_revision']==revision and not rebuild:
             unchanged+=1;continue

@@ -29,3 +29,17 @@ class V3ConfigurationTests(unittest.TestCase):
    subprocess.run(['sh',str(root/'scripts/v3.sh'),'start'],env=env,check=True)
    args=log.read_text().splitlines();self.assertIn('--force-recreate',args);self.assertIn('--no-deps',args)
    self.assertNotIn('down',args);self.assertNotIn('pull',args)
+
+ def test_ingest_and_check_use_current_compose_service_without_fixed_container_name(self):
+  import shutil,subprocess
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);(root/'scripts').mkdir();(root/'.env').write_text('V3_PORT=18081\n')
+   shutil.copy2(Path(__file__).resolve().parents[1]/'scripts/v3.sh',root/'scripts/v3.sh')
+   binaries=root/'bin';binaries.mkdir();log=root/'args'
+   exe=binaries/'docker';exe.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$ARG_LOG"\n');exe.chmod(0o755)
+   env={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],'ARG_LOG':str(log)}
+   for command,extra in [('ingest',[]),('ingest',['--rebuild']),('check',[])]:
+    subprocess.run(['sh',str(root/'scripts/v3.sh'),command,*extra],env=env,check=True)
+    args=log.read_text().splitlines()
+    self.assertEqual(args[-(6+len(extra)):],['exec','-T','assistant','python','manage.py',command,*extra])
+    self.assertFalse(any('ai_customer_v2-assistant-1' in a for a in args))

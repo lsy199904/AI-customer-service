@@ -21,6 +21,7 @@ class ParsedDocument:
     sha256: str
     raw: bytes
     chunks: list
+    parser_revision: str = ""
 
 
 def clean_text(value):
@@ -71,6 +72,16 @@ def _docx(path,raw):
     return title,version,blocks
 
 
+def clean_pdf_text(value):
+    """Join artificial spacing between adjacent CJK glyphs, not Latin words.
+
+    Printed Chinese PDFs can expose letter-spaced runs as separate words.
+    Keep line boundaries, numbers, URLs and actual business wording unchanged.
+    """
+    text=clean_text(value)
+    return re.sub(r'(?<=[\u3400-\u9fff])[ \t]+(?=[\u3400-\u9fff])','',text)
+
+
 def _pdf(path,raw):
     try:from pypdf import PdfReader
     except ImportError:raise ValueError('PDF入库需要pypdf,请先安装requirements.txt')
@@ -78,7 +89,7 @@ def _pdf(path,raw):
     if reader.is_encrypted:raise ValueError('请先提供可读取的非加密PDF')
     blocks=[]
     for page_no,page in enumerate(reader.pages,1):
-        text=clean_text(page.extract_text() or '')
+        text=clean_pdf_text(page.extract_text() or '')
         if not text:continue
         blocks.append({'text':path.stem+' 第'+str(page_no)+'页','heading':True,'page':page_no,'locator':'PDF物理第'+str(page_no)+'页'})
         for paragraph in re.split(r'\n\s*\n',text):
@@ -145,4 +156,5 @@ def parse_document(path,max_chars=1000,overlap=100):
     else:title,version,blocks=_plain(path,raw)
     chunks=split_sections(blocks,title,max_chars,overlap)
     if not chunks:raise ValueError('没有可入库的正文:'+path.name)
-    return ParsedDocument(path.name,title,version,hashlib.sha256(raw).hexdigest(),raw,chunks)
+    return ParsedDocument(path.name,title,version,hashlib.sha256(raw).hexdigest(),raw,chunks,
+                          'pdf-cjk-spacing-v1' if path.suffix.lower()=='.pdf' else '')
