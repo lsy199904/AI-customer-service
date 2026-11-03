@@ -45,6 +45,21 @@ def guide_state(key,index,row,status='active',notice=None):
             'note':NOTE,**({'notice':notice} if notice else {})}
 
 
+def ambiguous_payment(text):
+    """Clarify a payment action, not a prepaid/postpaid customer qualifier.
+
+    A named subject (including invoice aliases from the shared registry) already
+    provides a retrieval target. This guard only handles genuinely vague payment
+    requests; it must not consume ordinary knowledge questions.
+    """
+    invoice_words=[FLOWS['invoice']['title'],*FLOWS['invoice']['aliases'],'发票']
+    if any(word in text for word in invoice_words):return False
+    # Remove billing-mode qualifiers before looking for an actual payment action.
+    action=re.sub(r'(?:预|后)(?:付款|付费|支付)', '', text)
+    return bool(re.search(r'支付|付款',action) and
+                not re.search(r'账单|充值|接口|API|api|模型',text) and len(text)<36)
+
+
 def plan(question,history,rows):
     """Only plans control flow; no answers or transaction results are encoded here."""
     options=available(rows)
@@ -85,7 +100,7 @@ def plan(question,history,rows):
     if text in {'这一步已完成','完成了','下一步','上一步','继续下一步','这一步怎么做'} and not key:
         return {'kind':'clarify','answer':'您想继续哪个业务流程？请先选择，我再按步骤陪您操作。',
                 'choices':[FLOWS[item]['title'] for item in options]}
-    if re.search(r'支付|付款',text) and not re.search(r'账单|充值|接口|API|api|模型|发票',text) and len(text)<36:
+    if ambiguous_payment(text):
         choices=[FLOWS[item]['title'] for item in ('payment','recharge') if item in options]
         if len(choices)>1:return {'kind':'clarify','answer':'您遇到的是账单支付，还是充值支付的问题？先选一下，我再给您对应的处理说明。','choices':choices}
     if text in {'认证失败','认证不了','认证有问题'} and 'verification' in options:

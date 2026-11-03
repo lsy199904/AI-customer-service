@@ -62,6 +62,43 @@ class AssistanceTests(unittest.TestCase):
   second=self.ask('第一个')
   self.assertTrue(second['citations']);self.assertIn('待支付账单',second['answer'])
   self.assertEqual(second['actions'][0]['message'],'分步指导：账单支付流程')
+ def test_invoice_questions_reach_retrieval_and_generation_even_after_clarification(self):
+  # Reproduce both screenshot questions, including the preceding clarification.
+  self.ask('支付不了')
+  invoice=next(r for r in self.k.rows.values() if title_text(r['title'])=='在线开票流程')
+  queries=[];generated=[]
+  def assess(query):
+   queries.append(query)
+   return {'matched':True,'hits':[(.85,invoice,.8)],'method':'fixture','threshold':.75,'similarity':.85}
+  self.k.assess=assess
+  class Model:
+   def complete(me,messages):
+    return json.dumps({'need_images':False,'reason':'fact_only','flow_ids':['invoice'],'multiple_flows':False,'image_ids':[]})
+   def answer(me,q,history,evidence,context):
+    generated.append(q);answer='请参考本轮开票资料中的办理条件。'
+    if context.get('_on_delta'):context['_on_delta'](answer)
+    return {'answerable':True,'answer':answer,'citation_ids':[invoice['id']],'image_ids':[]}
+  self.s.config.mode='llm';self.s.model=Model()
+  for question in ('预付款客户支持哪些开票方式？','后付款客户什么时候可以申请开票',
+                   '预付费用户如何申请发票','后付费什么时候能开票'):
+   with self.subTest(question=question):
+    events=[];self.count+=1
+    result=self.s.chat(A,self.sid,{'message':question,'request_id':f'invoice-regression-{self.count}'},observer=events.append)
+    self.assertEqual(result['status'],'answered');self.assertNotEqual(result['reason'],'clarification')
+    self.assertEqual(queries[-1],question);self.assertEqual(generated[-1],question)
+    self.assertEqual([r['id'] for r in result['citations']],[invoice['id']])
+    self.assertEqual(result['images'],[])
+    self.assertEqual(''.join(e['text'] for e in events if e['type']=='delta'),result['answer'])
+    self.assertEqual(self.s.history(A,self.sid)['items'][-1]['response']['answer'],result['answer'])
+ def test_billing_mode_qualifiers_and_named_invoice_subject_are_not_payment_actions(self):
+  from app.assistance import ambiguous_payment
+  for question in ('预付款客户支持哪些开票方式','后付款客户什么时候可以申请开票',
+                   '预支付客户可以申请票据吗','预付款客户的权益何时生效','后付款客户支持什么结算方式',
+                   '付款后如何开票','支付后怎么申请发票','账单怎么支付','客户充值怎么付款'):
+   self.assertFalse(ambiguous_payment(question),question)
+  for question in ('支付不了','怎么付款','支付流程是什么','预付款客户怎么支付','后付款客户付款失败'):
+   self.assertTrue(ambiguous_payment(question),question)
+
  def test_steps_do_not_advance_without_explicit_completion(self):
   self.ask('带我办理账单支付流程')
   result=self.ask('这一步怎么做');self.assertEqual(result['guidance']['step'],0)
