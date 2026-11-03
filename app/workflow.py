@@ -282,6 +282,7 @@ class SupportWorkflow:
                 decision=self.finish_visual(state)
             else:
                 decision=self.image_policy.propose(s.config.mode,s.model,state['question'],state['answer'],state['history'],selected,state['candidates'],state.get('guide_context'),state.get('resolved_question'))
+            decision=self.image_policy.guard(state['question'],decision)
             runtime.context.check()
             chosen,report=self.image_policy.assemble(decision,state['candidates'],selected,state['evidence'])
             images=[s.media.public(r) for r in chosen]

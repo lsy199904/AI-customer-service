@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const code=fs.readFileSync(require('path').join(__dirname,'../app/static/widget.js'),'utf8');
+const start=code.indexOf('  function sourceLabel('),end=code.indexOf('  function renderSources(',start);
+const label=vm.runInNewContext(code.slice(start,end)+';sourceLabel');
+const source={source_kind:'wechat',section_title:'私有化部署',pages:[1,2],title:'旧文章 第2页'};
+assert.equal(label(source),'公众号资料－私有化部署');
+assert.equal(label(JSON.parse(JSON.stringify(source))),'公众号资料－私有化部署');
+assert.equal(label({...source,source_kind:'pdf'}),'文档资料－私有化部署');
+assert.equal(label({section_title:'注册流程'}),'用户手册：注册流程');
+assert(!label(source).includes('页'));
+assert(!code.includes(' · 页码 '));
+console.log('Topic source labels and history serialization passed');

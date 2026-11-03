@@ -150,7 +150,8 @@
     const title=String(raw).replace(/^用户手册[：:\s-]*/, '')
       .replace(/^问题\s*\d+\s*(?:第\s*\d+\s*页\s*)?/, '')
       .replace(/^\d+(?:\.\d+)*[.、\s]+/, '').trim();
-    return '用户手册：'+(title || '知识说明');
+    const prefix=source.source_kind==='wechat' ? '公众号资料－' : source.source_kind==='pdf' ? '文档资料－' : '用户手册：';
+    return prefix+(title || '知识说明');
   }
   function renderSources(evidenceParent,citations) {
       const list = element('div', 'sources');
@@ -450,7 +451,7 @@
     try {
       const r=await request('/v1/sources/'+encodeURIComponent(source.id));
       if(v!==generation) return;
-      content.replaceChildren(element('h3','',sourceLabel(r)),element('div','meta',`${r.source_file} · ${r.version || ''} · 页码 ${(r.pages || []).join(', ') || '不适用'}`),element('p','',String(r.content || '').split('\n').filter(line=>!/^\s*(?:图片\s*URL|原文链接|来源)\s*[:：]/i.test(line)).join('\n').replace(/https?:\/\/raw\.githubusercontent\.com\/[^\s<>]+/gi,'[内部地址已隐藏]')));
+      content.replaceChildren(element('h3','',sourceLabel(r)),element('div','meta',[r.document_title || r.source_file,r.version && r.version!=='未标注' ? r.version : ''].filter(Boolean).join(' · ')),element('p','',String(r.content || '').split('\n').filter(line=>!/^\s*(?:图片\s*URL|原文链接|来源)\s*[:：]/i.test(line)).join('\n').replace(/https?:\/\/raw\.githubusercontent\.com\/[^\s<>]+/gi,'[内部地址已隐藏]')));
     } catch(err) {if(v===generation) content.textContent=err.message;}
   }
   function renderHistory(data, earlier=false) {

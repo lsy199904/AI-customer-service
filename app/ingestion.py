@@ -87,14 +87,25 @@ def _pdf(path,raw):
     except ImportError:raise ValueError('PDF入库需要pypdf,请先安装requirements.txt')
     reader=PdfReader(io.BytesIO(raw))
     if reader.is_encrypted:raise ValueError('请先提供可读取的非加密PDF')
-    blocks=[]
-    for page_no,page in enumerate(reader.pages,1):
-        text=clean_pdf_text(page.extract_text() or '')
-        if not text:continue
-        blocks.append({'text':path.stem+' 第'+str(page_no)+'页','heading':True,'page':page_no,'locator':'PDF物理第'+str(page_no)+'页'})
-        for paragraph in re.split(r'\n\s*\n',text):
-            blocks.append({'text':paragraph,'heading':False,'page':page_no,'locator':'PDF物理第'+str(page_no)+'页'})
-    if sum(len(b['text']) for b in blocks)<30:raise ValueError('PDF没有足够可提取文字,扫描件请先OCR或改用Word')
+    from collections import Counter
+    pages=[];runs=[]
+    for number,page in enumerate(reader.pages,1):
+        def capture(text,cm,tm,font,size):
+            if text.strip():runs.append((clean_pdf_text(text),float(size)))
+        pages.append((number,clean_pdf_text(page.extract_text(visitor_text=capture) or '')))
+    weights=Counter()
+    for text,size in runs:weights[size]+=len(text)
+    body_size=weights.most_common(1)[0][0] if weights else 0
+    declared={text.strip() for text,size in runs if body_size and size>=body_size*1.15 and
+              3<=len(text.strip())<=64 and '\n' not in text.strip() and not re.search(r'[。!?！？]',text)}
+    def outline_titles(items):
+        for item in items:
+            if isinstance(item,list):yield from outline_titles(item)
+            elif getattr(item,'title',None):yield clean_pdf_text(item.title)
+    declared.update(outline_titles(reader.outline))
+    if sum(len(text) for _,text in pages)<30:raise ValueError('PDF没有足够可提取文字,扫描件请先OCR或改用Word')
+    from .pdf_topics import topics
+    blocks=topics(pages,path.stem,declared)
     return path.stem,'未标注',blocks
 
 
@@ -128,7 +139,9 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
     chunks=[]
     for section in sections:
         text='\n'.join(b['text'] for b in section['blocks']).strip()
-        pages=sorted({b['page'] for b in section['blocks'] if b.get('page') is not None})
+        spans=[];position=0
+        for block in section['blocks']:
+            spans.append((position,position+len(block['text']),block));position+=len(block['text'])+1
         start=0
         while start<len(text):
             end=min(start+max_chars,len(text))
@@ -137,6 +150,7 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
                 if boundary>start:end=boundary+1
             content=text[start:end].strip()
             if content:
+                pages=sorted({b['page'] for lo,hi,b in spans if hi>start and lo<end and b.get('page') is not None})
                 chunks.append({'title':section['title'],'content':content,'source_pages':pages,
                                'source_locator':section['title']+' / '+(', '.join(dict.fromkeys(b['locator'] for b in section['blocks']))),
                                'source_references':section['refs'],'image_ids':section['image_ids']})
@@ -155,6 +169,10 @@ def parse_document(path,max_chars=1000,overlap=100):
     elif path.suffix.lower()=='.pdf':title,version,blocks=_pdf(path,raw)
     else:title,version,blocks=_plain(path,raw)
     chunks=split_sections(blocks,title,max_chars,overlap)
+    parser_revision=''
+    if path.suffix.lower()=='.pdf':
+        from .pdf_topics import enrich,REVISION
+        chunks=enrich(chunks,title);parser_revision=REVISION
     if not chunks:raise ValueError('没有可入库的正文:'+path.name)
     return ParsedDocument(path.name,title,version,hashlib.sha256(raw).hexdigest(),raw,chunks,
-                          'pdf-cjk-spacing-v1' if path.suffix.lower()=='.pdf' else '')
+                          parser_revision)

@@ -123,5 +123,15 @@ class ImagePolicy:
             decision=conservative_decision(question,answer,evidence,candidates)
         return validate_decision(decision,evidence,candidates)
 
+    @staticmethod
+    def guard(question,decision):
+        # A semantic proposal cannot turn a plain yes/no capability check into a diagram request.
+        explicit=bool(re.search(r'图|截图|logo|单页|展示|可视化',question,re.I))
+        capability=bool(re.search(r'支持|兼容|适配|是否|能不能|可不可以',question)) and bool(re.search(r'[吗么?？]$',question))
+        taxonomy=bool(re.search(r'有哪些|分为哪|哪几(?:类|种)|几类',question))
+        if (capability or taxonomy) and not explicit and not re.search(r'流程|步骤|怎么|如何',question):
+            return {**decision,'need_images':False,'reason':'fact_only'}
+        return decision
+
     def assemble(self,decision,candidates,selected_sources,evidence):
         return select_images(validate_decision(decision,evidence,candidates),candidates,selected_sources,evidence)

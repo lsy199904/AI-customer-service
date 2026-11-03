@@ -37,17 +37,32 @@ def rejected_recommendations(question,history):
     return bool(re.fullmatch(r'(?:以上|这些问题|这些|推荐的问题|推荐的|当前)?(?:都不是|都不对|都不需要|没有我想问的|没有我想要的|不是我想要的|都不是我想问的|都不是我想要的|都不是想要的|都不是想问的|都不想问)(?:哦|呢|啊|呀)?',text))
 
 
+def customer_question(row):
+    """Use document-owned topic labels, never an internal PDF page placeholder."""
+    if row.get('recommended_question'):return row['recommended_question']
+    if row.get('source_file','').lower().endswith('.pdf') and re.search(r'第\s*\d+\s*页',row['title']):return ''
+    return row['title']
+
+
+def recommendation_matches(row,question):
+    from .retrieval import topic
+    target=topic(question,question=True)
+    return bool(target and target in {topic(row['title']),topic(customer_question(row),question=True)})
+
+
 def recommended_questions(knowledge,question,evidence=(),sensitive=False,related_titles=()):
     """Suggest curated titles only; do not lower the answer threshold or call models."""
     from .retrieval import lexical_ranking,title_text,topic
     related=[]
+    records=list(knowledge.rows.values())
+    labels={row['title']:customer_question(row) for row in records}
     if not sensitive:
-        related.extend(row['title'] for row in evidence)
-        related.extend(title for title in related_titles if isinstance(title,str))
+        related.extend(customer_question(row) for row in evidence)
+        related.extend(labels.get(title,title) for title in related_titles if isinstance(title,str))
         try:
             rows=[(0,{**row,'content':''}) for row in knowledge.rows.values()]
             ranking=lexical_ranking(question,rows)
-            related.extend(s['row']['title'] for s in sorted(ranking,key=lambda s:s['lexical'],reverse=True)
+            related.extend(customer_question(s['row']) for s in sorted(ranking,key=lambda s:s['lexical'],reverse=True)
                            if s['lexical']>0 and s['coverage']>=.2)
         except Exception:pass  # Recommendation failure must still offer the static questions.
     result=[];seen=set()
@@ -147,7 +162,7 @@ def suggestion_sources(knowledge,suggestions):
     from .retrieval import topic
     rows=list(knowledge.rows.values());result=[]
     for question in suggestions:
-        matches=[r for r in rows if topic(r['title'])==topic(question,question=True)]
+        matches=[r for r in rows if recommendation_matches(r,question)]
         if len(matches)==1:
             r=matches[0]
             result.append({'question':question,'knowledge_id':r['id'],'revision':r.get('revision')})
@@ -162,5 +177,5 @@ def recommended_selection(knowledge,question,history):
     if not binding:return question,None
     # Recheck active revision at click time: an old recommendation cannot resurrect a deleted chapter.
     row=knowledge.rows.get(binding['knowledge_id'])
-    if not row or row.get('revision')!=binding.get('revision') or topic(row['title'])!=topic(question,question=True):return question,None
+    if not row or row.get('revision')!=binding.get('revision') or not recommendation_matches(row,question):return question,None
     return title_text(row['title']),row['id']

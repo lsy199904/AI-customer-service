@@ -24,7 +24,7 @@ def clean_content(value):
 
 
 def retrieval_text(record):
-    return title_text(record['title'])+'\n'+clean_content(record['content'])
+    return title_text(record['title'])+'\n'+clean_content(record['content'])+(('\n'+record['retrieval_context']) if record.get('retrieval_context') else '')
 
 
 def topic(value,question=False):
@@ -67,8 +67,19 @@ def title_matches(question,titles):
     return [s['matched'] for s in title_signals(question,titles)]
 
 
+def lexical_query(question):
+    """Remove generic conversational framing only for the lexical channel.
+
+    The original question still goes to embeddings, reranking and generation.
+    No product or answer-specific aliases are introduced here.
+    """
+    text=re.sub(r'^(?:请问|您好|你好|我们|我司|本公司|本企业|我)(?:要求|需要|希望|想要)?[，, ]*','',question)
+    text=re.sub(r'(?:适合|应该|可以)(?:用|选择|选用)?哪(?:种|类)(?:服务|方案|产品)?[？?]?$', '', text)
+    return text
+
+
 def lexical_ranking(question,rows):
-    query=set(terms(question))
+    query=set(terms(lexical_query(question)))
     matches=title_signals(question,[row['title'] for _,row in rows])
     counts=[Counter(terms(title_text(row['title']))*3+terms(clean_content(row['content']))) for _,row in rows]
     df=Counter(t for counter in counts for t in counter)
