@@ -131,6 +131,12 @@ class ImagePolicy:
         taxonomy=bool(re.search(r'有哪些|分为哪|哪几(?:类|种)|几类',question))
         if (capability or taxonomy) and not explicit and not re.search(r'流程|步骤|怎么|如何',question):
             return {**decision,'need_images':False,'reason':'fact_only'}
+        if decision.get('reason')=='visual_explanation' and not explicit and not re.search(r'架构|结构|拓扑|布局|关系',question):
+            return {**decision,'need_images':False,'reason':'no_visual_need'}
+        visual=explicit or bool(re.search(r'证书|证明图|二维码|架构|结构|拓扑|布局|关系|长什么样|看一眼|看看|看一下|看下|\b(?:image|diagram|picture)\b',question,re.I))
+        procedure=bool(re.search(r'怎么|如何|怎样|流程|步骤|操作|办理|教程|指引|走一遍|演示',question))
+        if decision.get('need_images') and not decision.get('flow_ids') and not visual and not procedure:
+            return {**decision,'need_images':False,'reason':'no_visual_need'}
         return decision
 
     def assemble(self,decision,candidates,selected_sources,evidence):

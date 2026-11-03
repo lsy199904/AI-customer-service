@@ -244,12 +244,22 @@ class SupportWorkflow:
             return {}
         started=time.monotonic()
         try:
-            # Forward every token immediately. Grounding diagnostics never replace successful prose.
+            # Hold only unfinished link tokens, never the complete answer.
+            from .public_links import PublicLinks
+            link_stream=PublicLinks().stream()
+            def safe_delta(text):
+                value=link_stream.feed(text)
+                if value:runtime.context.delta(value)
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
                 '_resolved_question':state['retrieval'].get('query',state['question']),
-                '_on_delta':runtime.context.delta if runtime.context.observer else None,
+                '_on_delta':safe_delta if runtime.context.observer else None,
                 '_guidance':state.get('guide_context'),'_reserved_qr':bool(qr)}
             result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],generation_evidence(state['evidence'],bool(qr)),context)
+            if runtime.context.observer:
+                tail=link_stream.finish()
+                if tail:runtime.context.delta(tail)
+            if link_stream.blocked:event('public_links_filtered',blocked_tokens=link_stream.blocked)
+            result={**result,'answer':PublicLinks().clean(result['answer'])}
             runtime.context.check()
             event('generation_completed',citations=len(result.get('citation_ids',[])),
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2))

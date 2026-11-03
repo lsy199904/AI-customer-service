@@ -107,3 +107,28 @@ class LiveStreamTests(unittest.TestCase):
      if kind=='complete':result=data
    self.assertTrue(seen_metadata);self.assertEqual([r['id'] for r in result['images']],['business-subscription'])
   finally:release_text.set();release_visual.set()
+
+ def test_link_policy_filters_stream_api_history_and_replay_with_early_text(self):
+  release=threading.Event();finished=threading.Event()
+  raw='先说明操作。请看[资料](https://x.feishu.cn/a)，官网https://www.smarttitu.cn。\n```bash\ncurl https://github.com/example/tool\n```'
+  def generate(model,messages,on_delta=None):
+   on_delta('先说明操作。')
+   if not release.wait(3):raise AssertionError('ordinary text was buffered')
+   for char in raw[len('先说明操作。'):]:on_delta(char)
+   finished.set();return raw
+  try:
+   with patch.object(Model,'_complete_request',generate):
+    with self.client.stream('POST',f'/v1/sessions/{self.sid}/messages/stream',json={'message':'429错误怎么办','request_id':'link-policy-live'}) as response:
+     chunks=[]
+     for kind,payload in self.frames(response):
+      if kind=='delta':
+       if not chunks:self.assertFalse(finished.is_set());release.set()
+       chunks.append(payload['text'])
+      elif kind=='complete':result=payload
+    self.assertEqual(''.join(chunks),result['answer']);self.assertNotIn('feishu.cn',result['answer'])
+    self.assertIn('https://www.smarttitu.cn',result['answer']);self.assertIn('curl https://github.com/example/tool',result['answer']);self.assertTrue(result['citations'])
+    history=self.client.get(f'/v1/sessions/{self.sid}/messages').json()
+    self.assertEqual(history['items'][-1]['content'],result['answer']);self.assertEqual(history['items'][-1]['response']['answer'],result['answer'])
+    replay=self.client.post(f'/v1/sessions/{self.sid}/messages',json={'message':'429错误怎么办','request_id':'link-policy-live'}).json()
+    self.assertEqual(replay['answer'],result['answer'])
+  finally:release.set()

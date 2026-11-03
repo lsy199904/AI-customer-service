@@ -183,7 +183,7 @@
     const bubble=element('div','bubble');
     const displayText=role==='assistant' ? customerText(text) : text;
     if(String(displayText || '').trim() || !response?.images?.length) {
-      renderText(bubble,displayText);row.append(bubble);
+      if(role==='user')bubble.textContent=displayText;else renderText(bubble,displayText);row.append(bubble);
     }
     let evidenceParent=row;
     if(response?.guidance){
@@ -279,14 +279,14 @@
           suffix=address.slice(-1)+suffix;address=address.slice(0,-1);
         }
       }
-      let valid=false;
-      try {const url=new URL(address);valid=['http:','https:'].includes(url.protocol)&&!!url.hostname&&!url.username&&!url.password;}catch {}
+      let valid=false,technical=false;
+      try {const url=new URL(address);const safe=url.protocol==='https:'&&!url.username&&!url.password&&(!url.port||url.port==='443');valid=safe&&linkPolicy.hosts.includes(url.hostname.toLowerCase());technical=safe&&url.hostname.toLowerCase()==='api.smarttitu.cn';}catch {}
       if(valid) {
         const link=element('a','',markdown?match[1]:address);
         link.href=address;link.target='_blank';link.rel='noopener noreferrer';
         parent.append(link);
         if(suffix)parent.append(document.createTextNode(suffix));
-      } else parent.append(document.createTextNode(match[0]));
+      } else parent.append(document.createTextNode(markdown?match[1]+(technical?'（'+address+'）':''):technical?address:''));
       offset=match.index+match[0].length;
     }
     parent.append(document.createTextNode(text.slice(offset)));
@@ -296,7 +296,7 @@
     parts.forEach((part,index)=>{
       if(!part)return;
       if(index%2)parent.append(element('pre','',part));
-      else appendLinkedText(parent,part);
+      else part.split(/(`[^`\n]*`)/g).forEach(segment=>{if(!segment)return;if(segment.startsWith('`')&&segment.endsWith('`')&&segment.length>=2)parent.append(element('code','',segment.slice(1,-1)));else appendLinkedText(parent,segment);});
     });
   }
   function safeImage(value) {
@@ -305,7 +305,7 @@
     if(/^\/media\/[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value)) {
       try{return apiURL(value);}catch{return null;}
     }
-    return safeHTTPS(value);
+    try {const url=new URL(value),base=new URL(config.apiBase);return url.origin===base.origin&&/^\/media\/[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(url.pathname)&&!url.search&&!url.username&&!url.password?url.href:null;}catch{return null;}
   }
   function renderImages(parent,images) {
     const group=element('div','reply-images'),seen=new Set();
@@ -370,12 +370,14 @@
   }
   function clearStatus() { status.textContent='';status.hidden=true; }
   function setBusy(value) { busy=value;sendButton.disabled=value;input.disabled=value; }
+  let linkPolicy={hosts:[]};
   async function initialize(version) {
     setBusy(true); transcript.replaceChildren();quick.replaceChildren();clearStatus();
     transcript.append(element('div','loading','正在连接客服…'));
     try {
       const boot=await request('/v1/bootstrap');
       config.streaming=boot.capabilities?.streaming===true;
+      linkPolicy={hosts:Array.isArray(boot.link_policy?.hosts)?boot.link_policy.hosts:[]};
       if (version !== generation) return;
       idleSeconds=boot.idle_timeout_seconds || 1800;
       // Restore only the most recent session belonging to the authenticated user, as verified by the backend.

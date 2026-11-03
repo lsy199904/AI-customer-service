@@ -4,7 +4,7 @@ const source=fs.readFileSync('app/static/widget.js','utf8');
 function element(tag,cls,text='') {
  return {tag,text,children:[],append(child){this.children.push(child);}};
 }
-const context={URL,element,document:{createTextNode:text=>({tag:'#text',text})}};
+const context={URL,element,linkPolicy:{hosts:['www.smarttitu.cn','smarttitu.cn','console.smarttitu.cn','doc.smarttitu.cn']},document:{createTextNode:text=>({tag:'#text',text})}};
 vm.runInNewContext(source.slice(source.indexOf('  function appendLinkedText('),source.indexOf('  function safeImage(')),context);
 function render(text){const parent=element('div');context.renderText(parent,text);return parent;}
 function links(parent){return parent.children.filter(child=>child.tag==='a');}
@@ -14,12 +14,10 @@ assert.equal(links(result).length,1);assert.equal(links(result)[0].href,'https:/
 assert.equal(text(result),'产品介绍：https://www.smarttitu.cn，欢迎查看。');
 assert.equal(links(result)[0].target,'_blank');assert.equal(links(result)[0].rel,'noopener noreferrer');
 result=render('请看[产品官网](https://www.smarttitu.cn)和 http://example.com/help?a=1&b=2。');
-assert.equal(links(result).length,2);assert.equal(links(result)[0].text,'产品官网');
-assert.equal(links(result)[1].href,'http://example.com/help?a=1&b=2');
-result=render('(https://example.com/help). https://example.com/a_(b)');
-assert.equal(links(result)[0].href,'https://example.com/help');
-assert.equal(links(result)[1].href,'https://example.com/a_(b)');
-assert.equal(text(result),'(https://example.com/help). https://example.com/a_(b)');
+assert.equal(links(result).length,1);assert.equal(links(result)[0].text,'产品官网');assert(!text(result).includes('example.com'));
+result=render('[资料](https://x.feishu.cn/a) https://github.com/a https://www.smarttitu.cn.evil.com/ https://api.smarttitu.cn/v1');
+assert.equal(links(result).length,0);assert(text(result).includes('资料'));assert(text(result).includes('api.smarttitu.cn'));assert(!text(result).includes('feishu.cn'));assert(!text(result).includes('github.com'));
+result=render('`curl https://github.com/a`');assert.equal(links(result).length,0);assert.equal(result.children[0].tag,'code');assert.equal(result.children[0].text,'curl https://github.com/a');
 result=render('<img src=x onerror=alert(1)> https://example.com/<script>');
 assert.equal(result.children.filter(child=>child.tag!=='#text'&&child.tag!=='a').length,0);
 assert(text(result).includes('<img src=x onerror=alert(1)>'));
@@ -47,3 +45,10 @@ console.log('Clickable links: plain and Markdown URLs, punctuation, query string
 assert.equal(customer.customerText('1. 进入安全审计。\n\n适用版本：2026-10-26 v5。'),'1. 进入安全审计。');
 assert.equal(customer.customerText('适用版本：2026-10-26 v5。操作步骤如下。'),'操作步骤如下。');
 assert.equal(customer.customerText('企业基础版、企业专业版可按需选择。'),'企业基础版、企业专业版可按需选择。');
+
+const mediaContext={URL,config:{apiBase:'https://support.company.example'},apiURL:path=>'https://support.company.example'+path};
+vm.runInNewContext(source.slice(source.indexOf('  function safeImage('),source.indexOf('  function renderImages(')),mediaContext);
+assert.equal(mediaContext.safeImage('/media/product-brochure.png'),'https://support.company.example/media/product-brochure.png');
+assert.equal(mediaContext.safeImage('https://support.company.example/media/a.png'),'https://support.company.example/media/a.png');
+for(const url of ['https://github.com/a.png','https://x.feishu.cn/a.png','https://support.company.example/media/a.png?redirect=evil','javascript:alert(1)'])assert.equal(mediaContext.safeImage(url),null);
+console.log('Portable images: resolve against the assistant service, external image links rejected');

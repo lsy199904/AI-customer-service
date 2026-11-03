@@ -34,3 +34,6 @@ __pycache__/
 !/knowledge_sources/SmartTITU网站上线，三大核心价值助力企业安全、高效、低成本用好大模型！.pdf
 !/knowledge_sources/中企通信成功通过中国信通院首批Token聚合服务平台能力评估.pdf
 !/knowledge_sources/企业级五大安全可信Token应用场景，看这一篇就够了！.pdf
+
+# Restore-only portable database snapshots
+/migration-storage/

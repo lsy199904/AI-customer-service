@@ -58,3 +58,15 @@ class V3ConfigurationTests(unittest.TestCase):
    self.assertIn('build assistant',lines[0]);self.assertIn('run --rm --no-deps -T assistant python manage.py ingest',lines[1])
    self.assertIn('--force-recreate assistant',lines[2]);self.assertIn('python manage.py check',lines[3])
    self.assertFalse(any('down' in line or '--rebuild' in line for line in lines))
+ def test_failed_migration_export_restarts_only_assistant_and_never_stops_databases(self):
+  import shutil,subprocess
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);(root/'scripts').mkdir();(root/'.env').write_text('V3_PORT=18081\n')
+   shutil.copy2(Path(__file__).resolve().parents[1]/'scripts/v3.sh',root/'scripts/v3.sh')
+   binaries=root/'bin';binaries.mkdir();log=root/'args'
+   exe=binaries/'docker';exe.write_text('#!/bin/sh\nprintf "%s " "$@" >> "$ARG_LOG"\nprintf "\\n" >> "$ARG_LOG"\ncase "$*" in *export-storage*) exit 1;; esac\n');exe.chmod(0o755)
+   env={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],'ARG_LOG':str(log)}
+   result=subprocess.run(['sh',str(root/'scripts/v3.sh'),'migration-export'],env=env)
+   self.assertNotEqual(result.returncode,0);lines=log.read_text().splitlines()
+   self.assertTrue(lines[0].endswith('stop assistant '));self.assertIn('export-storage',lines[1]);self.assertTrue(lines[2].endswith('start assistant '))
+   self.assertFalse(any('down' in row or 'stop postgres' in row or 'stop milvus' in row for row in lines))
