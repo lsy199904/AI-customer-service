@@ -169,8 +169,8 @@ class SupportWorkflow:
             if found.get('clarification'):
                 return {'success':True,'intent':'clarification','reason':'followup_clarification','answer':found['clarification'],'evidence':[],'candidates':[]}
             runtime.context.check()
-            evidence=found['evidence'];candidates=self.service.media.candidates(state['question'],evidence)
             report=found['retrieval']
+            evidence=found['evidence'];candidates=self.service.media.candidates(report.get('query',state['question']),evidence)
             hits=report.get('hits',[])
             event('retrieval_candidates',selection_policy=report.get('selection_policy'),
                 similarity_knowledge_id=report.get('similarity_knowledge_id'),
@@ -227,6 +227,8 @@ class SupportWorkflow:
 
     def generate(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('generating');s=self.service;intent=state['intent'];conversation=intent in REPLIES
+        from .pdf_media import reserved_qr,generation_evidence
+        qr=reserved_qr(state.get('resolved_question') or state['question'],state['candidates'])
         self.start_visual(state)
         # The product identity is owned by the service, independent of the model vendor.
         if intent=='identity':return {'answer':REPLIES[intent],'reason':intent,'success':True}
@@ -234,8 +236,11 @@ class SupportWorkflow:
             if conversation:return {'answer':REPLIES[intent],'reason':intent,'success':True}
             if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'selected':state['evidence']}
             if state['evidence']:
-                text=state['guide_context']['stage_evidence'] if state.get('guide_context') else state['evidence'][0]['content']
-                return {'selected':[state['evidence'][0]],'answer':text,'reason':'guidance' if state.get('guide_context') else 'extractive','success':True}
+                cleaned=generation_evidence(state['evidence'],bool(qr))
+                text=state['guide_context']['stage_evidence'] if state.get('guide_context') else cleaned[0]['content']
+                supported=[r for r in state['evidence'] if qr and qr['id'] in r.get('image_ids',[])]
+                if qr:text='可以使用下方'+qr['title']+'查看资料提供的入口。'
+                return {'selected':supported[:1] or [state['evidence'][0]],'answer':text,'reason':'guidance' if state.get('guide_context') else 'extractive','success':True}
             return {}
         started=time.monotonic()
         try:
@@ -243,8 +248,8 @@ class SupportWorkflow:
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
                 '_resolved_question':state['retrieval'].get('query',state['question']),
                 '_on_delta':runtime.context.delta if runtime.context.observer else None,
-                '_guidance':state.get('guide_context')}
-            result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],state['evidence'],context)
+                '_guidance':state.get('guide_context'),'_reserved_qr':bool(qr)}
+            result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],generation_evidence(state['evidence'],bool(qr)),context)
             runtime.context.check()
             event('generation_completed',citations=len(result.get('citation_ids',[])),
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2))
@@ -261,6 +266,9 @@ class SupportWorkflow:
                 supporting=set(citation_ids(result['answer'],selected))
                 narrowed=[r for r in selected if r['id'] in supporting]
                 if narrowed:selected=narrowed
+                if qr:
+                    supported=[r for r in state['evidence'] if qr['id'] in r.get('image_ids',[])]
+                    selected=list({r['id']:r for r in [*selected,*supported]}.values())
                 runtime.context.metadata(citations=[s.citation(r) for r in selected],images=[],media_pending=self.visual_pending(state))
             return {'selected':selected,'images':[],'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
         except RequestCancelled:raise
@@ -282,7 +290,10 @@ class SupportWorkflow:
                 decision=self.finish_visual(state)
             else:
                 decision=self.image_policy.propose(s.config.mode,s.model,state['question'],state['answer'],state['history'],selected,state['candidates'],state.get('guide_context'),state.get('resolved_question'))
+            from .pdf_media import reserved_qr
+            qr=reserved_qr(state.get('resolved_question') or state['question'],state['candidates'])
             decision=self.image_policy.guard(state['question'],decision)
+            if qr:decision={'need_images':True,'reason':'explicit_image','flow_ids':[],'multiple_flows':False,'image_ids':[qr['id']]}
             runtime.context.check()
             chosen,report=self.image_policy.assemble(decision,state['candidates'],selected,state['evidence'])
             images=[s.media.public(r) for r in chosen]
@@ -345,7 +356,9 @@ class SupportWorkflow:
 
     def start_visual(self,state):
         s=self.service
-        if not state['candidates'] or not self.image_policy.parallel(s.config.mode,s.model):return
+        from .pdf_media import reserved_qr
+        if reserved_qr(state.get('resolved_question') or state['question'],state['candidates']):return
+        if not [r for r in state['candidates'] if r.get('kind')!='qr'] or not self.image_policy.parallel(s.config.mode,s.model):return
         if not self._visual_slots.acquire(blocking=False):
             event('image_planning_unavailable',reason='visual_capacity');return
         ctx=copy_context();key=self.key(state)

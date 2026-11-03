@@ -70,7 +70,7 @@ class WechatPDFTests(unittest.TestCase):
    root=Path(temp);source=root/'sources';source.mkdir()
    (source/'existing.md').write_text('# 原有知识\n原有业务内容。')
    for name in ARTICLES:shutil.copyfile(ROOT/'knowledge_sources'/name,source/name)
-   config=RAGSettings(index_path=str(root/'index.sqlite3'),source_dir=str(source),database_url='',vector_backend='sqlite',rerank_enabled=False,http_origins=('http://127.0.0.1:11434',))
+   config=RAGSettings(index_path=str(root/'index.sqlite3'),source_dir=str(source),database_url='',vector_backend='sqlite',pdf_media_enabled=False,rerank_enabled=False,http_origins=('http://127.0.0.1:11434',))
    def old_parser(path,*args):
     parsed=parse_document(path,*args)
     return replace(parsed,parser_revision='pdf-cjk-spacing-v1') if Path(path).suffix=='.pdf' else parsed
@@ -90,7 +90,7 @@ class WechatPDFTests(unittest.TestCase):
    # A tiny independent Word stands in for any existing operator-managed Word.
    with zipfile.ZipFile(source/'existing.docx','w') as archive:
     archive.writestr('word/document.xml','<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>现有知识内容不得因追加PDF而被替换。</w:t></w:r></w:p></w:body></w:document>')
-   config=RAGSettings(index_path=str(root/'index.sqlite3'),source_dir=str(source),database_url='',vector_backend='sqlite',rerank_enabled=False,http_origins=('http://127.0.0.1:11434',))
+   config=RAGSettings(index_path=str(root/'index.sqlite3'),source_dir=str(source),database_url='',vector_backend='sqlite',pdf_media_enabled=False,rerank_enabled=False,http_origins=('http://127.0.0.1:11434',))
    embed=LocalEmbedding();first=ingest_documents(config,embedder=embed)
    existing=first['documents'][0];revision=existing['current_revision']
    for name in ARTICLES:shutil.copyfile(ROOT/'knowledge_sources'/name,source/name)

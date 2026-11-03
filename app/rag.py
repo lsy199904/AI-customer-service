@@ -27,6 +27,8 @@ class RAGSettings:
     milvus_token: str=field(default_factory=lambda:os.getenv('MILVUS_TOKEN',''))
     milvus_collection: str=field(default_factory=lambda:os.getenv('MILVUS_COLLECTION','smarttitu_knowledge'))
     index_path: str=field(default_factory=lambda:os.getenv('RAG_INDEX_PATH',str(BASE/'var/rag.sqlite3')))
+    pdf_media_enabled: bool=field(default_factory=lambda:os.getenv('PDF_MEDIA_ENABLED','true').lower()=='true')
+    pdf_media_dir: str=field(default_factory=lambda:os.getenv('PDF_MEDIA_DIR',str(BASE/'var/pdf_media')))
     source_dir: str=field(default_factory=lambda:os.getenv('KNOWLEDGE_SOURCE_DIR',str(BASE/'knowledge_sources')))
     embedding_url: str=field(default_factory=lambda:os.getenv('EMBEDDING_URL','http://127.0.0.1:11434/api/embed'))
     embedding_provider: str=field(default_factory=lambda:os.getenv('EMBEDDING_PROVIDER','ollama'))
@@ -222,10 +224,14 @@ def ingest_documents(config,rebuild=False,embedder=None):
             inactive+=1;continue
         if any(p.is_symlink() for p in [path,*list(path.parents)[:len(path.relative_to(root).parts)-1]]):raise ValueError('不接受符号链接来源:'+relative)
         parsed=parse_document(path,config.chunk_chars,config.overlap_chars)
+        if path.suffix.lower()=='.pdf' and config.pdf_media_enabled:
+            from .pdf_media import extract
+            parsed,_=extract(path,parsed,config.pdf_media_dir)
         required_images={key for chunk in parsed.chunks for key in chunk.get('image_ids',[])}
         if required_images:
             from .conversation import MediaCatalog
             catalog=MediaCatalog(os.getenv('MEDIA_PATH',str(BASE/'data/media.json')),BASE/'app/static/media')
+            catalog.include_generated(config.pdf_media_dir)
             if required_images-catalog.rows.keys():
                 raise ValueError('文档配图ID未在data/media.json登记:'+','.join(sorted(required_images-catalog.rows.keys())))
         revision=hashlib.sha256((parsed.sha256+config.fingerprint+parsed.parser_revision).encode()).hexdigest()

@@ -43,3 +43,18 @@ class V3ConfigurationTests(unittest.TestCase):
     args=log.read_text().splitlines()
     self.assertEqual(args[-(6+len(extra)):],['exec','-T','assistant','python','manage.py',command,*extra])
     self.assertFalse(any('ai_customer_v2-assistant-1' in a for a in args))
+
+ def test_upgrade_uses_new_image_for_ingest_before_recreating_service(self):
+  import shutil,subprocess
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);(root/'scripts').mkdir();(root/'.env').write_text('V3_PORT=18081\n')
+   shutil.copy2(Path(__file__).resolve().parents[1]/'scripts/v3.sh',root/'scripts/v3.sh')
+   binaries=root/'bin';binaries.mkdir();log=root/'args'
+   exe=binaries/'docker';exe.write_text('#!/bin/sh\nprintf "%s " "$@" >> "$ARG_LOG"\nprintf "\\n" >> "$ARG_LOG"\n');exe.chmod(0o755)
+   env={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],'ARG_LOG':str(log)}
+   subprocess.run(['sh',str(root/'scripts/v3.sh'),'upgrade'],env=env,check=True)
+   lines=log.read_text().splitlines()
+   self.assertEqual(len(lines),4)
+   self.assertIn('build assistant',lines[0]);self.assertIn('run --rm --no-deps -T assistant python manage.py ingest',lines[1])
+   self.assertIn('--force-recreate assistant',lines[2]);self.assertIn('python manage.py check',lines[3])
+   self.assertFalse(any('down' in line or '--rebuild' in line for line in lines))

@@ -15,7 +15,7 @@ PROMPT='''你负责客服回答的配图决策，不回答业务问题。仅输�
 2. 事实、金额/额度、时间、生效条件、资格或局部细节咨询默认need_images=false，例如默认几星、预开票最高多少、28号后调整何时生效。不能因为答案涉及星级就附整个流程图。
 3. 完整办理操作（如何订购服务、怎么买套餐等各种同义表达）、需要视觉解释或明确要求看图时才need_images=true。局部追问（这一步谁处理、然后点哪里）默认不重复整图；明确再次要图除外。
 4. flow_ids仅选主要咨询流程。注册完成后怎么订购：注册是背景，只选subscription；注册和企业认证分别怎么做：可选register和verification。只有用户明确要求多个流程时multiple_flows=true。不能根据候选数量或答案顺带提及扩大流程。
-5. 流程不明确时不配图。不带明确视觉需求的产品介绍不配图。非流程图片仅在明确看图或视觉需求时，通过image_ids选对应图片。
+5. 流程不明确时不配图。不带明确视觉需求的产品介绍不配图。非流程图片仅在明确看图或视觉需求时，通过image_ids选对应图片。查看证书、要求评估证明图属于明确视觉请求；普通能力咨询不附证书。二维码必须匹配本轮申请试用、官网访问等用途，不能把申请码当作人工客服码。
 6. 来源与图片互不等价；不展示图片仍保留支持文字的来源。历史回答不作为本轮业务事实来源。
 格式：{"need_images":false,"reason":"fact_only|local_followup|full_procedure|explicit_image|visual_explanation|no_visual_need|ambiguous","flow_ids":[],"multiple_flows":false,"image_ids":[]}。
 '''
@@ -26,7 +26,7 @@ def semantic_decision(model,question,answer,history,evidence,candidates,guidance
     payload={'question':question,'resolved_question':resolved_question or question,'answer':answer,'recent_user_questions':recent,'guidance':guidance,
         'business_flows':FLOW_TITLES,
         'sources':[{'id':r['id'],'title':r['title'],'content':r['content']} for r in evidence],
-        'candidate_images':[{'id':r['id'],'title':r['title'],'flow_ids':r.get('flow_ids',[])} for r in candidates]}
+        'candidate_images':[{'id':r['id'],'title':r['title'],'flow_ids':r.get('flow_ids',[]),'kind':r.get('kind'),'purpose':r.get('purpose')} for r in candidates]}
     raw=model.complete([{'role':'system','content':PROMPT},{'role':'user','content':json.dumps(payload,ensure_ascii=False)}])
     raw=re.sub(r'^```(?:json)?\s*|\s*```$','',raw.strip())
     data=json.loads(raw)
@@ -47,7 +47,7 @@ def validate_decision(data,evidence,candidates):
 
 def conservative_decision(question,answer,evidence,candidates):
     """Extractive-mode fallback. LLM-mode planner failure must not auto-attach diagrams."""
-    explicit=bool(re.search(r'(?:给|看|展示|显示|要).{0,12}图|(?:流程图|架构图)$|logo|单页|标识',question,re.I))
+    explicit=bool(re.search(r'(?:给|看|展示|显示|要).{0,12}图|(?:流程图|架构图)$|证书|框架图|logo|单页|标识',question,re.I))
     procedural=bool(re.search(r'怎么|如何|怎样|流程|步骤|买.*套餐|订.*服务|how (?:do|can|to)',question,re.I))
     local=bool(re.search(r'这一步|谁来|谁负责|默认|最高|多少|几星|什么时候|何时|生效|条件',question))
     text=re.sub(r'注册完成后|注册后|登录后|认证完成后','',question)
@@ -95,7 +95,7 @@ def select_images(decision,candidates,selected_sources,evidence):
         if why:excluded.append({'id':row['id'],'reason':why});continue
         choices.append(row);seen_ids.add(row['id']);seen_urls.add(resource_key(row));covered.update(matching)
     return choices,{'need_images':need,'reason':reason,'primary_flows':flows,
-        'candidates':[{'id':r['id'],'url':r['url'],'flow_ids':r.get('flow_ids',[])} for r in candidates],
+        'candidates':[{'id':r['id'],'url':r['url'],'flow_ids':r.get('flow_ids',[]),'kind':r.get('kind'),'purpose':r.get('purpose')} for r in candidates],
         'selected_images':[r['id'] for r in choices],'excluded_images':excluded}
 
 

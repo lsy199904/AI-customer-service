@@ -7,7 +7,7 @@ import re
 
 OPERATIONS=('安装','部署','配置','升级','卸载')
 ROLE_NOUNS=('负载均衡器','负载均衡','数据库','服务器','组件','服务','缓存','集群')
-STRENGTH={'normalized_title':3,'procedure_title':2,'operation_product_alias':2,'related_prefix':1}
+STRENGTH={'normalized_title':3,'procedure_title':2,'operation_product_alias':2,'related_prefix':1,'explicit_source_list':3}
 _ACTION='(?:'+'|'.join(OPERATIONS)+')'
 _OPERATION=re.compile('('+_ACTION+r')([a-z][a-z0-9]{2,})')
 _REVERSE=re.compile(r'([a-z][a-z0-9]{2,})(?:如何|怎么)?('+_ACTION+')')
@@ -23,3 +23,14 @@ def classify(subject,procedure,target):
         if procedure==target:kind='procedure_title'
         elif target.startswith(procedure):kind='related_prefix'
     return {'kind':kind,'strength':STRENGTH.get(kind,0),'strong':kind in ('normalized_title','procedure_title','operation_product_alias')}
+
+
+def source_signals(question,rows,signals):
+    """An explicitly named source enumeration is a bounded navigation signal."""
+    from .source_lists import explicit_list_request
+    result=[]
+    for signal,(_,row) in zip(signals,rows):
+        if explicit_list_request(question,row):
+            signal={**signal,'kind':'explicit_source_list','strength':STRENGTH['explicit_source_list'],'strong':True,'matched':True}
+        result.append(signal)
+    return result

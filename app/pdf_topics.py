@@ -3,7 +3,7 @@ import re
 import unicodedata
 from urllib.parse import urlsplit,parse_qs,urlencode
 
-REVISION='pdf-topics-v1'
+REVISION='pdf-topics-v2'
 
 
 def heading(text):

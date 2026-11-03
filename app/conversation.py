@@ -139,14 +139,27 @@ class MediaCatalog:
                 raise ValueError('图片关键词和知识ID必须为字符串')
             self.rows[key]={**row,**image_binding(key)}
 
+    def include_generated(self,root):
+        from .pdf_media import catalog
+        for row in catalog(root):
+            self.rows[row['id']]=row
+            self.assets[row['url']]=(row['asset_path'],'image/png')
+
     def candidates(self, question, evidence):
         # Knowledge replies use only this turn's document-owned media. A keyword
         # lookup is reserved for an explicit image request with no bound diagram.
-        bound=self.bound(evidence)
+        from .pdf_media import purpose_of
+        bound=[]
+        for row in self.bound(evidence):
+            if row.get('kind')=='qr' and not (row.get('purpose')==purpose_of(question) or purpose_of(question) in row.get('purposes',[])):
+                from .observability import event
+                event('image_candidate_excluded',image_id=row['id'],kind='qr',purpose=row.get('purpose'),reason='qr_purpose_not_requested')
+                continue
+            bound.append(row)
         if bound or intent_of(question)!='image':return bound
         q=question.lower()
         return [r for r in self.rows.values()
-                if any(k.lower() in q for k in r.get('keywords',[]) if k)]
+                if not r.get('generated') and any(k.lower() in q for k in r.get('keywords',[]) if k)]
 
     def bound(self,evidence):
         # Stable operator IDs come from document metadata, never from generated URLs.

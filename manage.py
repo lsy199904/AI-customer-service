@@ -62,6 +62,8 @@ def main():
     diagnostic=sub.add_parser('retrieve',help='运维检索诊断,不调用聊天模型,不打印密钥')
     diagnostic.add_argument('--query',required=True)
     diagnostic.add_argument('--no-rerank',action='store_true')
+    media_report=sub.add_parser('pdf-media-report',help='查看PDF图片保留、排除与待确认报告，不打开二维码地址')
+    media_report.add_argument('--full',action='store_true',help='包含OCR和二维码解码原文；只供可信运营人员查看')
     sub.add_parser('documents',help='列出文档及当前版本')
     revisions=sub.add_parser('revisions',help='查看文档修订记录');revisions.add_argument('document_id')
     disable=sub.add_parser('deactivate',help='显式停用文档,保留历史引用');disable.add_argument('document_id')
@@ -93,7 +95,13 @@ def main():
         if (BASE/'.env').is_file():load_env(BASE/'.env')
         elif not os.getenv('AUTH_SECRET'):raise ValueError('未找到.env或AUTH_SECRET环境变量,请先初始化配置')
         config=Settings();config.validate()
-        if args.command=='retrieval-config':
+        if args.command=='pdf-media-report':
+            root=Path(config.pdf_media_dir)
+            reports=[json.loads(p.read_text()) for p in sorted(root.glob('reports/*.json'))]
+            if not args.full:
+                reports=[{'source_file':r['source_file'],'limits':r.get('limits',[]),'assets':[{k:a.get(k) for k in ('id','title','kind','purpose','status','reason','topic_index')} for a in r.get('assets',[])]} for r in reports]
+            print(json.dumps({'directory':str(root),'reports':reports},ensure_ascii=False,indent=2))
+        elif args.command=='retrieval-config':
             from app.rag import RAGSettings
             from app.retrieval_config import inspect
             print(json.dumps(inspect(RAGSettings(),BASE/'.env'),ensure_ascii=False,indent=2))

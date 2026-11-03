@@ -1,0 +1,515 @@
+[
+  {
+    "column": "产品简介",
+    "id": 70,
+    "title": "什么是SmartTITU",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/product-introduction/intro-whatis/70",
+    "subtopics": [
+      "核心架构",
+      "TITU Hub：大模型聚合与运营平台",
+      "TITU Edge：企业 AI 管理平台",
+      "TITU Work：企业终端用户工作台",
+      "五个统一",
+      "适用对象"
+    ],
+    "html_sha256": "4c76471fdee71c473d52cbaf578bf96f0799d9b8557b41f1f2ac6027ce6b49fe"
+  },
+  {
+    "column": "产品简介",
+    "id": 71,
+    "title": "产品优势-丰富模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/product-introduction/intro-advantage/71",
+    "subtopics": [
+      "丰富模型",
+      "统一接入",
+      "企业安全",
+      "弹性推理",
+      "多语言 SDK",
+      "百万上下文"
+    ],
+    "html_sha256": "cc73d5d4826bea31c2636a4aeb7f0013b135880a9f383ee7e666c6d1743fa6d7"
+  },
+  {
+    "column": "产品简介",
+    "id": 72,
+    "title": "SmartTITU 名词解释",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/product-introduction/intro-glossary/72",
+    "subtopics": [],
+    "html_sha256": "2c212eefd5b6961ece226ad0f4af35b59b80d7aab6454e10c82be10d78400df0"
+  },
+  {
+    "column": "产品简介",
+    "id": 73,
+    "title": "使用限制",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/product-introduction/intro-limits/73",
+    "subtopics": [
+      "上下文与输出限制",
+      "异步处理",
+      "频率限制",
+      "内容规范",
+      "其他限制"
+    ],
+    "html_sha256": "1bd94cbe2f2614b5546858d88d5956c40ea18e2af736c673876ccf012edc7f60"
+  },
+  {
+    "column": "快速入门",
+    "id": 74,
+    "title": "获取 API Key",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/quick-start/qs-apikey/74",
+    "subtopics": [
+      "创建 API Key",
+      "操作步骤",
+      "密钥格式",
+      "配置环境变量",
+      "Linux / macOS",
+      "Windows (PowerShell)",
+      "Windows (CMD)",
+      "项目中使用 .env 文件",
+      "安全使用建议",
+      "1. 不要硬编码 API Key",
+      "2. 限制密钥权限",
+      "3. 服务端保管",
+      "下一步"
+    ],
+    "html_sha256": "a3b646ae8d2fcfa7e94bf53002e448835b439dfc53e45dd27a415d03041a0c20"
+  },
+  {
+    "column": "快速入门",
+    "id": 75,
+    "title": "首次调用",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/quick-start/qs-first-call/75",
+    "subtopics": [
+      "准备工作",
+      "API 基础信息",
+      "支持的调用方式",
+      "端点说明",
+      "CURL 快速调用（/v1/chat/completions）",
+      "响应示例",
+      "Python OpenAI SDK 调用（推荐）",
+      "流式输出示例",
+      "下一步"
+    ],
+    "html_sha256": "ad8fb044ab800a039f4b3bfa9869a5d3bad221e5f5d05e84eb4f7adf871eeb44"
+  },
+  {
+    "column": "模型能力",
+    "id": 76,
+    "title": "视频生成模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-video/76",
+    "subtopics": [
+      "模型列表",
+      "主要特性",
+      "文生视频",
+      "图生视频",
+      "视频编辑",
+      "音频生成",
+      "接口说明",
+      "适用场景"
+    ],
+    "html_sha256": "ce390d8dd7f143a18578e342dc51d5e9bb1d2581b2cd28dbc177cfea8005d3bf"
+  },
+  {
+    "column": "模型能力",
+    "id": 77,
+    "title": "图像生成模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-image/77",
+    "subtopics": [
+      "模型列表",
+      "主要特性",
+      "文生图",
+      "图生图",
+      "图像编辑",
+      "接口说明",
+      "适用场景"
+    ],
+    "html_sha256": "99b4c0389cf11da127c29a412e75b63c81935a584b6f6f2b1358c6135b9d1eb9"
+  },
+  {
+    "column": "模型能力",
+    "id": 78,
+    "title": "多模态模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-multimodal/78",
+    "subtopics": [
+      "模型列表",
+      "调用端点",
+      "/v1/responses（推荐）",
+      "/v1/chat/completions",
+      "适用场景",
+      "图片理解与描述",
+      "视频理解",
+      "代码理解与生成",
+      "GUI 任务"
+    ],
+    "html_sha256": "ea99415250833b93ba17034893ffa21fdc94a1883562fc55ea1d5a90caaa8959"
+  },
+  {
+    "column": "模型能力",
+    "id": 79,
+    "title": "文本模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-text/79",
+    "subtopics": [
+      "模型列表",
+      "调用端点",
+      "/v1/responses（推荐）",
+      "/v1/chat/completions",
+      "选型建议"
+    ],
+    "html_sha256": "fd01ef761d1acc2bd548b4f02b05ce3a30df9c451d6495829d3413583e981359"
+  },
+  {
+    "column": "API参考",
+    "id": 80,
+    "title": "认证方式",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/api-reference/api-auth/80",
+    "subtopics": [
+      "API Key 认证",
+      "请求头格式",
+      "API Base URL",
+      "cURL 示例",
+      "应用层加密",
+      "启用方式",
+      "API Key 格式",
+      "安全规范",
+      "1. 不要硬编码 API Key",
+      "2. 不要提交到代码仓库",
+      "3. 限制使用范围",
+      "4. 仅在服务端使用",
+      "5. 定期轮换密钥",
+      "常见问题"
+    ],
+    "html_sha256": "57ee15e5c5c9a071bdee3e0ac4946bdac514c5f7c90ddc6a4a7a4b8ffc9bd52e"
+  },
+  {
+    "column": "API参考",
+    "id": 81,
+    "title": "对话补全 - /v1/responses",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/api-reference/api-responses/81",
+    "subtopics": [
+      "适用模型",
+      "请求格式",
+      "HTTP 请求",
+      "请求参数",
+      "消息内容类型",
+      "cURL 示例",
+      "基础对话",
+      "多模态图片理解",
+      "流式输出",
+      "响应格式",
+      "非流式响应",
+      "流式响应",
+      "与 /v1/chat/completions 的区别"
+    ],
+    "html_sha256": "0dece29f73b155b7a3f76d9282690e24a7f42ffe2f6177732a04e2b467883222"
+  },
+  {
+    "column": "API参考",
+    "id": 82,
+    "title": "对话补全 - /v1/chat/completions",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/api-reference/api-chat/82",
+    "subtopics": [
+      "适用模型",
+      "请求格式",
+      "HTTP 请求",
+      "请求参数",
+      "请求示例",
+      "基础对话",
+      "cURL 调用",
+      "多模态图片输入（1.5 Vision Pro）",
+      "响应格式",
+      "非流式响应",
+      "流式响应",
+      "Python SDK 示例"
+    ],
+    "html_sha256": "043ef322c2212b7224fe156966364c3a9487a4d73d157a5496adc0f1d769909c"
+  },
+  {
+    "column": "API参考",
+    "id": 83,
+    "title": "视频生成 API",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/api-reference/api-video/83",
+    "subtopics": [
+      "端点",
+      "适用模型",
+      "创建任务",
+      "HTTP 请求",
+      "请求参数",
+      "支持的视频比例",
+      "cURL 示例",
+      "文生视频",
+      "图生视频",
+      "响应示例",
+      "查询任务状态",
+      "HTTP 请求",
+      "状态说明",
+      "成功响应示例",
+      "失败响应示例",
+      "Python SDK 示例（火山方舟 SDK）",
+      "content 内容类型说明",
+      "轮询建议"
+    ],
+    "html_sha256": "8920b979a80f81e5b7ce911aaedb4a8a00f25a28a168550603e3bd0b15c803ea"
+  },
+  {
+    "column": "API参考",
+    "id": 84,
+    "title": "图像生成 API",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/api-reference/api-image/84",
+    "subtopics": [
+      "端点",
+      "适用模型",
+      "请求参数",
+      "尺寸说明",
+      "cURL 示例",
+      "文生图",
+      "图生图",
+      "Python SDK 示例",
+      "OpenAI 兼容 SDK",
+      "火山方舟 SDK",
+      "响应示例",
+      "使用建议",
+      "Prompt 编写技巧",
+      "注意事项"
+    ],
+    "html_sha256": "e8de1b9118050ff5d7bfdedb7d267dc89899182587d9fd4eb4963fe8ca77531d"
+  },
+  {
+    "column": "API参考",
+    "id": 85,
+    "title": "错误码",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/api-reference/api-error/85",
+    "subtopics": [
+      "错误响应格式",
+      "HTTP 状态码",
+      "常见错误码详解",
+      "invalid_request_error（400）",
+      "authentication_error（401）",
+      "permission_error（403）",
+      "not_found_error（404）",
+      "rate_limit_error（429）",
+      "server_error（500 / 503）",
+      "最佳实践",
+      "1. 实现指数退避重试",
+      "2. 设置超时时间",
+      "3. 配置故障转移"
+    ],
+    "html_sha256": "295075cd5976c932e630a79b5848fc0fdee3ae6eb88337c330a10f342f470062"
+  },
+  {
+    "column": "API参考",
+    "id": 86,
+    "title": "调用限额",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/api-reference/api-quota/86",
+    "subtopics": [
+      "限额类型",
+      "QPS（Queries Per Second）",
+      "TPM（Tokens Per Minute）",
+      "限额说明",
+      "超限处理",
+      "处理建议",
+      "提升限额",
+      "申请方式",
+      "影响因素",
+      "监控与告警"
+    ],
+    "html_sha256": "bc0006c6ec8d27634118d33d73530096f78b824fb7476797ebdaa920b1fa8ef2"
+  },
+  {
+    "column": "SDK下载",
+    "id": 87,
+    "title": "Python SDK",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/sdk-download/sdk-python/87",
+    "subtopics": [
+      "方式一：OpenAI 兼容 SDK（推荐）",
+      "安装",
+      "基础对话示例",
+      "流式输出示例",
+      "多模态图片理解示例",
+      "Function Calling 示例",
+      "方式二：火山方舟 SDK",
+      "安装",
+      "基础对话示例",
+      "应用层加密示例"
+    ],
+    "html_sha256": "9f1ae61141326445c932d3eea0036d2dba7250739481a69f5d63caf5772f80d6"
+  },
+  {
+    "column": "SDK下载",
+    "id": 88,
+    "title": "Java SDK",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/sdk-download/sdk-java/88",
+    "subtopics": [
+      "OkHttp 示例",
+      "Maven 依赖",
+      "基础调用示例",
+      "Spring WebClient 示例",
+      "Maven 依赖",
+      "配置类",
+      "调用示例",
+      "使用建议"
+    ],
+    "html_sha256": "e678ffbef92663b7fb9382ca2df5ceafa72e7d4e6c4f1dd8049ee1a1716044a2"
+  },
+  {
+    "column": "SDK下载",
+    "id": 89,
+    "title": "Go SDK",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/sdk-download/sdk-go/89",
+    "subtopics": [
+      "安装",
+      "基础调用示例",
+      "流式输出示例",
+      "多模态示例",
+      "环境配置"
+    ],
+    "html_sha256": "c5ade090a74e8fb843dbf586b04297b49b49cc32eddc649431dfbacff37352dd"
+  },
+  {
+    "column": "SDK下载",
+    "id": 90,
+    "title": "Node.js SDK",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/sdk-download/sdk-node/90",
+    "subtopics": [
+      "安装",
+      "基础对话示例",
+      "流式输出示例",
+      "多模态示例",
+      "Function Calling 示例",
+      "TypeScript 支持",
+      "注意事项"
+    ],
+    "html_sha256": "f02ce775ad8a4b4ff2c908a6148d877ae01e5a43c1765e5a7a19d447b059ccfe"
+  },
+  {
+    "column": "SDK下载",
+    "id": 91,
+    "title": "aihub-cli 本地代理",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/sdk-download/sdk-aihub-cli/91",
+    "subtopics": [
+      "支持接口",
+      "安装",
+      "快速开始",
+      "1. 创建配置文件",
+      "2. 启动代理",
+      "方式一：配置文件启动",
+      "方式二：命令行参数启动",
+      "3. 客户端调用",
+      "Docker 部署",
+      "docker-compose 示例",
+      "配置优先级",
+      "支持的环境变量",
+      "工作原理",
+      "常见问题",
+      "Docker 中访问宿主机服务？",
+      "401 错误怎么办？",
+      "支持哪些模型？",
+      "如何关闭加密？"
+    ],
+    "html_sha256": "84516fd416b4afa80abe7d038c16c13de1e6e0df850d5f3802ff7b52c0fd9a28"
+  },
+  {
+    "column": "平台功能",
+    "id": 92,
+    "title": "模型内路由",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/platform-capability/plat-smart-router/92",
+    "subtopics": [
+      "功能概述",
+      "核心能力",
+      "1. 按成本偏好路由",
+      "2. 按延迟优先路由（即将上线）",
+      "3. 按吞吐优先路由（即将上线）",
+      "4. 按稳定性优先路由（即将上线）"
+    ],
+    "html_sha256": "a628a3788206266145001272f633d0169ad61bcccd22c3f5c4b006809d6e398d"
+  },
+  {
+    "column": "平台功能",
+    "id": 93,
+    "title": "用量统计",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/platform-capability/plat-usage/93",
+    "subtopics": [
+      "功能概述",
+      "核心能力",
+      "1. 多维度数据视图",
+      "2. 关键指标",
+      "3. 数据导出",
+      "应用场景",
+      "成本分析与优化",
+      "资源规划",
+      "合规审计",
+      "访问方式"
+    ],
+    "html_sha256": "7468d6e79af889c29d4100563cfbc25d42f65a26de4b3528b1c45f55f42f0f76"
+  },
+  {
+    "column": "产品计费",
+    "id": 94,
+    "title": "产品计费",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/product-billing/bill-pricing/94",
+    "subtopics": [
+      "计费模式",
+      "可预付费/按Token后付费",
+      "Token 计量规则",
+      "账单与结算",
+      "支付方式",
+      "企业服务方案",
+      "常见问题"
+    ],
+    "html_sha256": "f26ee2efd467c7a8928ed198eed244c2c5b847613dd2a094c05d602541448532"
+  },
+  {
+    "column": "安全合规",
+    "id": 95,
+    "title": "数据安全",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/security-compliance/sec-data/95",
+    "subtopics": [
+      "传输加密",
+      "应用层加密",
+      "数据隔离",
+      "安全沙箱",
+      "审计日志",
+      "机密计算",
+      "数据隐私承诺"
+    ],
+    "html_sha256": "cc75c3367f05b9ce2f8903dac53ac819212e9e0880c815a01e3399debcbfcde4"
+  },
+  {
+    "column": "法律条款",
+    "id": 96,
+    "title": "产品和服务协议",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/legal-terms/terms-service/96",
+    "subtopics": [
+      "1.服务内容",
+      "2.协议签署",
+      "3.费用",
+      "4.服务试（使）用说明",
+      "5.权利和义务",
+      "7.数据保护",
+      "8.知识产权",
+      "9.保密",
+      "10.贸易管制法合规",
+      "11.不可抗力与免责",
+      "12.违约责任",
+      "13.协议期限、延续、变更与终止",
+      "14.法律适用及争议解决",
+      "15.通知与送达",
+      "16.其他"
+    ],
+    "html_sha256": "0808575d09bfa0ec1adb1d231094ad1103f225b3be9959cece675ace549fd0e8"
+  },
+  {
+    "column": "法律条款",
+    "id": 97,
+    "title": "第三方SDK收集个人信息清单",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/legal-terms/terms-sdk-personal-info-list/97",
+    "subtopics": [],
+    "html_sha256": "074349a3166fd0558bb726fe8aa54bab3603bd1dbac0750e7e82e7498d28f354"
+  },
+  {
+    "column": "法律条款",
+    "id": 98,
+    "title": "上游条款",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/legal-terms/upstream-terms/98",
+    "subtopics": [],
+    "html_sha256": "78cb2a2848a18691082f711e6882a26206c0f7b0fe32faf5725ccdcf91d4e282"
+  }
+]

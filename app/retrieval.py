@@ -10,6 +10,7 @@ URL=re.compile(r"https?://[^\s<>，。；）)\]\"']+")
 
 def title_text(value):
     value=unicodedata.normalize('NFKC',str(value)).strip()
+    value=re.sub(r'^\s*\d{1,3}[.、)）]\s+','',value)
     value=re.sub(r'^问题\s*\d+\s*','',value)
     return re.sub(r'^第\s*\d+\s*页\s*','',value).strip()
 
@@ -73,6 +74,7 @@ def lexical_query(question):
     The original question still goes to embeddings, reranking and generation.
     No product or answer-specific aliases are introduced here.
     """
+    question=re.sub(r'^\s*\d{1,3}[.、)）]\s+','',question)
     text=re.sub(r'^(?:请问|您好|你好|我们|我司|本公司|本企业|我)(?:要求|需要|希望|想要)?[，, ]*','',question)
     text=re.sub(r'(?:适合|应该|可以)(?:用|选择|选用)?哪(?:种|类)(?:服务|方案|产品)?[？?]?$', '', text)
     return text
@@ -81,6 +83,8 @@ def lexical_query(question):
 def lexical_ranking(question,rows):
     query=set(terms(lexical_query(question)))
     matches=title_signals(question,[row['title'] for _,row in rows])
+    from .title_policy import source_signals
+    matches=source_signals(question,rows,matches)
     counts=[Counter(terms(title_text(row['title']))*3+terms(clean_content(row['content']))) for _,row in rows]
     df=Counter(t for counter in counts for t in counter)
     avg=sum(sum(counter.values()) for counter in counts)/max(len(counts),1) or 1

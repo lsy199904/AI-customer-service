@@ -1,5 +1,6 @@
 """V2 guidance uses the latest actual DOCX, existing ownership and ordinary retrieval gates."""
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -33,7 +34,7 @@ class AssistanceTests(unittest.TestCase):
   self.count+=1
   return self.s.chat(actor,sid or self.sid,{'message':text,'request_id':rid or f'v2-request-{self.count:06}'})
  def test_latest_doc_all_six_flows_and_source_excerpts(self):
-  self.assertEqual(len(self.k.rows),60)
+  self.assertEqual(sum(bool(re.match(r"问题(?:[1-9]|[1-5][0-9]|60) ", r["title"])) for r in self.k.rows.values()),60)
   self.assertEqual(len(available(list(self.k.rows.values()))),6)
   for key,flow in FLOWS.items():
    with self.subTest(flow=key):
