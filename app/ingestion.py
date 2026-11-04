@@ -30,8 +30,22 @@ def clean_text(value):
     return '\n'.join(re.sub(r'[ \t]+',' ',line).strip() for line in value.splitlines()).strip()
 
 
-def _paragraph(p):
-    return clean_text(''.join((n.text or '') if n.tag==f"{{{NS['w']}}}t" else '\n' if n.tag in {f"{{{NS['w']}}}br",f"{{{NS['w']}}}cr"} else '\t' if n.tag==f"{{{NS['w']}}}tab" else '' for n in p.iter()))
+def _paragraph_raw(p):
+    return (''.join((n.text or '') if n.tag==f"{{{NS['w']}}}t" else '\n' if n.tag in {f"{{{NS['w']}}}br",f"{{{NS['w']}}}cr"} else '\t' if n.tag==f"{{{NS['w']}}}tab" else '' for n in p.iter()))
+
+
+def code_text(value):
+    # Code is data: preserve indentation, tabs, full-width string literals and blanks.
+    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\u200b\ufeff]','',value).strip('\r\n')
+
+
+def is_code(value,style=''):
+    if re.search(r'code|代码|preformatted',style,re.I):return True
+    return ('\n' in value and bool(re.match(
+        r'^(?:import |from |curl |export |package |public |class |def |async |const |let |var |function |@|<dependency>|[\[{]|version:|services:|api_key:|encrypted:)',value.lstrip())))
+
+
+def _paragraph(p):return clean_text(_paragraph_raw(p))
 
 
 def _docx(path,raw):
@@ -51,7 +65,7 @@ def _docx(path,raw):
     blocks=[];title=path.stem;version='未标注';paragraph_no=0
     for node in body:
         if node.tag==f"{{{NS['w']}}}p":
-            paragraph_no+=1;text=_paragraph(node)
+            paragraph_no+=1;raw_text=_paragraph_raw(node);text=clean_text(raw_text)
             if not text:continue
             style=node.find('w:pPr/w:pStyle',NS);style=style.get(f"{{{NS['w']}}}val",'') if style is not None else ''
             style=styles.get(style,style)
@@ -59,7 +73,9 @@ def _docx(path,raw):
             if re.match(r'^版本[:：]',text):version=text.split(':',1)[-1].strip()
             if '\n版本:' in text:version=text.split('\n版本:',1)[1].split('\n',1)[0].strip()
             heading=bool(re.match(r'^(Heading|标题)[ _-]?[1-6]$',style,re.I))
-            blocks.append({'text':text,'heading':heading,'page':None,'locator':'段落 '+str(paragraph_no)})
+            code=not heading and is_code(raw_text,style)
+            if code:text='```\n'+code_text(raw_text)+'\n```'
+            blocks.append({'text':text,'heading':heading,'code':code,'page':None,'locator':'段落 '+str(paragraph_no)})
         elif node.tag==f"{{{NS['w']}}}tbl":
             rows=[]
             for row in node.findall('w:tr',NS):
@@ -110,12 +126,21 @@ def _pdf(path,raw):
 
 
 def _plain(path,raw):
-    blocks=[]
-    for line in raw.decode('utf-8-sig').splitlines():
-        line=clean_text(line)
+    blocks=[];fenced=None;code=[]
+    for raw_line in raw.decode('utf-8-sig').splitlines():
+        marker=re.match(r'^\s*(`{3,}|~{3,})',raw_line)
+        if fenced is not None:
+            code.append(raw_line)
+            if marker and marker[1][0]==fenced[0] and len(marker[1])>=len(fenced):
+                blocks.append({'text':code_text('\n'.join(code)),'heading':False,'code':True,'page':None,'locator':'代码块'})
+                code=[];fenced=None
+            continue
+        if marker:fenced=marker[1];code=[raw_line];continue
+        line=clean_text(raw_line)
         if not line:continue
         heading=bool(re.match(r'^#{1,6}\s+',line))
         blocks.append({'text':re.sub(r'^#{1,6}\s+','',line),'heading':heading,'page':None,'locator':'文本章节'})
+    if code:blocks.append({'text':code_text('\n'.join(code)),'heading':False,'code':True,'page':None,'locator':'代码块'})
     return path.stem,'未标注',blocks
 
 
@@ -148,6 +173,9 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
             if end<len(text):
                 boundary=max(text.rfind(mark,start+max_chars//2,end) for mark in ('\n','。',';','；'))
                 if boundary>start:end=boundary+1
+            # Keep a complete code block together, including when longer than max_chars.
+            for lo,hi,block in spans:
+                if block.get('code') and lo<end<hi:end=hi
             content=text[start:end].strip()
             if content:
                 pages=sorted({b['page'] for lo,hi,b in spans if hi>start and lo<end and b.get('page') is not None})
@@ -155,7 +183,8 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
                                'source_locator':section['title']+' / '+(', '.join(dict.fromkeys(b['locator'] for b in section['blocks']))),
                                'source_references':section['refs'],'image_ids':section['image_ids']})
             if end==len(text):break
-            start=max(start+1,end-overlap)
+            next_start=max(start+1,end-overlap)
+            start=end if any(b.get('code') and lo<=next_start<hi for lo,hi,b in spans) else next_start
     return chunks
 
 
@@ -169,7 +198,7 @@ def parse_document(path,max_chars=1000,overlap=100):
     elif path.suffix.lower()=='.pdf':title,version,blocks=_pdf(path,raw)
     else:title,version,blocks=_plain(path,raw)
     chunks=split_sections(blocks,title,max_chars,overlap)
-    parser_revision=''
+    parser_revision='code-preserving-v1' if path.suffix.lower() in ('.docx','.md','.txt') else ''
     if path.suffix.lower()=='.pdf':
         from .pdf_topics import enrich,REVISION
         chunks=enrich(chunks,title);parser_revision=REVISION

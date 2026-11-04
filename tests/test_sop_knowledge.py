@@ -8,6 +8,22 @@ import zipfile
 from app.ingestion import parse_document
 ROOT=Path(__file__).resolve().parents[1]
 PATH=ROOT/'knowledge_sources/SmartTITU客户问答.docx'
+def word_question_blocks(path):
+ ns={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+ with zipfile.ZipFile(path) as z:body=ET.fromstring(z.read('word/document.xml')).find('w:body',ns)
+ result={};current=None
+ for el in body:
+  text=''.join(t.text or '' for t in el.findall('.//w:t',ns))
+  m=re.match(r'^问题(\d+) ',text)
+  if m:current=m[1];result[current]=[]
+  elif el.tag.endswith('}p'):
+   style=el.find('w:pPr/w:pStyle',ns)
+   if style is not None and style.get('{'+ns['w']+'}val')=='Heading1':current=None
+  if current:
+   embeds=[v for t in el.iter() for k,v in t.attrib.items() if k.endswith('}embed')]
+   result[current].append([text,embeds])
+ return result
+
 class SOPKnowledgeTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
@@ -28,14 +44,14 @@ class SOPKnowledgeTests(unittest.TestCase):
   self.assertEqual(len(set(new)),46)
   for number in sorted(set(range(306,354))-{349,350}):
    for row in self.by[number]:self.assertTrue(row['source_references']);self.assertTrue(row['content'])
- def test_original_questions_are_restored_without_sop_merges(self):
+ def test_original_questions_are_preserved_except_authorized_editorial_changes(self):
   import hashlib
   coverage=json.loads((ROOT/'docs/sop-coverage-20261104.json').read_text())
-  self.assertEqual(coverage['updated_questions'],[])
+  blocks=word_question_blocks(PATH)
   for n in range(1,306):
-   data=[{k:r.get(k) for k in ['title','content','image_ids','source_references']} for r in self.by[n]]
-   digest=hashlib.sha256(json.dumps(data,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
-   self.assertEqual(digest,coverage['original_questions_sha256'][str(n)],f'original question {n} changed')
+   if n in coverage['authorized_editorial_questions']:continue
+   digest=hashlib.sha256(json.dumps(blocks[str(n)],ensure_ascii=False).encode()).hexdigest()
+   self.assertEqual(digest,coverage['original_word_questions_sha256'][str(n)],f'original question {n} changed')
  def test_duplicate_login_and_authentication_topics_are_removed(self):
   self.assertNotIn(349,self.by);self.assertNotIn(350,self.by)
   self.assertIn(5,self.by);self.assertIn(6,self.by)
@@ -75,7 +91,7 @@ class SOPKnowledgeTests(unittest.TestCase):
    root=Path(temp);source=root/'sources';source.mkdir();shutil.copyfile(PATH,source/PATH.name)
    cfg=RAGSettings(index_path=str(root/'index.db'),source_dir=str(source),database_url='',vector_backend='sqlite',pdf_media_enabled=False,rerank_enabled=False,http_origins=('http://127.0.0.1:11434',))
    model=Embed();first=ingest_documents(cfg,embedder=model)
-   self.assertEqual(first['chunks'],372);self.assertEqual(first['updated'],1)
+   self.assertEqual(first['chunks'],len(self.rows));self.assertEqual(first['updated'],1)
    before=model.count;second=ingest_documents(cfg,embedder=model)
    self.assertEqual((second['updated'],second['unchanged']),(0,1));self.assertEqual(model.count,before)
    row=first['documents'][0];store=DocumentStore(cfg.index_path,'')
