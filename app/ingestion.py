@@ -169,7 +169,10 @@ def split_sections(blocks,title,max_chars=1000,overlap=100):
             spans.append((position,position+len(block['text']),block));position+=len(block['text'])+1
         start=0
         while start<len(text):
-            end=min(start+max_chars,len(text))
+            # A bounded model catalogue is one enumeration, not independent facts.
+            # Keep all IDs together so a list request cannot lose later channels.
+            catalogue=bool(re.search(r'模型列表$',section['title']) and len(text)<=12000)
+            end=len(text) if catalogue else min(start+max_chars,len(text))
             if end<len(text):
                 boundary=max(text.rfind(mark,start+max_chars//2,end) for mark in ('\n','。',';','；'))
                 if boundary>start:end=boundary+1

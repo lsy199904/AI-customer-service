@@ -19,7 +19,7 @@ class QueryContextTests(unittest.TestCase):
     payload=json.loads(messages[-1]['content'])
     self.assertIn('视频生成模型',payload['recent_user_questions'])
     return json.dumps({'kind':'followup','question':'视频生成模型的型号列表有哪些','clarification':''})
-  self.assertEqual(resolve(Model(),question,history)['question'],'视频生成模型的型号列表有哪些')
+  self.assertEqual(resolve(Model(),question,history)['question'],'视频生成模型-模型列表')
   self.assertFalse(dependent('图像生成API的调用方式，openai'))
 
  def test_changed_dates_are_generic_not_hardcoded(self):

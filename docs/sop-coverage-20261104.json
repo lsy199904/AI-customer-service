@@ -1,5 +1,5 @@
 {
-  "version": "20261104-v17",
+  "version": "20261104-v18",
   "customer_new_questions": 46,
   "last_question": 353,
   "updated_questions": [],
@@ -654,6 +654,14 @@
   ],
   "authorized_editorial_questions": [
     13,
+    102,
+    103,
+    110,
+    111,
+    117,
+    118,
+    125,
+    126,
     289,
     304,
     305

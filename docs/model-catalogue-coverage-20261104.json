@@ -1,0 +1,570 @@
+[
+  {
+    "question": 103,
+    "overview_question": 102,
+    "title": "视频生成模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-video/76",
+    "checked_at": "2026-11-04",
+    "count": 5,
+    "sections": [
+      {
+        "channel": "",
+        "headers": [
+          "模型ID",
+          "名称",
+          "输入",
+          "输出",
+          "时长",
+          "比例"
+        ],
+        "rows": [
+          [
+            "doubao-seedance-2-0-260128",
+            "Seedance 2.0",
+            "Text, image, video",
+            "Video",
+            "TBD",
+            "TBD"
+          ],
+          [
+            "doubao-seedance-2-0-fast-260128",
+            "Seedance 2.0 Fast",
+            "Text, image, video",
+            "Video",
+            "TBD",
+            "TBD"
+          ],
+          [
+            "doubao-seedance-2-5-260628",
+            "Seedance 2.5",
+            "Text, image, video",
+            "Video",
+            "TBD",
+            "TBD"
+          ],
+          [
+            "doubao-seedance-2-0-mini-260615",
+            "Seedance 2.0 Mini",
+            "Text, image, video",
+            "Video",
+            "TBD",
+            "TBD"
+          ],
+          [
+            "doubao-seedance-2.0",
+            "Seedance 2.0 (AICC edition)",
+            "Text, image, video",
+            "Video",
+            "TBD",
+            "TBD"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "question": 111,
+    "overview_question": 110,
+    "title": "图像生成模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-image/77",
+    "checked_at": "2026-11-04",
+    "count": 2,
+    "sections": [
+      {
+        "channel": "",
+        "headers": [
+          "模型ID",
+          "名称",
+          "能力",
+          "最高分辨率",
+          "输出格式"
+        ],
+        "rows": [
+          [
+            "doubao-seedream-5-0-260128",
+            "Seedream 5.0 Lite",
+            "Text and image input to image output",
+            "TBD",
+            "TBD"
+          ],
+          [
+            "doubao-seedream-5-0-pro-260628",
+            "Seedream 5.0 Pro",
+            "Text and image input to image output",
+            "TBD",
+            "TBD"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "question": 118,
+    "overview_question": 117,
+    "title": "多模态模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-multimodal/78",
+    "checked_at": "2026-11-04",
+    "count": 57,
+    "sections": [
+      {
+        "channel": "火山引擎 Ark",
+        "headers": [
+          "模型ID",
+          "名称",
+          "输入",
+          "输出"
+        ],
+        "rows": [
+          [
+            "doubao-seed-2-0-pro-260215",
+            "doubao-seed-2.0-pro",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-2-0-lite-260428",
+            "doubao-seed-2.0-lite",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-2-0-lite-260215",
+            "doubao-seed-2.0-lite",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-2-0-mini-260428",
+            "doubao-seed-2.0-mini",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-2-0-mini-260215",
+            "doubao-seed-2.0-mini",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-2-0-code-preview-260215",
+            "doubao-seed-2.0-code",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-evolving",
+            "Doubao-Seed-Evolving",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-2-1-pro-260915",
+            "Doubao-Seed-2.1-pro",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "doubao-seed-2-1-turbo-260628",
+            "Doubao-Seed-2.1-turbo",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "kimi-k3-260716",
+            "Kimi-K3",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "deepseek-v4-1-flash-260910",
+            "DeepSeek-V4.1-Flash",
+            "Text, image, video, audio",
+            "Text"
+          ],
+          [
+            "glm-5-3-flash-260828",
+            "GLM-5.3-Flash",
+            "Text, image, video, audio",
+            "Text"
+          ]
+        ]
+      },
+      {
+        "channel": "腾讯国内模型",
+        "headers": [
+          "模型ID",
+          "名称",
+          "输入",
+          "输出"
+        ],
+        "rows": [
+          [
+            "glm-5v-turbo",
+            "GLM-5V-Turbo",
+            "Text, image",
+            "Text"
+          ],
+          [
+            "kimi-k3",
+            "Kimi K3",
+            "Text, image",
+            "Text"
+          ],
+          [
+            "kimi-k2.7-code",
+            "Kimi K2.7 Code",
+            "Text, image",
+            "Text"
+          ],
+          [
+            "kimi-k2.6",
+            "Kimi-K2.6",
+            "Text, image",
+            "Text"
+          ],
+          [
+            "minimax-m3",
+            "MiniMax-M3",
+            "Text, image",
+            "Text"
+          ]
+        ]
+      },
+      {
+        "channel": "腾讯海外模型",
+        "headers": [
+          "模型ID",
+          "名称"
+        ],
+        "rows": [
+          [
+            "gpt-5.6-sol",
+            "gpt-5.6-sol"
+          ],
+          [
+            "gpt-5.6-terra",
+            "gpt-5.6-terra"
+          ],
+          [
+            "gpt-5.6-luna",
+            "gpt-5.6-luna"
+          ],
+          [
+            "gpt-6-astra",
+            "gpt-6-astra"
+          ],
+          [
+            "gpt-5.5",
+            "gpt-5.5"
+          ],
+          [
+            "gpt-5.4-pro",
+            "gpt-5.4-pro"
+          ],
+          [
+            "gpt-5.4",
+            "gpt-5.4"
+          ],
+          [
+            "gpt-5.4-nano",
+            "gpt-5.4-nano"
+          ],
+          [
+            "gpt-5.4-mini",
+            "gpt-5.4-mini"
+          ],
+          [
+            "gpt-5.3-codex",
+            "gpt-5.3-codex"
+          ],
+          [
+            "gpt-5.1",
+            "gpt-5.1"
+          ],
+          [
+            "gpt-5",
+            "gpt-5"
+          ],
+          [
+            "gpt-5-mini",
+            "gpt-5-mini"
+          ],
+          [
+            "gpt-5-nano",
+            "gpt-5-nano"
+          ],
+          [
+            "gpt-4.1",
+            "gpt-4.1"
+          ],
+          [
+            "gemini-3.8-flash",
+            "gemini-3.8-flash"
+          ],
+          [
+            "gemini-3.7-flash",
+            "gemini-3.7-flash"
+          ],
+          [
+            "gemini-3.6-flash",
+            "gemini-3.6-flash"
+          ],
+          [
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash-lite"
+          ],
+          [
+            "gemini-3.5-flash",
+            "gemini-3.5-flash"
+          ],
+          [
+            "gemini-3.1-flash-lite",
+            "gemini-3.1-flash-lite"
+          ],
+          [
+            "gemini-3.1-pro-preview",
+            "gemini-3.1-pro-preview"
+          ],
+          [
+            "gemini-3-flash-preview",
+            "gemini-3-flash-preview"
+          ],
+          [
+            "gk-4-1-fast-reasoning",
+            "gk-4-1-fast-reasoning"
+          ],
+          [
+            "gk-4.1-fast-non-reasoning",
+            "gk-4.1-fast-non-reasoning"
+          ],
+          [
+            "gk-4-20-non-reasoning",
+            "gk-4-20-non-reasoning"
+          ],
+          [
+            "gk-4-20-reasoning",
+            "gk-4-20-reasoning"
+          ],
+          [
+            "gk-4.3",
+            "gk-4.3"
+          ],
+          [
+            "cd-fable-5",
+            "cd-fable-5"
+          ],
+          [
+            "cd-opus-5",
+            "cd-opus-5"
+          ],
+          [
+            "cd-sonnet-5",
+            "cd-sonnet-5"
+          ],
+          [
+            "cd-opus-4.8",
+            "cd-opus-4.8"
+          ],
+          [
+            "cd-opus-4.7",
+            "cd-opus-4.7"
+          ],
+          [
+            "cd-sonnet-4.6",
+            "cd-sonnet-4.6"
+          ],
+          [
+            "cd-opus-4.6",
+            "cd-opus-4.6"
+          ]
+        ]
+      },
+      {
+        "channel": "硅基流动",
+        "headers": [
+          "模型ID",
+          "名称"
+        ],
+        "rows": [
+          [
+            "kimi-k3",
+            "kimi-k3"
+          ],
+          [
+            "moonshotai/Kimi-K2.7-Code",
+            "moonshotai/Kimi-K2.7-Code"
+          ],
+          [
+            "zai-org/GLM-5.2",
+            "zai-org/GLM-5.2"
+          ],
+          [
+            "Pro/moonshotai/Kimi-K2.6",
+            "Pro/moonshotai/Kimi-K2.6"
+          ],
+          [
+            "Pro/zai-org/GLM-5.1",
+            "Pro/zai-org/GLM-5.1"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "question": 126,
+    "overview_question": 125,
+    "title": "文本模型",
+    "url": "https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/model-capability/model-text/79",
+    "checked_at": "2026-11-04",
+    "count": 21,
+    "sections": [
+      {
+        "channel": "火山引擎 Ark",
+        "headers": [
+          "模型ID",
+          "名称",
+          "输入",
+          "输出"
+        ],
+        "rows": [
+          [
+            "glm-5-2-260617",
+            "GLM-5.2",
+            "Text",
+            "Text"
+          ],
+          [
+            "glm-5-3-260814",
+            "GLM-5.3",
+            "Text",
+            "Text"
+          ],
+          [
+            "deepseek-v4-pro-260425",
+            "deepseek-v4-pro",
+            "Text",
+            "Text"
+          ],
+          [
+            "deepseek-v4-flash-ga-260731",
+            "DeepSeek-V4-Flash (official release)",
+            "Text",
+            "Text"
+          ],
+          [
+            "deepseek-v4-pro-ga-260813",
+            "DeepSeek-V4-Pro (official release)",
+            "Text",
+            "Text"
+          ],
+          [
+            "doubao-seed-character-251128",
+            "doubao-seed-character",
+            "Text",
+            "Text"
+          ],
+          [
+            "doubao-seed-translation-250915",
+            "doubao-seed-translation",
+            "Text",
+            "Text"
+          ]
+        ]
+      },
+      {
+        "channel": "腾讯国内模型",
+        "headers": [
+          "模型ID",
+          "名称",
+          "输入",
+          "输出"
+        ],
+        "rows": [
+          [
+            "deepseek-v4-flash-202605",
+            "DeepSeek-V4-Flash (direct from the original provider)",
+            "Text",
+            "Text"
+          ],
+          [
+            "deepseek-v4-pro-202606",
+            "DeepSeek-V4-Pro (direct from the original provider)",
+            "Text",
+            "Text"
+          ],
+          [
+            "deepseek-v4-flash",
+            "DeepSeek-V4-Flash",
+            "Text",
+            "Text"
+          ],
+          [
+            "deepseek-v4-pro",
+            "DeepSeek-V4-Pro",
+            "Text",
+            "Text"
+          ],
+          [
+            "glm-5.3",
+            "GLM-5.3",
+            "Text",
+            "Text"
+          ],
+          [
+            "glm-5.2",
+            "GLM-5.2",
+            "Text",
+            "Text"
+          ],
+          [
+            "glm-5.1",
+            "GLM-5.1",
+            "Text",
+            "Text"
+          ],
+          [
+            "minimax-m2.7",
+            "MiniMax-M2.7",
+            "Text",
+            "Text"
+          ],
+          [
+            "hy3",
+            "Hunyuan 3",
+            "Text",
+            "Text"
+          ]
+        ]
+      },
+      {
+        "channel": "硅基流动",
+        "headers": [
+          "模型ID",
+          "名称"
+        ],
+        "rows": [
+          [
+            "deepseek-v4-pro-0813",
+            "deepseek-v4-pro-0813"
+          ],
+          [
+            "Deepseek-v4-flash-0731",
+            "Deepseek-v4-flash-0731"
+          ],
+          [
+            "qwen3.8-max",
+            "qwen3.8-max"
+          ],
+          [
+            "qwen3.7-plus",
+            "qwen3.7-plus"
+          ],
+          [
+            "qwen3.7-max",
+            "qwen3.7-max"
+          ]
+        ]
+      }
+    ]
+  }
+]

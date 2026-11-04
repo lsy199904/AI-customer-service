@@ -32,7 +32,22 @@ def local_query(question,history):
     return previous+' '+question
 
 
+def catalogue_followup(question,history):
+    """Resolve only a subjectless list request against explicit prior sources."""
+    text=re.sub(r'[\s？?。]+','',question)
+    if not re.fullmatch(r'(?:对应的|这些|上述的|它们的|该模型的|有哪些|支持哪些)?(?:具体的)?(?:模型型号列表|模型列表|型号列表|型号清单|模型清单|模型型号|型号)(?:有哪些|是什么|呢)?',text):return None
+    from .retrieval import title_text
+    previous=next((h.get('response') or {} for h in reversed(history) if h['role']=='assistant'),{})
+    roots={re.split(r'[-－—]',title_text(c.get('section_title') or c.get('title','')))[0].strip()
+           for c in previous.get('citations',[])}
+    roots={r for r in roots if r.endswith('模型')}
+    if len(roots)!=1:return None
+    return next(iter(roots))+'-模型列表'
+
+
 def resolve(model,question,history):
+    catalogue=catalogue_followup(question,history)
+    if catalogue:return {'kind':'followup','question':catalogue,'clarification':''}
     users=[h['content'] for h in history if h['role']=='user'][-20:]
     fallback={'kind':'followup' if dependent(question) and users else 'independent',
               'question':local_query(question,history),'clarification':''}

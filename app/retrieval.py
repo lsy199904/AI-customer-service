@@ -30,6 +30,8 @@ def retrieval_text(record):
 
 def topic(value,question=False):
     text=title_text(value).lower()
+    text=re.sub(r'(?:模型型号列表|型号列表|型号清单|模型清单|模型型号)', '模型列表', text)
+    text=text.replace('模型的模型列表','模型列表').replace('模型模型列表','模型列表')
     # Structural chapter labels are not part of the customer's requested subject.
     text=re.sub(r'^(?:附录(?:[a-z0-9一二三四五六七八九十]+)?|第[0-9一二三四五六七八九十]+[章节])[\s:：—–-]+','',text)
     if question:
@@ -40,6 +42,7 @@ def topic(value,question=False):
         text=re.sub(r'(流程|架构)(?:示意图|图)$',r'\1',text)
     text=re.sub(r'是什么[？?！!。.,，\s]*$','',text)
     text=re.sub(r'[^a-z0-9\u3400-\u9fff]+','',text).replace('的','')
+    text=text.replace('模型模型列表','模型列表')
     return re.sub(r'(?:概况|概述|简介|介绍)$','',text)
 
 
