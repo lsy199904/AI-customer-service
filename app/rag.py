@@ -361,6 +361,7 @@ class SemanticKnowledge:
         anchors=primary or [s for s in eligible if s['title_match']]
         final=(anchors or eligible)[:c.context_k]
         semantic_selection=None
+        fallback_policy=None
         selector=getattr(self,'evidence_selector',None)
         if selector is not None and not primary and len(eligible)>c.context_k:
             from .observability import event,error_fields
@@ -371,18 +372,21 @@ class SemanticKnowledge:
                 final=[selected_lookup[item['id']] for item in semantic_selection]
             except Exception as error:
                 check()  # Total retrieval timeout remains a retrieval failure, not a silent fallback.
-                event('evidence_selection_unavailable',level='WARNING',**error_fields(error),fallback='existing_rerank',validation_reason=str(error) if str(error) in ('invalid evidence selection','invalid evidence item','invalid evidence ID or support','unsupported evidence quote','invalid evidence reason') else None)
+                from .evidence_selection import fallback_evidence
+                final,fallback_policy=fallback_evidence(question,eligible,c.context_k)
+                event('evidence_selection_unavailable',level='WARNING',**error_fields(error),fallback=fallback_policy,validation_reason=str(error) if str(error) in ('invalid evidence selection','invalid evidence item','invalid evidence ID or support','unsupported evidence quote','invalid evidence reason') else None)
                 semantic_selection=None
         final_ids={s['row']['id'] for s in final};primary_ids={s['row']['id'] for s in primary}
         report['title_candidate_matched']=any(s['title_match'] for s in ranked_candidates)
         report['title_ambiguous']=len(groups)>1 and preferred is None
         report['title_matched']=any(s['title_match'] for s in final)
         report['primary_ids']=[s['row']['id'] for s in final if s['row']['id'] in primary_ids]
-        report['selection_policy']='suggested_knowledge' if preferred else 'unique_title' if primary else 'semantic_evidence' if semantic_selection is not None else 'ranked_evidence'
+        report['selection_policy']='suggested_knowledge' if preferred else 'unique_title' if primary else 'semantic_evidence' if semantic_selection is not None else fallback_policy or 'ranked_evidence'
         decisions=[]
         for s in ranked_candidates:
             selected=s['row']['id'] in final_ids
-            if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_semantic_evidence' if semantic_selection is not None else 'selected_ranked_evidence'
+            if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_semantic_evidence' if semantic_selection is not None else 'selected_query_coverage_fallback' if fallback_policy=='query_coverage_fallback' else 'selected_ranked_evidence'
+            elif fallback_policy in ('query_coverage_fallback','fallback_no_support') and s in eligible:reason='insufficient_distinctive_query_coverage'
             elif semantic_selection is not None and s in eligible:reason='not_selected_by_semantic_evidence'
             elif primary:reason='different_subject_from_primary'
             elif c.rerank_enabled and s['score']<c.rerank_min_score:reason='below_rerank_threshold'
@@ -404,7 +408,7 @@ class SemanticKnowledge:
                          '_rerank_score':s['score'] if c.rerank_enabled else None,
                          '_title_match':s['title_match'],'_primary_title':s['row']['id'] in primary_ids},s['dense']) for s in final]
         report['matched']=bool(report['hits'])
-        if not report['matched']:report['reason']='no_supporting_evidence' if semantic_selection is not None else 'all_below_rerank_threshold' if c.rerank_enabled else 'no_selected_evidence'
+        if not report['matched']:report['reason']='no_supporting_evidence' if semantic_selection is not None or fallback_policy=='fallback_no_support' else 'all_below_rerank_threshold' if c.rerank_enabled else 'no_selected_evidence'
         if diagnostics:report['_diagnostics']['reranked']=[{'id':s['row']['id'],'title':s['row']['title'],
             'score':s['score'],'title_match':s['title_match'],'selected':s['row']['id'] in final_ids,
             'reason':next(d['reason'] for d in decisions if d['id']==s['row']['id'])} for s in ranked_candidates]

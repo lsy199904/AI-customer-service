@@ -39,10 +39,18 @@ class SelectionTests(unittest.TestCase):
    self.assertEqual(len(r['hits']),1);self.assertEqual(r['hits'][0][1]['title'],'平台评估报道')
    self.assertEqual(self.cfg.context_k,3);self.assertEqual(self.cfg.rerank_min_score,.6)
    self.assertTrue(any(x['reason']=='not_selected_by_semantic_evidence' for x in r['_candidate_decisions']))
- def test_invalid_quote_and_model_failure_revert_to_existing_order(self):
-  self.model.invalid=True;r=self.k.assess('通过了什么评估？');self.assertEqual(r['selection_policy'],'ranked_evidence')
+ def test_invalid_quote_and_model_failure_use_query_coverage_fallback(self):
+  self.model.invalid=True;r=self.k.assess('通过了什么评估？');self.assertEqual(r['selection_policy'],'query_coverage_fallback')
   with patch.object(self.model,'complete',side_effect=TimeoutError()):
-   r=self.k.assess('通过了什么评估？');self.assertEqual(len(r['hits']),3)
+   r=self.k.assess('通过了什么评估？');self.assertEqual(len(r['hits']),1)
+  self.assertIsNone(model_options())
+ def test_real_question_survives_semantic_selector_timeout(self):
+  with patch.object(self.model,'complete',side_effect=TimeoutError()):
+   report=self.k.assess('SmartTITU通过了中国信通院的什么评估？')
+  self.assertEqual(report['selection_policy'],'query_coverage_fallback')
+  self.assertTrue(report['matched'])
+  self.assertEqual([x[1]['title'] for x in report['hits']],['平台评估报道'])
+  self.assertEqual(report['_configuration']['RERANK_MIN_SCORE']['effective'],.6)
   self.assertIsNone(model_options())
  def test_no_support_is_no_hit_and_no_threshold_bypass(self):
   self.model.complete=lambda messages:'{"evidence":[]}'
@@ -76,7 +84,7 @@ class SelectionTests(unittest.TestCase):
                    {'evidence':[{'id':'x','support':'direct','quote':'   ','reason':'x'}]},
                    {'evidence':'wrong type'} ]:
    self.model.complete=lambda messages,payload=payload:json.dumps(payload)
-   self.assertEqual(self.k.assess('通过了什么评估？')['selection_policy'],'ranked_evidence')
+   self.assertEqual(self.k.assess('通过了什么评估？')['selection_policy'],'query_coverage_fallback')
  def test_multiple_supported_sources_can_remain_up_to_context_limit(self):
   def choose(messages):
    data=json.loads(messages[-1]['content'])
@@ -84,3 +92,42 @@ class SelectionTests(unittest.TestCase):
   self.model.complete=choose
   report=self.k.assess('介绍平台的用户和功能')
   self.assertEqual(len(report['hits']),3);self.assertEqual(report['selection_policy'],'semantic_evidence')
+
+class FallbackRegressionTests(unittest.TestCase):
+ def candidate(self,key,body,score=.9):
+  return {'row':{'id':key,'title':key,'content':body},'score':score,'lexical':1.}
+ def test_timeout_keeps_assessment_evidence_over_generic_product_introductions(self):
+  from app.evidence_selection import fallback_evidence
+  rows=[self.candidate('generic'+str(i),'SmartTITU为政企用户提供模型管理和计费服务。') for i in range(3)]
+  rows.append(self.candidate('assessment','中企通信SmartTITU成功通过中国信通院首批Token聚合服务平台能力评估。',.74))
+  for q in ['SmartTITU通过了中国信通院的什么评估？','中国信通院对SmartTITU做过什么评估？']:
+   selected,policy=fallback_evidence(q,rows,3)
+   self.assertEqual(policy,'query_coverage_fallback');self.assertEqual([x['row']['id'] for x in selected],['assessment'])
+ def test_focused_excerpt_is_short_original_and_covers_late_evidence(self):
+  from app.evidence_selection import focused_excerpt
+  body='通用平台介绍。'*250+'成功通过中国信通院Token聚合服务平台能力评估。'+'附加介绍。'*200
+  excerpt=focused_excerpt('通过中国信通院什么评估',body)
+  self.assertLessEqual(len(excerpt),600);self.assertIn(excerpt,body);self.assertIn('中国信通院',excerpt)
+ def test_fallback_preserves_multiple_supported_topics_and_never_adds_candidates(self):
+  from app.evidence_selection import fallback_evidence
+  rows=[self.candidate('registration','注册账号使用手机号短信验证码。'),self.candidate('authentication','企业认证需要公司名称及统一社会信用代码。')]+[self.candidate(str(i),'平台支持多模型。') for i in range(3)]
+  selected,policy=fallback_evidence('注册账号和企业认证分别怎么做',rows,3)
+  self.assertEqual({x['row']['id'] for x in selected},{'registration','authentication'})
+  self.assertLessEqual(len(selected),3)
+
+ def test_published_article_body_beats_logged_generic_word_candidates(self):
+  from app.ingestion import parse_document
+  from app.evidence_selection import fallback_evidence
+  root=Path(__file__).resolve().parents[1]
+  article=root/'knowledge_sources/中企通信成功通过中国信通院首批Token聚合服务平台能力评估.pdf'
+  word=root/'knowledge_sources/SmartTITU客户问答.docx'
+  if not article.exists() or not word.exists():self.skipTest('knowledge fixtures unavailable')
+  rows=[];chunks=parse_document(word).chunks
+  for n in [15,60,61]:
+   row=next(x for x in chunks if x['title'].startswith('问题'+str(n)+' '))
+   rows.append({'row':{**row,'id':'word-'+str(n)},'score':.83,'lexical':2.})
+  for i,row in enumerate(parse_document(article).chunks):
+   rows.append({'row':{**row,'id':'pdf-'+str(i)},'score':.74,'lexical':30.})
+  selected,policy=fallback_evidence('SmartTITU通过了中国信通院的什么评估？',rows,3)
+  self.assertEqual(policy,'query_coverage_fallback');self.assertTrue(selected)
+  self.assertTrue(all(x['row']['id'].startswith('pdf-') for x in selected))
