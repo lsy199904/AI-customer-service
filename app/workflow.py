@@ -149,8 +149,14 @@ class SupportWorkflow:
                 from .query_context import resolve,local_query
                 from .conversation import recommended_selection
                 try:
-                    resolution=resolve(self.service.model if self.service.config.mode=='llm' and hasattr(self.service.model,'complete') else None,
-                        state['question'],state['history'])
+                    assistance=state.get('assistance',{})
+                    # A validated guide/choice already provides an unambiguous query.
+                    # Generic pronoun resolution must not discard its current stage.
+                    if assistance.get('kind') in ('guide','choice') and assistance.get('query'):
+                        resolution={'kind':'followup','question':assistance['query'],'clarification':''}
+                    else:
+                        resolution=resolve(self.service.model if self.service.config.mode=='llm' and hasattr(self.service.model,'complete') else None,
+                            state['question'],state['history'])
                 except Exception as error:
                     check()
                     event('question_resolution_unavailable',level='WARNING',**error_fields(error))

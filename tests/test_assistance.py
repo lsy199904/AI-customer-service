@@ -43,6 +43,24 @@ class AssistanceTests(unittest.TestCase):
     self.assertEqual(result['status'],'answered');self.assertTrue(result['citations']);self.assertTrue(result['images'])
     row=next(row for row in self.k.rows.values() if title_text(row['title'])==flow['title'])
     self.assertEqual(result['answer'],stage_context(result['guidance'],[row])['stage_evidence'])
+ def test_active_guide_bypasses_generic_followup_clarification(self):
+  self.ask('分步指导：在线开票流程')
+  with patch('app.query_context.resolve',return_value={'kind':'clarify','question':'这一步怎么做','clarification':'请问您具体指的是哪一步操作？'}) as resolver:
+   current=self.ask('这一步怎么做')
+   self.assertEqual(current['status'],'answered')
+   self.assertEqual(current['guidance']['flow_id'],'invoice')
+   self.assertEqual(current['guidance']['step'],0)
+   self.assertTrue(current['citations'])
+   advanced=self.ask('这一步已完成')
+   self.assertEqual(advanced['guidance']['step'],1)
+   repeated=self.ask('这一步怎么做')
+   self.assertEqual(repeated['guidance']['step'],1)
+   resolver.assert_not_called()
+  # A separate topic must still pass through normal question resolution.
+  with patch('app.query_context.resolve',return_value={'kind':'independent','question':'API密钥在哪里创建','clarification':''}) as resolver:
+   self.ask('API密钥在哪里创建')
+   resolver.assert_called_once()
+
  def test_subscription_guidance_works_without_internal_fifth_step(self):
   self.ask('带我一步步完成服务订购')
   self.ask('这一步已完成')
