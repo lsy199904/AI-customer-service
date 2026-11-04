@@ -1,0 +1,86 @@
+import json
+import tempfile
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+from app.evidence_selection import EvidenceSelector,model_options
+from app.rag import RAGSettings,SemanticKnowledge,ingest_documents
+from app.observability import compact_steps
+
+class Embed:
+ def embed(self,texts):return [[1.,0.] for _ in texts]
+class Model:
+ def __init__(self):self.calls=[];self.invalid=False
+ def complete(self,messages):
+  self.calls.append(messages);assert model_options()['timeout']==5.
+  data=json.loads(messages[-1]['content'])
+  result=[]
+  for row in data['candidates']:
+   if '成功通过中国信通院' in row['content']:
+    result.append({'id':row['id'],'support':'direct','quote':'不存在的内容' if self.invalid else 'SmartTITU成功通过中国信通院Token聚合服务平台能力评估。','reason':'正文明确说明平台通过的评估。'})
+  return json.dumps({'evidence':result},ensure_ascii=False)
+class Rank:
+ def rank(self,q,docs):
+  return sorted([(i,.78 if '成功通过中国信通院' in d else .95 if '适合用户' in d else .9) for i,d in enumerate(docs)],key=lambda x:x[1],reverse=True)
+
+class SelectionTests(unittest.TestCase):
+ def setUp(self):
+  self.t=tempfile.TemporaryDirectory();root=Path(self.t.name);source=root/'sources';source.mkdir()
+  (source/'article.md').write_text('# 平台评估报道\nSmartTITU成功通过中国信通院Token聚合服务平台能力评估。\n# SmartTITU适合用户\n适合企业开发者、管理者及政企机构。\n# 产品简介\nSmartTITU提供企业AI经营平台。\n# 平台功能\n支持模型接入和计费。')
+  self.cfg=RAGSettings(index_path=str(root/'index.db'),source_dir=str(source),database_url='',vector_backend='sqlite',rerank_enabled=False,http_origins=('http://127.0.0.1:11434',),min_similarity=.6)
+  self.embed=Embed();ingest_documents(self.cfg,embedder=self.embed)
+  self.cfg.rerank_enabled=True;self.cfg.rerank_url='http://127.0.0.1:11434/v1/rerank';self.cfg.rerank_min_score=.6
+  self.k=SemanticKnowledge(self.cfg,self.embed,Rank());self.model=Model();self.k.evidence_selector=EvidenceSelector(self.model)
+ def tearDown(self):self.t.cleanup()
+ def test_retrieved_specific_evidence_survives_misleading_top_three(self):
+  for q in ['34. SmartTITU通过了中国信通院的什么评估？','SmartTITU获得了哪种平台能力评估？','中国信通院对SmartTITU做过什么测评？']:
+   r=self.k.assess(q)
+   self.assertTrue(r['matched']);self.assertEqual(r['selection_policy'],'semantic_evidence')
+   self.assertEqual(len(r['hits']),1);self.assertEqual(r['hits'][0][1]['title'],'平台评估报道')
+   self.assertEqual(self.cfg.context_k,3);self.assertEqual(self.cfg.rerank_min_score,.6)
+   self.assertTrue(any(x['reason']=='not_selected_by_semantic_evidence' for x in r['_candidate_decisions']))
+ def test_invalid_quote_and_model_failure_revert_to_existing_order(self):
+  self.model.invalid=True;r=self.k.assess('通过了什么评估？');self.assertEqual(r['selection_policy'],'ranked_evidence')
+  with patch.object(self.model,'complete',side_effect=TimeoutError()):
+   r=self.k.assess('通过了什么评估？');self.assertEqual(len(r['hits']),3)
+  self.assertIsNone(model_options())
+ def test_no_support_is_no_hit_and_no_threshold_bypass(self):
+  self.model.complete=lambda messages:'{"evidence":[]}'
+  r=self.k.assess('通过了什么评估？');self.assertFalse(r['matched']);self.assertEqual(r['reason'],'no_supporting_evidence')
+  self.cfg.rerank_min_score=.99;self.model.calls=[]
+  r=self.k.assess('通过了什么评估？');self.assertFalse(r['matched']);self.assertEqual(self.model.calls,[])
+ def test_direct_title_path_preserves_metallb_style_navigation_without_extra_call(self):
+  r=self.k.assess('SmartTITU适合用户');self.assertTrue(r['matched']);self.assertEqual(self.model.calls,[])
+ def test_compact_log_keeps_selections_rejections_and_errors_not_duplicate_content(self):
+  rows=[{'事件':'model_request_started','级别':'INFO','详情':{}},
+        {'事件':'retrieval_candidates','级别':'INFO','详情':{'candidates':[{'id':str(i),'title':'topic','selected':i==0,'bm25':i,'reason':'outside_context_limit'} for i in range(20)]}},
+        {'事件':'generation_grounding_warning','级别':'WARNING','详情':{'unsupported_text':'specific warning'}},
+        {'事件':'stream_failed','级别':'ERROR','详情':{'error_code':'connection'}}]
+  compact=compact_steps(rows);self.assertEqual(len(compact),3)
+  self.assertEqual(len(compact[0]['详情']['candidates']),5);self.assertEqual(compact[0]['详情']['candidate_count'],20)
+  self.assertEqual(compact[-1]['事件'],'stream_failed')
+
+ def test_compact_content_log_retains_input_output_without_full_model_payload(self):
+  from app import observability as ops
+  with patch.dict('os.environ',{'LOG_DEBUG_CONTENT':'true','LOG_TRACE_DETAIL':'compact'}),patch.object(ops._debug_log,'handlers',[object()]),patch.object(ops._debug_log,'info') as emit:
+   trace=ops.RequestTrace();trace.snapshot('chat_input',{'question':'客户问题'})
+   trace.snapshot('model_input',{'messages':'不应出现在精简日志里的提示词'})
+   trace.snapshot('chat_output',{'response':{'answer':'最终回答','citations':[],'images':[],'retrieval':{'full':'internal'}}})
+   trace.record('chat_completed',{'outcome':'answered'});trace.finish()
+   doc=emit.call_args.kwargs['extra']['operation_document']
+   self.assertEqual(doc['输入']['问题'],'客户问题');self.assertEqual(doc['输出']['最终响应']['answer'],'最终回答')
+   self.assertNotIn('不应出现在',json.dumps(doc,ensure_ascii=False));self.assertNotIn('retrieval',doc['输出']['最终响应'])
+
+ def test_invalid_id_duplicate_and_whitespace_quote_cannot_replace_evidence(self):
+  for payload in [ {'evidence':[{'id':'not-a-candidate','support':'direct','quote':'x','reason':'x'}]},
+                   {'evidence':[{'id':'x','support':'direct','quote':'   ','reason':'x'}]},
+                   {'evidence':'wrong type'} ]:
+   self.model.complete=lambda messages,payload=payload:json.dumps(payload)
+   self.assertEqual(self.k.assess('通过了什么评估？')['selection_policy'],'ranked_evidence')
+ def test_multiple_supported_sources_can_remain_up_to_context_limit(self):
+  def choose(messages):
+   data=json.loads(messages[-1]['content'])
+   return json.dumps({'evidence':[{'id':r['id'],'support':'partial','quote':r['content'],'reason':'支持问题的一个方面'} for r in data['candidates'][:3]]})
+  self.model.complete=choose
+  report=self.k.assess('介绍平台的用户和功能')
+  self.assertEqual(len(report['hits']),3);self.assertEqual(report['selection_policy'],'semantic_evidence')

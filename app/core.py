@@ -261,14 +261,15 @@ class Model:
         from .observability import event,error_fields,debug_event
         started=time.monotonic()
         debug_event('model_input',messages=messages)
-        event('model_request_started',history_and_prompt_messages=len(messages),max_tokens=int(os.getenv('MODEL_MAX_TOKENS','2048')),streaming=on_delta is not None)
+        from .evidence_selection import model_options
+        event('model_request_started',model_purpose='evidence_selection' if model_options() else 'generation_or_planning',history_and_prompt_messages=len(messages),max_tokens=(model_options() or {}).get('max_tokens',int(os.getenv('MODEL_MAX_TOKENS','2048'))),streaming=on_delta is not None)
         try:
             result=self._complete_request(messages,on_delta) if on_delta is not None else self._complete_request(messages)
             debug_event('model_output',text=result)
-            event('model_request_completed',elapsed_ms=round((time.monotonic()-started)*1000,2),response_chars=len(result))
+            event('model_request_completed',model_purpose='evidence_selection' if model_options() else 'generation_or_planning',elapsed_ms=round((time.monotonic()-started)*1000,2),response_chars=len(result))
             return result
         except Exception as error:
-            event('model_request_failed',level='ERROR',elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
+            event('model_request_failed',level='ERROR',model_purpose='evidence_selection' if model_options() else 'generation_or_planning',elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             raise
 
     def _complete_request(self,messages,on_delta=None):
@@ -279,9 +280,11 @@ class Model:
         if 'qwen3' in self.config.model.lower() and os.getenv('MODEL_DISABLE_THINKING','true').lower()=='true':
             options['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
         from .deadlines import remaining
+        from .evidence_selection import model_options
+        call_options=model_options() or {}
         model=init_chat_model(self.config.model,model_provider='openai',base_url=self.config.model_url,
-            api_key=self.config.model_key,http_client=client(),http_async_client=async_client(),timeout=remaining(45),max_retries=0,
-            max_tokens=int(os.getenv('MODEL_MAX_TOKENS','2048')),temperature=0.1,http_socket_options=(),**options)
+            api_key=self.config.model_key,http_client=client(),http_async_client=async_client(),timeout=remaining(call_options.get('timeout',45)),max_retries=0,
+            max_tokens=call_options.get('max_tokens',int(os.getenv('MODEL_MAX_TOKENS','2048'))),temperature=0.1,http_socket_options=(),**options)
         from langsmith import tracing_context
         started=time.monotonic();size=0;chunks=[];response=None
         with tracing_context(enabled=False):
@@ -324,6 +327,9 @@ class Service:
         else:
             self.knowledge=Knowledge(config.knowledge,config.min_similarity)
         self.model = model or Model(config)
+        if config.retrieval_backend=='semantic' and config.mode=='llm':
+            from .evidence_selection import EvidenceSelector
+            self.knowledge.evidence_selector=EvidenceSelector(self.model)
         self.media = MediaCatalog(config.media_path, BASE/'app/static/media')
         self.media.include_generated(config.pdf_media_dir)
         if config.qr_url.startswith('/media/') and config.qr_url not in self.media.assets:

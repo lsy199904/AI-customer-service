@@ -197,7 +197,7 @@ class OperationalLogs(unittest.TestCase):
   ops._debug_log.handlers=[handler];ops._debug_log.setLevel(logging.INFO);ops._debug_log.propagate=False
   self.handler.addFilter(ops.BufferedSteps())
   try:
-   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true'}),ops.bind(request_id='msg-one-123',window_id='window-one-123'),ops.capture_request():
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true','LOG_TRACE_DETAIL':'full'}),ops.bind(request_id='msg-one-123',window_id='window-one-123'),ops.capture_request():
     ops.event('chat_started',question_chars=6)
     ops.debug_event('chat_input',question='账单支付流程')
     ops.event('retrieval_completed',matched=True,evidence_count=1)

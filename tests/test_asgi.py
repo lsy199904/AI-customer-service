@@ -140,7 +140,7 @@ class FastAPIContracts(unittest.TestCase):
   try:
    sid=self.client.post('/v1/sessions',json={},headers=self.headers).json()['session_id']
    service=self.app.state.service;service.config.mode='llm';service.model=Model(service.config)
-   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true'}),patch.object(Model,'_complete_request',return_value='普通文本回答'):
+   with patch.dict(os.environ,{'LOG_DEBUG_CONTENT':'true','LOG_TRACE_DETAIL':'full'}),patch.object(Model,'_complete_request',return_value='普通文本回答'):
     with self.assertLogs('assistant.operations',level='INFO') as logs:
      r=self.client.post('/v1/sessions/'+sid+'/messages/stream',json={'message':'429错误怎么办','request_id':'debug-nodes-123'},headers=self.headers)
    self.assertEqual(r.status_code,200);self.assertIn('event: complete',r.text)

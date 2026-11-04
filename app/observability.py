@@ -228,7 +228,7 @@ _NODE_NAMES = {
     'question_resolved':'追问与主题解析完成','question_resolution_unavailable':'追问解析回退',
     'image_planning_started':'配图语义判断开始','image_planning_unavailable':'配图判断不可用',
     'image_selection_started':'配图最终校验开始','image_selection_completed':'本轮配图选择完成',
-    'retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'旧版回答依据拦截','generation_grounding_warning':'回答依据告警（不阻断）','generation_grounding_check_unavailable':'依据检查不可用',
+    'evidence_selection_completed':'回答证据选择完成','evidence_selection_unavailable':'证据判断回退','retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'旧版回答依据拦截','generation_grounding_warning':'回答依据告警（不阻断）','generation_grounding_check_unavailable':'依据检查不可用',
     'retrieval_model_failed':'检索模型调用失败','retrieval_completed':'知识检索完成',
     'retrieval_failed':'知识检索失败','model_request_started':'回答模型调用开始',
     'model_request_completed':'回答模型调用完成','model_request_failed':'回答模型调用失败',
@@ -332,7 +332,7 @@ class RequestTrace:
             if self.truncated:safe_output['流程已截断']=True
             if '状态' not in safe_output:safe_output['状态']='未完成'
             # One JSON per request; only the explicitly sanitized grounding warning includes diagnostic excerpts/evidence.
-            document={'时间':self.time,'输入':metadata_input,'处理流程':self.steps,'输出':safe_output}
+            document={'时间':self.time,'输入':metadata_input,'处理流程':compact_steps(self.steps),'输出':safe_output}
             _log.info('request_completed',extra={'operation_document':document,'operation_fields':dict(self.metadata)})
             if self.content and _debug_log.handlers:
                 steps=[];raw=list(self.raw_steps)
@@ -341,8 +341,13 @@ class RequestTrace:
                         item=raw.pop(0);item.pop('序号',None);steps.append(item)
                     steps.append(step)
                 for item in raw:item.pop('序号',None);steps.append(item)
+                detailed=os.getenv('LOG_TRACE_DETAIL','compact').lower()=='full'
+                final_response=self.output.get('最终响应',{})
+                if not detailed:
+                    steps=compact_steps(self.steps)
+                    final_response={k:final_response[k] for k in ('answer','status','reason','citations','images') if k in final_response}
                 full={'时间':self.time,'输入':{**metadata_input,**self.input},'处理流程':steps,
-                      '输出':{**safe_output,**({'最终响应':self.output['最终响应']} if '最终响应' in self.output else {})}}
+                      '输出':{**safe_output,**({'最终响应':final_response} if '最终响应' in self.output else {})}}
                 _debug_log.info('request_completed',extra={'operation_document':full,'operation_fields':dict(self.metadata)})
 
 
@@ -366,3 +371,24 @@ def grounding_warning(issues,evidence,guidance=None):
         'evidence':[{'id':r.get('id'),'title':r.get('title'),'revision':r.get('revision'),'content':r.get('content','')} for r in evidence],
         'stage_evidence':(guidance or {}).get('stage_evidence')},limit=256000)
     event('generation_grounding_warning',level='WARNING',**fields)
+
+# Compact production view; detailed snapshots remain opt-in with LOG_TRACE_DETAIL=full.
+def compact_steps(steps):
+    keep={'chat_started','chat_cache_hit','question_resolved','retrieval_candidates','retrieval_completed',
+          'evidence_selection_completed','evidence_selection_unavailable','generation_completed',
+          'model_request_completed','model_first_token','image_selection_completed','chat_completed',
+          'stream_completed','http_completed'}
+    result=[]
+    for original in steps:
+        name=original.get('事件','')
+        if name not in keep and original.get('级别') not in ('WARNING','ERROR'):continue
+        row=dict(original);details=dict(row.get('详情',{}))
+        if name=='retrieval_candidates':
+            candidates=details.get('candidates',[])
+            selected=[c for c in candidates if c.get('selected')]
+            rejected=sorted([c for c in candidates if not c.get('selected')],key=lambda c:c.get('bm25') or 0,reverse=True)[:4]
+            keys=('id','title','similarity','rerank_score','selected','reason','semantic_support')
+            details={'selection_policy':details.get('selection_policy'),'configuration':details.get('configuration'),
+                     'candidate_count':len(candidates),'candidates':[{k:c[k] for k in keys if k in c} for c in selected+rejected]}
+        row['详情']=details;result.append(row)
+    return result

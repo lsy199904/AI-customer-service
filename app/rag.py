@@ -360,16 +360,30 @@ class SemanticKnowledge:
         primary=[s for s in strong if (s['row'].get('document_id',''),topic(s['row']['title']))==primary_group] if primary_group is not None else []
         anchors=primary or [s for s in eligible if s['title_match']]
         final=(anchors or eligible)[:c.context_k]
+        semantic_selection=None
+        selector=getattr(self,'evidence_selector',None)
+        if selector is not None and not primary and len(eligible)>c.context_k:
+            from .observability import event,error_fields
+            try:
+                semantic_selection=selector(question,eligible,c.context_k)
+                check()
+                selected_lookup={s['row']['id']:s for s in eligible}
+                final=[selected_lookup[item['id']] for item in semantic_selection]
+            except Exception as error:
+                check()  # Total retrieval timeout remains a retrieval failure, not a silent fallback.
+                event('evidence_selection_unavailable',level='WARNING',**error_fields(error),fallback='existing_rerank',validation_reason=str(error) if str(error) in ('invalid evidence selection','invalid evidence item','invalid evidence ID or support','unsupported evidence quote','invalid evidence reason') else None)
+                semantic_selection=None
         final_ids={s['row']['id'] for s in final};primary_ids={s['row']['id'] for s in primary}
         report['title_candidate_matched']=any(s['title_match'] for s in ranked_candidates)
         report['title_ambiguous']=len(groups)>1 and preferred is None
         report['title_matched']=any(s['title_match'] for s in final)
         report['primary_ids']=[s['row']['id'] for s in final if s['row']['id'] in primary_ids]
-        report['selection_policy']='suggested_knowledge' if preferred else 'unique_title' if primary else 'ranked_evidence'
+        report['selection_policy']='suggested_knowledge' if preferred else 'unique_title' if primary else 'semantic_evidence' if semantic_selection is not None else 'ranked_evidence'
         decisions=[]
         for s in ranked_candidates:
             selected=s['row']['id'] in final_ids
-            if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_ranked_evidence'
+            if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_semantic_evidence' if semantic_selection is not None else 'selected_ranked_evidence'
+            elif semantic_selection is not None and s in eligible:reason='not_selected_by_semantic_evidence'
             elif primary:reason='different_subject_from_primary'
             elif c.rerank_enabled and s['score']<c.rerank_min_score:reason='below_rerank_threshold'
             elif anchors and not s['title_match']:reason='different_subject_from_title'
@@ -379,7 +393,7 @@ class SemanticKnowledge:
                 'rerank_score':s['score'] if c.rerank_enabled else None,'rerank_threshold':c.rerank_min_score if c.rerank_enabled else None,
                 'title_match':s['title_match'],'title_match_type':s.get('title_match_type'),
                 'within_dense_gate':s['dense']>=c.min_similarity,'rerank_passed':s['score']>=c.rerank_min_score if c.rerank_enabled else None,
-                'selected':selected,'reason':reason,'rerank_gate_bypassed':selected and s['row']['id'] in primary_ids and c.rerank_enabled and s['score']<c.rerank_min_score})
+                'selected':selected,'reason':reason,'semantic_support':next(({k:v for k,v in x.items() if k!='quote'} for x in (semantic_selection or []) if x['id']==s['row']['id']),None),'rerank_gate_bypassed':selected and s['row']['id'] in primary_ids and c.rerank_enabled and s['score']<c.rerank_min_score})
         # Include dense neighbours excluded before fusion so the highest score is traceable too.
         seen={d['id'] for d in decisions}
         for dense,row in ranked[:c.top_k]:
@@ -390,7 +404,7 @@ class SemanticKnowledge:
                          '_rerank_score':s['score'] if c.rerank_enabled else None,
                          '_title_match':s['title_match'],'_primary_title':s['row']['id'] in primary_ids},s['dense']) for s in final]
         report['matched']=bool(report['hits'])
-        if not report['matched']:report['reason']='all_below_rerank_threshold' if c.rerank_enabled else 'no_selected_evidence'
+        if not report['matched']:report['reason']='no_supporting_evidence' if semantic_selection is not None else 'all_below_rerank_threshold' if c.rerank_enabled else 'no_selected_evidence'
         if diagnostics:report['_diagnostics']['reranked']=[{'id':s['row']['id'],'title':s['row']['title'],
             'score':s['score'],'title_match':s['title_match'],'selected':s['row']['id'] in final_ids,
             'reason':next(d['reason'] for d in decisions if d['id']==s['row']['id'])} for s in ranked_candidates]
