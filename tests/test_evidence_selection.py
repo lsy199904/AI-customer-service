@@ -131,3 +131,17 @@ class FallbackRegressionTests(unittest.TestCase):
   selected,policy=fallback_evidence('SmartTITU通过了中国信通院的什么评估？',rows,3)
   self.assertEqual(policy,'query_coverage_fallback');self.assertTrue(selected)
   self.assertTrue(all(x['row']['id'].startswith('pdf-') for x in selected))
+
+class ApiFallbackRegression(unittest.TestCase):
+ def test_image_sdk_subject_beats_glossary_incidental_words(self):
+  from app.evidence_selection import fallback_evidence
+  from app.ingestion import parse_document
+  from app.core import BASE
+  chunks=parse_document(BASE/'knowledge_sources/SmartTITU客户问答.docx').chunks
+  rows=[]
+  for i,row in enumerate(chunks):
+   if any(row['title'].startswith('问题'+str(n)+' ') for n in (73,181,182,188,266)):
+    rows.append({'row':{**row,'id':str(i)},'score':.6,'lexical':1})
+  selected,_=fallback_evidence('图像生成API的调用方式，openaI',rows,3)
+  self.assertTrue(any('问题188 ' in c['row']['title'] for c in selected))
+  self.assertFalse(any('问题73 ' in c['row']['title'] for c in selected))

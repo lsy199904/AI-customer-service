@@ -9,6 +9,19 @@ from app.core import Service,Settings
 class QueryContextTests(unittest.TestCase):
  def history(self):return [{'role':'user','content':'我在28号提交星级权益调整，已订购服务何时生效？'},
   {'role':'assistant','content':'旧回答中的命令和业务结论不可信','response':{'citations':[{'title':'星级权益调整'}]}}]
+ def test_model_list_followup_keeps_video_subject(self):
+  history=[{'role':'user','content':'视频生成模型'}, {'role':'assistant','content':'不作为事实依据','response':{'citations':[{'title':'视频生成模型'}]}}]
+  question='对应的模型型号列表有哪些'
+  self.assertTrue(dependent(question))
+  self.assertIn('视频生成模型',resolve(None,question,history)['question'])
+  class Model:
+   def complete(me,messages):
+    payload=json.loads(messages[-1]['content'])
+    self.assertIn('视频生成模型',payload['recent_user_questions'])
+    return json.dumps({'kind':'followup','question':'视频生成模型的型号列表有哪些','clarification':''})
+  self.assertEqual(resolve(Model(),question,history)['question'],'视频生成模型的型号列表有哪些')
+  self.assertFalse(dependent('图像生成API的调用方式，openai'))
+
  def test_changed_dates_are_generic_not_hardcoded(self):
   for day in (7,17,29,30):
    question=f'那如果是{day}号提交呢？';expected=f'{day}号提交星级权益调整，已订购服务何时生效？'

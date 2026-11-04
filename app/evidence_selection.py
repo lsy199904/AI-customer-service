@@ -29,12 +29,24 @@ def fallback_evidence(question, candidates, limit):
     Only already eligible candidates are considered. This does not change either
     retrieval threshold or assert that lexical overlap proves factual support.
     """
-    from .retrieval import terms,clean_content
+    from .retrieval import terms,clean_content,title_text
     query=set(terms(question))
     bags=[set(terms(c['row']['title']+' '+clean_content(c['row']['content']))) for c in candidates]
     distinctive={t for t in query if 0<sum(t in bag for bag in bags)<=len(bags)/2}
     if len(distinctive)<2:return candidates[:limit],'ranked_evidence'
-    scored=[(len(distinctive & bag)/len(distinctive),c) for c,bag in zip(candidates,bags)]
+    # Long glossary bodies accumulate incidental matches. Reward an explicit
+    # subject in a title, using all meaningful query terms rather than only
+    # rare terms (which can be generic wording such as '调用方式').
+    title_bags=[set(terms(title_text(c['row']['title']))) for c in candidates]
+    scored=[]
+    for c,bag,title_bag in zip(candidates,bags,title_bags):
+        body_coverage=len(distinctive & bag)/len(distinctive)
+        title_overlap=len(query & title_bag)
+        title_coverage=title_overlap/max(len(query),1)
+        score=body_coverage
+        if title_overlap>=2 and title_coverage>=.5:
+            score+=title_coverage
+        scored.append((score,c))
     best=max((score for score,_ in scored),default=0)
     if best<.5:return [],'fallback_no_support'
     supported=[(score,c) for score,c in scored if score>=max(.5,best*.8)]

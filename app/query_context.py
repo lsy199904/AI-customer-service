@@ -14,7 +14,7 @@ PROMPT='''仅解析客服问题，输出JSON，不回答业务问题。输入是
 
 def dependent(question):
     q=question.strip()
-    return len(q)<100 and bool(re.search(r'这个|那个|它|上述|刚才|这一步|然后|接下来|还有呢',q)
+    return len(q)<100 and bool(re.search(r'这个|那个|它|上述|刚才|这一步|然后|接下来|还有呢|对应的|上述的|该模型|这些模型',q)
         or re.match(r'^(?:那|那么|如果是|假如是|换成|改成|改为|除此之外)',q)
         or re.fullmatch(r'(?:为什么|为啥|谁来处理|谁负责|要多久|多久|然后呢|第二种呢|下一步|上一步|需要什么材料|怎么填写|怎么操作|如何办理)[？?。]*',q)
         or re.match(r'^(?:what about|what if|and if|then\b)',q,re.I)
