@@ -129,4 +129,8 @@ def actions_for(guidance,rows):
         if guidance['step']>0:actions.append({'type':'guide','label':'返回上一步','message':'返回上一步'})
         actions.append({'type':'guide','label':'结束指导','message':'结束指导'})
         return actions
-    return [{'type':'guide','label':FLOWS[item]['title'],'message':FLOWS[item]['title']} for item in NEXT[key] if item in options]
+    from .business_flows import FLOW_TITLES
+    # A required next chapter may be an overview without a guided stage machine.
+    titles={title_text(row.get('title','')) for row in rows}
+    return [{'type':'guide','label':FLOW_TITLES[item],'message':FLOW_TITLES[item]}
+            for item in NEXT[key] if item in FLOW_TITLES and FLOW_TITLES[item] in titles]

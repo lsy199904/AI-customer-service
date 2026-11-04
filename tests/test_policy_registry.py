@@ -16,8 +16,9 @@ class RegistryTests(unittest.TestCase):
   keys=['register','verification','subscription','recharge','payment','invoice']
   self.assertEqual(list(GUIDED_FLOWS),keys)
   self.assertEqual(QUICK_QUESTIONS,['注册流程','企业认证流程','服务订购流程','客户充值流程','账单支付流程','在线开票流程'])
-  self.assertEqual(NEXT,{k:keys[i+1:i+2] for i,k in enumerate(keys)})
-  self.assertEqual(GUIDED_FLOWS['subscription']['stages'],[['选择服务与模型',[1]],['办理签约',[2,3]],['查看生效与服务开通',[4]]])
+  expected={k:keys[i+1:i+2] for i,k in enumerate(keys)};expected['verification']=['contract']
+  self.assertEqual(NEXT,expected)
+  self.assertEqual(GUIDED_FLOWS['subscription']['stages'],[['核对前提并选择套餐',[1]],['选择模型并提交订购',[2,3]],['查看生效与密钥开通',[4]]])
   self.assertEqual(len(FLOWS),10)
  def test_image_bindings_resolve_without_duplicated_catalog_metadata(self):
   raw=json.loads((ROOT/'data/media.json').read_text())

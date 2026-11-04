@@ -34,15 +34,15 @@ class SOPKnowledgeTests(unittest.TestCase):
    if match:cls.by.setdefault(int(match[1]),[]).append(row)
  def body(self,n):return '\n'.join(r['content'] for r in self.by[n])
  def test_unique_questions_and_every_new_topic_has_sources(self):
-  self.assertEqual(set(self.by),set(range(1,354))-{349,350})
+  self.assertEqual(set(self.by),set(range(1,354))-{348,349,350,351,352})
   ns={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
   with zipfile.ZipFile(PATH) as z:xml=ET.fromstring(z.read('word/document.xml'))
   headings=[''.join(t.text or '' for t in p.findall('.//w:t',ns)) for p in xml.findall('.//w:body/w:p',ns)]
   titles=[t for t in headings if re.match(r'^问题\d+ ',t)]
-  self.assertEqual(len(titles),351)
+  self.assertEqual(len(titles),348)
   new=[re.sub(r'^问题\d+ ','',r['title']) for r in self.rows if (m:=re.match(r'问题(\d+)',r['title'])) and int(m[1])>=306]
-  self.assertEqual(len(set(new)),46)
-  for number in sorted(set(range(306,354))-{349,350}):
+  self.assertEqual(len(set(new)),43)
+  for number in sorted(set(range(306,354))-{348,349,350,351,352}):
    for row in self.by[number]:self.assertTrue(row['source_references']);self.assertTrue(row['content'])
  def test_original_questions_are_preserved_except_authorized_editorial_changes(self):
   import hashlib
@@ -55,14 +55,14 @@ class SOPKnowledgeTests(unittest.TestCase):
  def test_duplicate_login_and_authentication_topics_are_removed(self):
   self.assertNotIn(349,self.by);self.assertNotIn(350,self.by)
   self.assertIn(5,self.by);self.assertIn(6,self.by)
-  self.assertIn(348,self.by);self.assertIn(351,self.by)
+  self.assertNotIn(348,self.by);self.assertNotIn(351,self.by);self.assertNotIn(352,self.by)
  def test_new_portal_topics_have_enterprise_sources_only(self):
-  for n in sorted(set(range(306,354))-{349,350}):
+  for n in sorted(set(range(306,354))-{348,349,350,351,352}):
    self.assertNotIn('运营门户',self.body(n))
    for row in self.by[n]:
     self.assertIn('企业服务门户',str(row['source_references']))
     self.assertNotIn('运营门户',str(row['source_references']))
-  self.assertIn('注册账号',self.by[348][0]['title'])
+  self.assertIn('短信验证码',self.body(4))
   self.assertIn('创建 API Key',self.by[353][0]['title'])
  def test_payment_invoicing_and_errors_are_covered_with_payer_context(self):
   text='\n'.join(r['title']+'\n'+r['content'] for r in self.rows)
@@ -70,7 +70,7 @@ class SOPKnowledgeTests(unittest.TestCase):
    self.assertIn(term,text)
   self.assertIn('未查明原支付结果前',text)
  def test_customer_word_does_not_contain_internal_control_procedures_or_uat(self):
-  text='\n'.join(self.body(n) for n in sorted(set(range(306,354))-{349,350}))
+  text='\n'.join(self.body(n) for n in sorted(set(range(306,354))-{348,349,350,351,352}))
   for term in ['101.96.235','CASH','Re-Rate','API重采','账期补采','3%','账期审核通过']:
    self.assertNotIn(term,text)
   self.assertNotIn('垃圾邮件箱',text)

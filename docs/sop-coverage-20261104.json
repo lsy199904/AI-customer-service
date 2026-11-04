@@ -1,6 +1,6 @@
 {
-  "version": "20261104-v18",
-  "customer_new_questions": 46,
+  "version": "20261104-v19",
+  "customer_new_questions": 43,
   "last_question": 353,
   "updated_questions": [],
   "customer_sections": [
@@ -304,27 +304,6 @@
       "heading": "6.4.4 核对开票结果",
       "question": 347,
       "title": "企业服务门户－后付费－核对开票结果"
-    },
-    {
-      "source": "enterprise",
-      "section": 5,
-      "heading": "2.1 注册账号",
-      "question": 348,
-      "title": "企业服务门户－注册账号"
-    },
-    {
-      "source": "enterprise",
-      "section": 12,
-      "heading": "2.5.1 发起签约",
-      "question": 351,
-      "title": "企业服务门户－发起签约"
-    },
-    {
-      "source": "enterprise",
-      "section": 15,
-      "heading": "2.5 订购服务",
-      "question": 352,
-      "title": "企业服务门户－订购服务"
     },
     {
       "source": "enterprise",
@@ -649,11 +628,21 @@
     "305": "b40e02959b09c195c56fc27329ae2e22fd6484996d23262202abe9ffada58d21"
   },
   "removed_duplicate_questions": [
+    348,
     349,
-    350
+    350,
+    351,
+    352
   ],
   "authorized_editorial_questions": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
     13,
+    40,
     102,
     103,
     110,
@@ -977,5 +966,10 @@
     "303": "8368c0df4d61d5b79d7d4d2ba79f7395692c0423cb54e03a45568489d403046c",
     "304": "27d50df56e00fbb1a66ff8559cc899b010dd24630685b4c889e4e2f1836be5c6",
     "305": "867feb4e9f75a9e9d988d7279f4dcae58198bef3b3ac7e30859646688d78afd9"
+  },
+  "merged_customer_topics": {
+    "348": 4,
+    "351": 7,
+    "352": 8
   }
 }
