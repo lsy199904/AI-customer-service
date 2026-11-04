@@ -1,0 +1,422 @@
+{
+  "version": "20261104-v14",
+  "customer_new_questions": 49,
+  "last_question": 354,
+  "updated_questions": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    40,
+    42
+  ],
+  "customer_sections": [
+    {
+      "source": "enterprise",
+      "section": 3,
+      "heading": "1.3 付费方式说明",
+      "question": 306,
+      "title": "企业服务门户－预付费与后付费有什么区别"
+    },
+    {
+      "source": "enterprise",
+      "section": 8,
+      "heading": "2.2.2 退出登录",
+      "question": 307,
+      "title": "企业服务门户－退出登录"
+    },
+    {
+      "source": "enterprise",
+      "section": 9,
+      "heading": "2.2.3 找回密码",
+      "question": 308,
+      "title": "企业服务门户－找回密码"
+    },
+    {
+      "source": "enterprise",
+      "section": 13,
+      "heading": "2.5.2 查看签约结果",
+      "question": 309,
+      "title": "企业服务门户－查看签约结果"
+    },
+    {
+      "source": "enterprise",
+      "section": 14,
+      "heading": "2.5.3 发起失败处理",
+      "question": 310,
+      "title": "企业服务门户－发起失败处理"
+    },
+    {
+      "source": "enterprise",
+      "section": 17,
+      "heading": "三、总览",
+      "question": 311,
+      "title": "企业服务门户－总览与权益查看"
+    },
+    {
+      "source": "enterprise",
+      "section": 19,
+      "heading": "3.1 查找合同",
+      "question": 312,
+      "title": "企业服务门户－查找合同"
+    },
+    {
+      "source": "enterprise",
+      "section": 20,
+      "heading": "3.2 合同详情与操作记录",
+      "question": 313,
+      "title": "企业服务门户－合同详情与操作记录"
+    },
+    {
+      "source": "enterprise",
+      "section": 21,
+      "heading": "3.3 归档与存证、验签与下载",
+      "question": 314,
+      "title": "企业服务门户－归档与存证、验签与下载"
+    },
+    {
+      "source": "enterprise",
+      "section": 22,
+      "heading": "3.4 合同续签",
+      "question": 315,
+      "title": "企业服务门户－合同续签"
+    },
+    {
+      "source": "enterprise",
+      "section": 23,
+      "heading": "3.5 重新签署",
+      "question": 316,
+      "title": "企业服务门户－重新签署"
+    },
+    {
+      "source": "enterprise",
+      "section": 24,
+      "heading": "3.6 常见提示文案与处理",
+      "question": 317,
+      "title": "企业服务门户－常见提示文案与处理"
+    },
+    {
+      "source": "enterprise",
+      "section": 26,
+      "heading": "5.1页面总览",
+      "question": 318,
+      "title": "企业服务门户－预付费－页面功能总览"
+    },
+    {
+      "source": "enterprise",
+      "section": 28,
+      "heading": "5.2.1 新增企业发票抬头",
+      "question": 319,
+      "title": "企业服务门户－发票抬头－新增企业发票抬头"
+    },
+    {
+      "source": "enterprise",
+      "section": 29,
+      "heading": "5.2.2 新增个人发票抬头",
+      "question": 320,
+      "title": "企业服务门户－发票抬头－新增个人发票抬头"
+    },
+    {
+      "source": "enterprise",
+      "section": 30,
+      "heading": "5.2.3 编辑及设为默认",
+      "question": 321,
+      "title": "企业服务门户－发票抬头－编辑及设为默认"
+    },
+    {
+      "source": "enterprise",
+      "section": 31,
+      "heading": "5.2.4 删除抬头及返回",
+      "question": 322,
+      "title": "企业服务门户－发票抬头－删除抬头及返回"
+    },
+    {
+      "source": "enterprise",
+      "section": 33,
+      "heading": "5.3.1 通过中信银行在线支付",
+      "question": 323,
+      "title": "企业服务门户－预付费－通过中信银行在线支付"
+    },
+    {
+      "source": "enterprise",
+      "section": 34,
+      "heading": "5.3.2 通过对公汇款充值",
+      "question": 324,
+      "title": "企业服务门户－预付费－通过对公汇款充值"
+    },
+    {
+      "source": "enterprise",
+      "section": 35,
+      "heading": "5.3.3充值到账核对与异常处理",
+      "question": 325,
+      "title": "企业服务门户－预付费－充值到账核对与异常处理"
+    },
+    {
+      "source": "enterprise",
+      "section": 37,
+      "heading": "5.4.1 查询充值记录",
+      "question": 326,
+      "title": "企业服务门户－预付费－查询充值记录"
+    },
+    {
+      "source": "enterprise",
+      "section": 38,
+      "heading": "5.4.2 选择记录并核对金额",
+      "question": 327,
+      "title": "企业服务门户－预付费－选择记录并核对金额"
+    },
+    {
+      "source": "enterprise",
+      "section": 39,
+      "heading": "5.4.3 选择抬头并提交",
+      "question": 328,
+      "title": "企业服务门户－预付费－选择抬头并提交"
+    },
+    {
+      "source": "enterprise",
+      "section": 41,
+      "heading": "5.5.1 申请预开发票",
+      "question": 329,
+      "title": "企业服务门户－预付费－申请预开发票"
+    },
+    {
+      "source": "enterprise",
+      "section": 42,
+      "heading": "5.5.2 预开发票查询",
+      "question": 330,
+      "title": "企业服务门户－预付费－预开发票查询"
+    },
+    {
+      "source": "enterprise",
+      "section": 43,
+      "heading": "5.5.3 预开发票支付",
+      "question": 331,
+      "title": "企业服务门户－预付费－预开发票支付"
+    },
+    {
+      "source": "enterprise",
+      "section": 44,
+      "heading": "5.5.4 下载发票",
+      "question": 333,
+      "title": "企业服务门户－发票查询与下载－下载发票"
+    },
+    {
+      "source": "enterprise",
+      "section": 46,
+      "heading": "5.6.1 查询发票查询",
+      "question": 332,
+      "title": "企业服务门户－发票查询与下载－查询发票"
+    },
+    {
+      "source": "enterprise",
+      "section": 47,
+      "heading": "5.6.2 下载发票",
+      "question": 333,
+      "title": "企业服务门户－发票查询与下载－下载发票"
+    },
+    {
+      "source": "enterprise",
+      "section": 49,
+      "heading": "5.7.1 搜索月度结算单",
+      "question": 334,
+      "title": "企业服务门户－预付费－搜索月度结算单"
+    },
+    {
+      "source": "enterprise",
+      "section": 50,
+      "heading": "5.7.2 查看账单概览及明细",
+      "question": 335,
+      "title": "企业服务门户－预付费－查看账单概览及明细"
+    },
+    {
+      "source": "enterprise",
+      "section": 51,
+      "heading": "5.7.3 查看消费明细",
+      "question": 336,
+      "title": "企业服务门户－预付费－查看消费明细"
+    },
+    {
+      "source": "enterprise",
+      "section": 52,
+      "heading": "5.7.4 确认账单",
+      "question": 337,
+      "title": "企业服务门户－预付费－确认账单"
+    },
+    {
+      "source": "enterprise",
+      "section": 54,
+      "heading": "6.1页面总览",
+      "question": 338,
+      "title": "企业服务门户－后付费－页面功能总览"
+    },
+    {
+      "source": "enterprise",
+      "section": 57,
+      "heading": "6.3.1 查询月度账单",
+      "question": 339,
+      "title": "企业服务门户－后付费－查询月度账单"
+    },
+    {
+      "source": "enterprise",
+      "section": 58,
+      "heading": "6.3.2 查看账单概览与明细",
+      "question": 340,
+      "title": "企业服务门户－后付费－查看账单概览与明细"
+    },
+    {
+      "source": "enterprise",
+      "section": 59,
+      "heading": "6.3.3 确认账单",
+      "question": 341,
+      "title": "企业服务门户－后付费－确认账单"
+    },
+    {
+      "source": "enterprise",
+      "section": 60,
+      "heading": "6.3.4 按账单申请开票",
+      "question": 342,
+      "title": "企业服务门户－后付费－按账单申请开票"
+    },
+    {
+      "source": "enterprise",
+      "section": 61,
+      "heading": "6.3.5 缴费",
+      "question": 343,
+      "title": "企业服务门户－后付费－缴费"
+    },
+    {
+      "source": "enterprise",
+      "section": 63,
+      "heading": "6.4.1 查询缴费记录",
+      "question": 344,
+      "title": "企业服务门户－后付费－查询缴费记录"
+    },
+    {
+      "source": "enterprise",
+      "section": 64,
+      "heading": "6.4.2 选择可开票记录",
+      "question": 345,
+      "title": "企业服务门户－后付费－选择可开票记录"
+    },
+    {
+      "source": "enterprise",
+      "section": 65,
+      "heading": "6.4.3 核对并提交申请",
+      "question": 346,
+      "title": "企业服务门户－后付费－核对并提交申请"
+    },
+    {
+      "source": "enterprise",
+      "section": 66,
+      "heading": "6.4.4 核对开票结果",
+      "question": 347,
+      "title": "企业服务门户－后付费－核对开票结果"
+    },
+    {
+      "source": "operations_customer_rules",
+      "sections": [
+        3,
+        4,
+        5,
+        6,
+        9
+      ],
+      "question": 348,
+      "title": "客户经理可以协助办理哪些开通事项"
+    },
+    {
+      "source": "operations_customer_rules",
+      "sections": [
+        7,
+        8
+      ],
+      "question": 349,
+      "title": "星级权益调整应联系谁及如何查看结果"
+    },
+    {
+      "source": "operations_customer_rules",
+      "sections": [
+        11,
+        12
+      ],
+      "question": 350,
+      "title": "线下充值或缴费后由谁确认到账"
+    },
+    {
+      "source": "operations_customer_rules",
+      "sections": [
+        2,
+        14
+      ],
+      "question": 351,
+      "title": "没有客户经理或需要更换客户经理怎么办"
+    },
+    {
+      "source": "operations_customer_rules",
+      "sections": [
+        15,
+        16,
+        17,
+        18
+      ],
+      "question": 352,
+      "title": "账单有差异或还没有出账应如何处理"
+    },
+    {
+      "source": "operations_customer_rules",
+      "sections": [
+        20
+      ],
+      "question": 353,
+      "title": "客户会收到哪些账单或办理通知"
+    },
+    {
+      "source": "operations_customer_rules",
+      "sections": [
+        21
+      ],
+      "question": 354,
+      "title": "预付费与后付费客户开票规则有什么区别"
+    }
+  ],
+  "operations_internal_sections": [
+    "1.1 文档目的与适用范围",
+    "1.2 角色与职责",
+    "二、客户经理操作指引（开通服务）",
+    "2.1 账号注册",
+    "2.2 创建企业",
+    "2.3 认证签约",
+    "2.4 星级评定与初始化",
+    "2.5 调整单个企业星级权益",
+    "2.6 服务订购",
+    "3.1 客户充值（预付费客户）",
+    "3.2 客户缴费（后付费客户）",
+    "4.1 分派客户经理",
+    "五、计费人员操作指引",
+    "5.1 原始数据采集",
+    "5.2 计费明细",
+    "5.3 对账审核",
+    "5.4 对账审核配置",
+    "系统邮件通知",
+    "系统约定事项"
+  ],
+  "excluded_from_customer": [
+    "运营后台定价与信控配置操作",
+    "原始数据导入与重计费操作",
+    "内部对账阈值及修改入口",
+    "内部管理邮件细节",
+    "UAT测试地址与截图示例个人资料"
+  ],
+  "conflicts": [
+    "28日生效口径按2.5具体步骤及既有规则统一",
+    "短信流程不采用垃圾邮件箱说明",
+    "API密钥入口表笔误按正文处理",
+    "创建中间状态与默认星级初始化阶段分开说明"
+  ]
+}
