@@ -37,3 +37,7 @@ __pycache__/
 
 # Restore-only portable database snapshots
 /migration-storage/
+
+# Load-test credentials and generated results.
+/pressure_test/tokens.txt
+/load-results-*/
