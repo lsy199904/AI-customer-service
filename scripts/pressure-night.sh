@@ -3,6 +3,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 export TZ=Asia/Shanghai
+export ASSISTANT_UID=$(id -u) ASSISTANT_GID=$(id -g)
 [ "$(basename "$ROOT")" = ai_customer_pressure ] || exit 1
 [ "$(date +%F)" = 2026-11-05 ] || exit 0
 mkdir -p var/pressure-reports
@@ -14,6 +15,7 @@ started=0
 finish() {
   rc=$?
   trap - EXIT
+  rm -f "$RUN/tokens.txt"
   stop_result='未启动测试实例'
   if [ "$started" = 1 ]; then
     if sh scripts/pressure.sh stop; then stop_result='测试实例已停止'; else stop_result='停止失败，请人工检查测试实例'; fi
@@ -25,14 +27,14 @@ from datetime import datetime
 p=Path(sys.argv[1]); summary=p/'results/summary.json'
 lines=['# SmartTITU 夜间压力测试报告','', '完成时间：'+datetime.now().isoformat(timespec='seconds'),
        '','执行退出码：'+sys.argv[2], '',sys.argv[3], '',
-       '本次为1、2、5并发，各5次请求的低压力检查，不代表最大容量或长时间稳定性。',
+       '计划包含每企业20条/分钟、21次限流边界，以及5/10/20/50/100并发。保护触发后未执行的阶段不能视为通过；单轮不证明长期容量。',
        '测试与演示共用模型和数据库，未修改检索阈值或限流。','']
 if summary.exists():
     for r in json.loads(summary.read_text()):
-        lines += ['## 并发 '+str(r['concurrency']), '',
+        lines += ['## '+r.get('phase', '并发 '+str(r['concurrency'])), '',
           f"请求数：{r['requests']}；正常回答：{r['answered']}；提前停止：{r['stopped_early']}",
           f"正常回答首字P95：{r['answered_ttft_p95_s']} 秒；总耗时P95：{r['answered_total_p95_s']} 秒。",
-          '结果分布：'+json.dumps(r['outcomes'],ensure_ascii=False),'']
+          '结果分布：'+json.dumps(r['outcomes'],ensure_ascii=False), '客户端观察到的最高在途请求：'+str(r.get('observed_peak_client_requests')), '限流边界是否通过：'+str(r.get('quota_boundary_pass','不适用')), '']
     lines += ['状态answered不代表答案内容一定正确；429代表企业限流，不能据此判断模型上限。', '']
 else:
     lines += ['测试没有生成汇总，可能在启动、凭证或请求阶段失败。请查看同目录 run.log。','']
@@ -52,7 +54,12 @@ PY
 started=1
 sh scripts/pressure.sh start
 sh scripts/pressure.sh check
-sh scripts/pressure.sh token
-python3 pressure_test/load_test.py --base-url http://127.0.0.1:18200 \
-  --tokens-file pressure_test/tokens.txt --concurrency 1,2,5 --requests 5 \
-  --output "$RUN/results"
+umask 077
+docker compose -p ai_customer_pressure -f compose.pressure.yaml exec -T assistant python - <<'PYTOK' > "$RUN/tokens.txt"
+import uuid
+from app.core import Settings,issue_token
+config=Settings(); prefix='pressure-'+uuid.uuid4().hex
+for i in range(102):print(issue_token(config.secret,prefix+'-'+str(i),'tester',7200))
+PYTOK
+python3 pressure_test/night_suite.py --base-url http://127.0.0.1:18200 \
+  --tokens-file "$RUN/tokens.txt" --output "$RUN/results"
