@@ -79,6 +79,10 @@ class AnonymousIframeTests(unittest.TestCase):
         self.assertNotIn('id="login"',new.text)
         for response in (old,new):
             self.assertIn("frame-ancestors 'self' https://portal.example.com",response.headers['content-security-policy'])
+        preview=self.client.get('/widget/anonymous-demo')
+        self.assertEqual(preview.status_code,200)
+        self.assertIn('/iframe-anonymous.js',preview.text)
+        self.assertNotIn('/widget/demo-auth',preview.text)
         for url in ('/iframe.js','/iframe-anonymous.js','/widget/anonymous-frame.js'):
             self.assertEqual(self.client.get(url).status_code,200)
         self.assertEqual(self.client.get('/widget/demo-auth').status_code,404)

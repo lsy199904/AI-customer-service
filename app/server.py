@@ -33,6 +33,7 @@ MAX_BODY=16384
 STATIC={
     '/media/support-robot-b.png':('media/support-robot-b.png','image/png'),
     '/media/support-robot.png':('media/support-robot.png','image/png'),
+    '/widget/anonymous-demo':('anonymous-demo.html','text/html; charset=utf-8'),
     '/chatbot/anonymous':('anonymous-frame.html','text/html; charset=utf-8'),
     '/widget/anonymous-frame.js':('anonymous-frame.js','application/javascript; charset=utf-8'),
     '/iframe-anonymous.js':('iframe-anonymous.js','application/javascript; charset=utf-8'),
