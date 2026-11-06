@@ -35,8 +35,13 @@ async function setup({enabled=true,parent='https://portal.example',blocked=false
  vm.runInNewContext(fs.readFileSync('app/static/iframe-anonymous.js','utf8'),{
    window,URL,location:{origin:'https://portal.example'},
    document:{currentScript:{src:'https://assistant.example/iframe-anonymous.js'},readyState:'complete',
-      createElement:()=>{const e={style:{},setAttribute(){},focus(){},remove(){},contentWindow:{postMessage(){}}};elements.push(e);return e;},body:{append(){}}}});
- assert(elements[1].src.includes('/chatbot/anonymous?parent_origin='));
+      createElement:tag=>{const e={tag,style:{},setAttribute(k,v){this[k]=v;},focus(){},remove(){this.removed=true;},append(){},replaceChildren(){},attachShadow(){return {append(){}};},contentWindow:{postMessage(){}}};elements.push(e);return e;},body:{append(){}}}});
+ const frame=elements.find(e=>e.tag==='iframe'),button=elements.find(e=>e.tag==='button'),mascot=elements.find(e=>e.tag==='img');
+ assert(frame.src.includes('/chatbot/anonymous?parent_origin='));
+ assert.equal(mascot.src,'https://assistant.example/media/support-robot-b.png');
+ assert.equal(mascot.width,88);assert.equal(mascot.height,80);
+ window.SmartTITUAnonymousEmbed.open();assert.equal(frame.hidden,false);assert.equal(button['aria-expanded'],'true');
+ window.SmartTITUAnonymousEmbed.close();assert.equal(frame.hidden,true);assert.equal(button['aria-expanded'],'false');
  assert(window.SmartTITUAnonymousEmbed);assert.equal(typeof listener,'function');
  console.log('Anonymous frame: plain iframe, trusted optional bridge, own credentials, renewal dedup and failure isolation passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});
