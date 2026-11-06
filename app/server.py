@@ -33,6 +33,9 @@ MAX_BODY=16384
 STATIC={
     '/media/support-robot-b.png':('media/support-robot-b.png','image/png'),
     '/media/support-robot.png':('media/support-robot.png','image/png'),
+    '/chatbot/anonymous':('anonymous-frame.html','text/html; charset=utf-8'),
+    '/widget/anonymous-frame.js':('anonymous-frame.js','application/javascript; charset=utf-8'),
+    '/iframe-anonymous.js':('iframe-anonymous.js','application/javascript; charset=utf-8'),
     '/chatbot':('frame.html','text/html; charset=utf-8'),
     '/widget/frame.js':('frame.js','application/javascript; charset=utf-8'),
     '/widget/frame.css':('frame.css','text/css; charset=utf-8'),
@@ -167,6 +170,9 @@ def actor(request:Request,credentials:HTTPAuthorizationCredentials=Depends(beare
     if credentials is None or credentials.scheme.lower()!='bearer':
         raise APIError(401,'unauthorized','请提供登录凭证')
     claims=authenticate(service.config.secret,credentials.credentials)
+    from .anonymous import TENANT as ANONYMOUS_TENANT
+    if claims['tenant_id']==ANONYMOUS_TENANT and not service.config.anonymous_widget_enabled:
+        raise APIError(401,'unauthorized','匿名客服入口已关闭')
     if claims['tenant_id']==DEMO_TENANT and not service.config.demo_auto_login:raise APIError(401,'unauthorized','测试免填凭证入口已关闭')
     from .observability import reference
     fields={'tenant_ref':reference(service.config.secret,claims['tenant_id']),
@@ -255,7 +261,33 @@ def create_app(config=None,model=None,service=None):
         return {'status':'ready' if request.app.state.ready else 'starting'}
 
     @app.get('/widget/config',include_in_schema=False)
-    def frame_config():return JSONResponse({'frame_origins':list(config.frame_origins),'demo_auto_login':config.demo_auto_login},headers={'Cache-Control':'no-store'})
+    def frame_config():return JSONResponse({'frame_origins':list(config.frame_origins),'demo_auto_login':config.demo_auto_login,'anonymous_widget_enabled':config.anonymous_widget_enabled},headers={'Cache-Control':'no-store'})
+
+    @app.post('/widget/anonymous-auth',include_in_schema=False)
+    def anonymous_auth(request:Request):
+        if not config.anonymous_widget_enabled:raise APIError(404,'not_found','匿名客服入口未开启')
+        from .anonymous import TENANT, COOKIE, LIFETIME, PATTERN, issue_cookie, read_cookie
+        identity=read_cookie(config.secret,request.cookies.get(COOKIE,''))
+        # Only a valid token for this anonymous namespace can renew an identity
+        # when browsers block third-party cookies. IDs in query/body are ignored.
+        supplied=request.headers.get('authorization','')
+        if identity is None and supplied.startswith('Bearer '):
+            try:
+                claims=authenticate(config.secret,supplied[7:])
+                if claims['tenant_id']==TENANT and re.fullmatch(PATTERN,claims['sub']):identity=claims['sub']
+            except APIError:pass
+        identity=identity or 'anon-'+uuid4().hex
+        response=JSONResponse({'token':issue_token(config.secret,TENANT,identity,3600),'expires_in':3600},
+                              headers={'Cache-Control':'no-store','Pragma':'no-cache'})
+        secure=config.anonymous_cookie_secure or request.url.scheme=='https'
+        response.set_cookie(COOKIE,issue_cookie(config.secret,identity),max_age=LIFETIME,
+                            httponly=True,secure=secure,samesite='none' if secure else 'lax',
+                            path='/widget/anonymous-auth')
+        # Supporting browsers isolate this cookie by top-level site. Other browsers
+        # may block it; the current frame keeps its bearer only in memory.
+        if secure:response.headers['set-cookie']+='; Partitioned'
+        event('anonymous_token_issued')
+        return response
 
     @app.get('/widget/demo-auth',include_in_schema=False)
     def demo_auth(request:Request):
@@ -285,7 +317,7 @@ def create_app(config=None,model=None,service=None):
         filename,content_type=registered[path]
         headers={'Referrer-Policy':'no-referrer','Cache-Control':'no-cache'}
         if content_type.startswith('text/html'):
-            ancestors="'self'"+''.join(' '+x for x in config.frame_origins) if filename=='frame.html' else "'none'"
+            ancestors="'self'"+''.join(' '+x for x in config.frame_origins) if filename in ('frame.html','anonymous-frame.html') else "'none'"
             headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors "+ancestors
         return FileResponse(BASE/'app/static'/filename,media_type=content_type,headers=headers)
 

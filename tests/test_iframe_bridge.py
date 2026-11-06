@@ -7,6 +7,8 @@ import unittest
 class IframeBridgeTests(unittest.TestCase):
  def test_parent_and_child_bridge(self):
   self.run_script('test_iframe_bridge.js')
+ def test_anonymous_bridge(self):
+  self.run_script('test_anonymous_frame.js')
  def test_connection_deadlines(self):
   self.run_script('test_widget_connection.js')
  def run_script(self,name):

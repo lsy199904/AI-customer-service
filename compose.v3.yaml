@@ -10,6 +10,7 @@ services:
     environment:
       HOST: "${V3_HOST:-0.0.0.0}"
       PORT: "${V3_PORT:-8200}"
+      ANONYMOUS_WIDGET_ENABLED: "${ANONYMOUS_WIDGET_ENABLED:-false}"
       DEMO_AUTO_LOGIN: "true"
       SESSION_RETENTION_DAYS: "7"
       LOG_DIR: /ai_customer/var/logs

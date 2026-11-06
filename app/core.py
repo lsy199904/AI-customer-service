@@ -31,6 +31,8 @@ DEMO_TENANT='__smarttitu_demo__'
 
 @dataclass
 class Settings:
+    anonymous_cookie_secure: bool = field(default_factory=lambda:os.getenv('ANONYMOUS_COOKIE_SECURE','false').lower()=='true')
+    anonymous_widget_enabled: bool = field(default_factory=lambda:os.getenv('ANONYMOUS_WIDGET_ENABLED','false').lower()=='true')
     demo_auto_login: bool = field(default_factory=lambda:os.getenv('DEMO_AUTO_LOGIN','false').lower()=='true')
     database_url: str = field(default_factory=lambda: os.getenv('DATABASE_URL',''))
     db: str = field(default_factory=lambda: os.getenv('DATABASE_PATH', str(BASE / 'var' / 'assistant.db')))
