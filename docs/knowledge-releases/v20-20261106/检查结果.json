@@ -1,0 +1,101 @@
+{
+  "source_sha256": "2b7de47fa37e1c4697b3a668c493a3ba8752f26b2dfa044a3f6091d562444f4b",
+  "output_sha256": "c192d5d40385ddacbee19f3771222cdb2d6342d90a810aa109fccbaba07c72f7",
+  "questions_before": 348,
+  "questions_after": 345,
+  "changed_questions": [
+    15,
+    17,
+    19,
+    21,
+    22,
+    25,
+    30,
+    32,
+    34,
+    36,
+    39,
+    43,
+    46,
+    63,
+    67,
+    69,
+    73,
+    102,
+    103,
+    117,
+    118,
+    278,
+    282,
+    286,
+    304
+  ],
+  "unchanged_questions_verified": 323,
+  "removed_questions": [
+    34,
+    286,
+    304
+  ],
+  "model_records_before": 85,
+  "overseas_removed": 35,
+  "aicc_record_pending": 1,
+  "model_records_after": 49,
+  "category_counts": {
+    "103": 4,
+    "111": 2,
+    "118": 22,
+    "126": 21
+  },
+  "multimodal_channels": {
+    "火山引擎Ark": 12,
+    "腾讯国内模型": 5,
+    "硅基流动": 5
+  },
+  "images_before_embedded_files": 36,
+  "images_before_associated": 30,
+  "images_after": 21,
+  "cancelled_image_ids": [
+    "product-04",
+    "product-07",
+    "ppt-09",
+    "product-13",
+    "product-27",
+    "product-29",
+    "smarttitu-brochure",
+    "hub-03",
+    "hub-detail"
+  ],
+  "exact_duplicate_answer_groups": [
+    [
+      88,
+      138
+    ]
+  ],
+  "checks_passed": [
+    "v19原文件哈希未变",
+    "未修改问题XML逐项一致",
+    "业务流程4—13及人工联系方式原样保留",
+    "兼容接口SDK和本地代理原样保留",
+    "海外35条型号全文与XML零残留",
+    "计划能力整句或整段移除",
+    "型号参数待定保留",
+    "模型记录与分渠道计数一致",
+    "图片标识URL嵌入图同步清理",
+    "保留21图内容哈希一致",
+    "报告样例金额日期统计保留",
+    "问题编号保持原值且无重复"
+  ],
+  "layout_status": "完成143页渲染检查；139页正文像素与已逐页检查版本一致，4页重排页面另行查看；无空白页、越界或本次编辑造成的内容截断。",
+  "layout_details": {
+    "pages": 143,
+    "out_of_page_text": 0,
+    "blank_pages": 0,
+    "reviewed_reflow_pages": [
+      13,
+      14,
+      15,
+      16
+    ],
+    "pagination_adjustment": "仅将修改后的Q21、22、25短答案与来源说明成组，避免来源段落落在下一页。保持原章节分页和其余格式。"
+  }
+}

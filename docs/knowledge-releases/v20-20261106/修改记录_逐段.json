@@ -1,0 +1,941 @@
+[
+  {
+    "question": 15,
+    "title": "SmartTITU服务体系与架构",
+    "reason": "删除云边端自动协同部署的整句描述；取消包含出域控制的体系图。",
+    "evidence": "14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第3、12、16页：云边端协同、数据安全与出域控制、厂家SDK直连和多厂家AICC明确标注计划中或后续版本；销售FAQ物理第11页5.5节确认敏感信息识别与脱敏为后续版本。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 117,
+        "before": "核心设计理念包括统一接入、统一治理、统一计量、统一审计、统一运营，具体说明见问题59。云边端自动协同部署属于后续版本能力，具体开通范围以实际交付为准。",
+        "after": "核心设计理念包括统一接入、统一治理、统一计量、统一审计、统一运营，具体说明见问题59。",
+        "image_parts": []
+      },
+      {
+        "index": 118,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId28",
+            "part": "/word/media/image22.png",
+            "sha256": "7064d8313402386f8d8d415080905417cbeb6c6006b5b6db35289b55f1f3591e"
+          }
+        ]
+      },
+      {
+        "index": 119,
+        "before": "配图：product-04",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 120,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/product-04.png",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 123,
+        "before": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf；5.SmartTITU智信词元产品体系介绍在线PPT（补充资料及配图）。",
+        "after": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf；5.SmartTITU智信词元产品体系介绍在线PPT（补充资料）。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 17,
+    "title": "TITU Hub功能架构",
+    "reason": "仅取消含云边模型能力推送关系的配图；网关和运营功能文字保持不变。",
+    "evidence": "14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第3、12、16页：云边端协同、数据安全与出域控制、厂家SDK直连和多厂家AICC明确标注计划中或后续版本；销售FAQ物理第11页5.5节确认敏感信息识别与脱敏为后续版本。 产品介绍PDF物理第7页。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 132,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId29",
+            "part": "/word/media/image23.png",
+            "sha256": "28bbd983525a1e8c258efaa411ae35725d8376b09bd8f7eaecadc858a2faaddd"
+          }
+        ]
+      },
+      {
+        "index": 133,
+        "before": "配图：product-07",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 134,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/product-07.png",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 137,
+        "before": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf；5.SmartTITU智信词元产品体系介绍在线PPT（补充资料及配图）。",
+        "after": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf；5.SmartTITU智信词元产品体系介绍在线PPT（补充资料）。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 19,
+    "title": "TITU Hub核心能力-资源管理运营",
+    "reason": "仅取消旧运营看板截图：图内型号标签分辨率不足，无法准确核实并清理潜在海外型号；不裁改业务看板，保留资源管理文字。",
+    "evidence": "原ppt-09嵌入图为921×518低分辨率合成截图，放大及OCR仍不能完整辨认型号列表；按用户允许的无法准确清理先取消关联规则处理。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 146,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId10",
+            "part": "/word/media/image4.png",
+            "sha256": "f16b6f2eb1d24a85cd7a4716be44621014fd30f7d9d2cb2ed7070ec9540e0bf4"
+          }
+        ]
+      },
+      {
+        "index": 147,
+        "before": "配图：ppt-09",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 148,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/ppt-09.png",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 21,
+    "title": "TITU Edge概况",
+    "reason": "移除敏感数据自动检测、脱敏、出域审批以及自动下发更新承诺；保留IAM、权限、本地部署、日志和智能助手。",
+    "evidence": "14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第3、12、16页：云边端协同、数据安全与出域控制、厂家SDK直连和多厂家AICC明确标注计划中或后续版本；销售FAQ物理第11页5.5节确认敏感信息识别与脱敏为后续版本。 产品介绍PDF物理第12、16页及销售FAQ物理第11页：已落地管理配置留在企业侧、本地全记录和调用日志留痕；不等同于所有云端模型推理数据不出域。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 161,
+        "before": "身份与权限方面，可对接企业 IAM 系统，管理用户和 API Key 并实施细颗粒度权限控制。数据安全与出域控制方面，提供敏感数据自动检测、脱敏和出域审批流程。",
+        "after": "身份与权限方面，可对接企业 IAM 系统，管理用户和 API Key 并实施细颗粒度权限控制。支持本地部署或云上专属隔离部署，以及调用日志留痕。",
+        "image_parts": []
+      },
+      {
+        "index": 162,
+        "before": "内置网页智能助手通过自然语言支持用量分析、数据查询等操作。具体接口、账号权限及客户部署以实际配置为准。云边协同自动下发更新属于后续版本能力。",
+        "after": "内置网页智能助手通过自然语言支持用量分析、数据查询等操作。具体接口、账号权限及客户部署以实际配置为准。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 22,
+    "title": "TITU Edge功能架构",
+    "reason": "移除自动检测、脱敏、出域审批和云边自动协同；取消含模型能力推送的功能架构图。",
+    "evidence": "14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第3、12、16页：云边端协同、数据安全与出域控制、厂家SDK直连和多厂家AICC明确标注计划中或后续版本；销售FAQ物理第11页5.5节确认敏感信息识别与脱敏为后续版本。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 168,
+        "before": "身份侧可对接企业 IAM；安全侧包括敏感数据检测、脱敏与出域审批。云边自动协同属于后续版本能力。",
+        "after": "身份侧可对接企业 IAM，管理用户与 API Key，按权限隔离数据；安全治理包括调用日志采集与审计。",
+        "image_parts": []
+      },
+      {
+        "index": 169,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId30",
+            "part": "/word/media/image24.png",
+            "sha256": "486d3700dc2301105146b3f7be435f22d64b26f34270dfbd3a4c94f479b37eee"
+          }
+        ]
+      },
+      {
+        "index": 170,
+        "before": "配图：product-13",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 171,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/product-13.png",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 174,
+        "before": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf；5.SmartTITU智信词元产品体系介绍在线PPT（补充资料及配图）。",
+        "after": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf；5.SmartTITU智信词元产品体系介绍在线PPT（补充资料）。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 25,
+    "title": "TITU Edge核心能力-可信治理",
+    "reason": "移除未上线出域控制及计划中的厂家SDK直连、多厂家AICC接入；保留身份权限、配置隔离、调用日志和导出。",
+    "evidence": "14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第3、12、16页：云边端协同、数据安全与出域控制、厂家SDK直连和多厂家AICC明确标注计划中或后续版本；销售FAQ物理第11页5.5节确认敏感信息识别与脱敏为后续版本。 产品介绍PDF物理第12、16页及销售FAQ物理第11页：已落地管理配置留在企业侧、本地全记录和调用日志留痕；不等同于所有云端模型推理数据不出域。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 191,
+        "before": "TITU Edge 通过企业 IAM 对接、OIDC 身份对接、用户与 API Key 管理以及细颗粒度权限控制支撑企业治理。数据安全与出域控制包括敏感数据自动检测、脱敏和出域审批。",
+        "after": "TITU Edge 通过企业 IAM 对接、OIDC 身份对接、用户与 API Key 管理以及细颗粒度权限控制支撑企业治理。支持按权限隔离数据，并可采用本地部署或云上专属隔离部署。",
+        "image_parts": []
+      },
+      {
+        "index": 192,
+        "before": "支持调用日志审计及记录导出。机密计算为计划中能力，涉及厂家 SDK 直连、多厂家 AICC 接入等内容，具体开通范围以正式订购和交付为准。",
+        "after": "支持调用日志审计及记录导出。企业管理配置保留在企业侧或所选云上专属环境，本地调用记录可用于追溯和对账。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 30,
+    "title": "TITU Hub服务模式",
+    "reason": "删除机密模型版及AICC/TEE/远程证明的交付承诺和计划能力介绍，不再声称套餐总共四类；其可用状态移入待确认清单。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 224,
+        "before": "提供四类服务：企业基础版面向统一接入；企业专业版面向沙箱专属计算资源及较高安全需求；机密模型版采用 AICC、TEE、机密容器及远程证明方案；企业定制版支持原厂密钥、定制部署及功能需求。可选增值服务包括安全专线接入。机密计算相关能力处于计划阶段，具体开通范围以正式订购和交付为准。各项认证的适用主体、范围及有效期以对应证书为准。",
+        "after": "企业基础版面向统一接入；企业专业版面向沙箱专属计算资源及较高安全需求；企业定制版支持原厂密钥、定制部署及功能需求。可选增值服务包括安全专线接入。具体订购内容以服务订单为准；各项认证的适用主体、范围及有效期以对应证书为准。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 32,
+    "title": "平台功能架构",
+    "reason": "删除能力推送及含糊的云边协同交付描述，保留各产品职责；取消含模型能力推送的总架构图。",
+    "evidence": "14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第3、12、16页：云边端协同、数据安全与出域控制、厂家SDK直连和多厂家AICC明确标注计划中或后续版本；销售FAQ物理第11页5.5节确认敏感信息识别与脱敏为后续版本。 产品介绍PDF物理第7、13、27页图示含模型能力推送，不能作为当前自动协同已提供的依据。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 239,
+        "before": "平台功能架构涵盖模型供应商、TITU Hub、TITU Edge、TITU Work 和企业本地 AI 应用之间的模型调用、计量回传、事件上报及能力推送。Hub 承担模型供给与云端运营，Edge 承担企业侧治理；协同能力的可用范围以对应产品版本及实际交付为准。",
+        "after": "平台包含模型供应商、TITU Hub、TITU Edge、TITU Work 和企业本地 AI 应用。Hub 承担模型供给、云端运营、计量计费与对账；Edge 承担企业侧统一接入、身份权限、用量管理和调用日志审计；Work 负责业务任务编排和智能体协作。模型调用、计量回传和事件上报支撑服务使用与运营。",
+        "image_parts": []
+      },
+      {
+        "index": 240,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId34",
+            "part": "/word/media/image28.png",
+            "sha256": "56d947a8953f3a02f04bd72f7967652b98db4156c8e5ff9268b65221b700e3e4"
+          }
+        ]
+      },
+      {
+        "index": 241,
+        "before": "配图：product-27",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 242,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/product-27.png",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 34,
+    "title": "全栈安全-AICC与TEE增强参考架构",
+    "reason": "整题及配图从客户版移除；保留编号空缺，不改写为已提供的方案。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。 用户明确要求移除该增强参考方案。",
+    "removed_entire_question": true,
+    "paragraph_changes": [
+      {
+        "index": 256,
+        "before": "问题34 全栈安全-AICC与TEE增强参考架构",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 257,
+        "before": "AICC与TEE机密计算增强架构为按需选配的参考方案，包含应用客户端、TITU Edge、AICC SDK、RAG 服务、密文向量数据库、TEE 机密 CPU/GPU 集群、可信密钥服务 TKS 及远程证明等配套服务。流程涉及环境认证、公钥获取、会话密钥生成、数据加解密与推理。相关能力处于计划阶段，具体支持范围以实际订购和交付为准。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 258,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId36",
+            "part": "/word/media/image30.png",
+            "sha256": "12105b32b03e43b50d60633c1a4f3c8dc21c10df39bc9f412bf400b5587b4656"
+          }
+        ]
+      },
+      {
+        "index": 259,
+        "before": "配图：product-29",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 260,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/product-29.png",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 261,
+        "before": "原文链接：https://mcn1xz420ffv.feishu.cn/slides/WmBhsdQkOl5ccGdhB4ocGzYsn7g",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 262,
+        "before": "来源：5.SmartTITU智信词元产品体系介绍-20261009-3.pptx 在线版，物理第29页。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 263,
+        "before": "原文链接：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/docs/sources/14.SmartTITU智信词元产品体系介绍-20261020.pdf",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 264,
+        "before": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第29页。",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 36,
+    "title": "产品介绍单页",
+    "reason": "取消含100+模型数量宣传的旧单页关联；改为原有已支持能力简介，不将旧宣传图当作当前型号数量证明。",
+    "evidence": "原单页图9.智信SmartTITU单页_SC_V4.jpg含100+模型；当前清理后的文档型号记录口径与该宣传口径不同，未取得可核对的全平台现有型号明细。保留的产品职责依据产品介绍PDF第4页、原问题15、21、27。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 275,
+        "before": "SmartTITU 产品介绍单页见下图。单页展示企业大模型统一接入、模型聚合、资源与流量管理、安全治理以及云边端产品体系。具体内容以原图为准。",
+        "after": "SmartTITU 提供企业大模型统一接入、模型聚合、资源与流量管理以及安全治理。TITU Hub、TITU Edge 和 TITU Work 分别面向模型服务运营、企业侧管理与智能体工作协作。",
+        "image_parts": []
+      },
+      {
+        "index": 276,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId19",
+            "part": "/word/media/image13.png",
+            "sha256": "bc3ede8261965f293943b118be360021f66ec1d8e67e2719448230b45ee04980"
+          }
+        ]
+      },
+      {
+        "index": 277,
+        "before": "配图：smarttitu-brochure",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 278,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/smarttitu-brochure.jpg",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 279,
+        "before": "来源：9.智信SmartTITU单页_SC_V4.jpg。",
+        "after": "来源：14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第4页；9.智信SmartTITU单页_SC_V4.jpg（仅保留有依据的文字简介）。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 39,
+    "title": "套餐订购-套餐版本介绍",
+    "reason": "移除机密模型版与四种套餐的总数断言，取消包含机密模型套餐的页面截图。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 300,
+        "before": "点击顶部导航“套餐订购”查看套餐详情。手册列出企业基础版、企业专业版、机密模型版和企业定制版四种套餐，适配不同规模和安全需求。",
+        "after": "点击顶部导航“套餐订购”查看套餐详情。企业基础版、企业专业版和企业定制版面向不同的接入、安全及定制需求。具体可订购内容和开通状态以账号页面及服务订单为准。",
+        "image_parts": []
+      },
+      {
+        "index": 301,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId21",
+            "part": "/word/media/image15.png",
+            "sha256": "b79df19b2fcd2436aa170c42af8aa58f6041d7abbe1c2634881e8194ed488145"
+          }
+        ]
+      },
+      {
+        "index": 302,
+        "before": "配图：hub-03",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 303,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/hub-03.png",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 43,
+    "title": "用量统计与监控",
+    "reason": "仅移除调用明细中可见GPT型号的hub-detail截图；保留用量趋势图hub-06和全部统计使用说明。",
+    "evidence": "产品介绍PDF物理第6页标注海外模型计划中；销售FAQ物理第6页4.4节明确尚未正式开放；按用户要求删除腾讯海外全部35条接入记录。 对v19嵌入的hub-detail逐图检查，模型列显示gpt-5.2-260617；hub-06未出现海外模型名称。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 330,
+        "before": "",
+        "after": "",
+        "image_parts": [
+          {
+            "rid": "rId25",
+            "part": "/word/media/image19.png",
+            "sha256": "fa39fa0fe662da926635bcb73d4162ce8dd559959ad2c64557d7ef13d9aaa590"
+          }
+        ]
+      },
+      {
+        "index": 331,
+        "before": "配图：hub-detail",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 332,
+        "before": "图片URL：https://raw.githubusercontent.com/lsy199904/AI-customer-service/main/app/static/media/hub-detail.png",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 46,
+    "title": "安全报告内容",
+    "reason": "移除等待功能上线的加密状态核查与取证章节介绍；保留报告编号、周期、34接入点、331调用、2704.26万Token、四类零风险及499两次等原始样例数据。",
+    "evidence": "13.安全审计报告-仅供参考.pdf，物理第3—9页；第4、7页明确加密状态审计等待功能上线；其余样例统计有实测记录。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 356,
+        "before": "报告第6章的加密状态核查与取证记录待相关功能上线后提供，当前该章及运行监控指标暂无数据。报告中的风险统计仅对应所列企业及报告周期。",
+        "after": "报告中的风险统计仅对应所列企业及报告周期。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 63,
+    "title": "什么是SmartTITU－核心架构－TITU Edge：企业 AI 管理平台",
+    "reason": "同步清理重复架构问答中的自动敏感数据检测、脱敏和出域审批；改为有明确已落地依据的本地配置与日志留痕。",
+    "evidence": "14.SmartTITU智信词元产品体系介绍-20261020.pdf，物理第3、12、16页：云边端协同、数据安全与出域控制、厂家SDK直连和多厂家AICC明确标注计划中或后续版本；销售FAQ物理第11页5.5节确认敏感信息识别与脱敏为后续版本。 产品介绍PDF物理第12、16页及销售FAQ物理第11页：已落地管理配置留在企业侧、本地全记录和调用日志留痕；不等同于所有云端模型推理数据不出域。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 458,
+        "before": "• 数据安全与出域控制：敏感数据自动检测、脱敏、出域审批流程",
+        "after": "• 本地配置与调用留痕：管理配置保留在企业侧，支持本地调用记录和日志审计。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 67,
+    "title": "产品优势-丰富模型－丰富模型",
+    "reason": "去除100+数量宣传，保留国内模型类别及各型号介绍；不把本次49条记录反推为全平台模型总量。",
+    "evidence": "逐项复核问题103、111、118、126的型号记录；记录数按渠道/接入记录计数，不去重为模型家族或推断为全平台模型总数。 产品介绍PDF物理第6页及原问题67保留国内模型类别。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 487,
+        "before": "100+ 主流大模型，涵盖国内开源，国内闭源、视频、图像四大品类：",
+        "after": "模型资源涵盖国内开源、国内闭源、视频生成、图像生成等品类：",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 69,
+    "title": "产品优势-丰富模型－企业安全",
+    "reason": "删除TEE内存加密、远程证明和物理隔离资源池的机密服务承诺；保留TLS、应用层加密、租户隔离、沙箱和日志。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 509,
+        "before": "• 机密计算：SmartTITU机密模型服务提供TEE内存加密、远程证明、物理隔离资源池",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 73,
+    "title": "SmartTITU 名词解释",
+    "reason": "保留AICC、TEE等通用术语定义，但删除“平台提供可下载报告和离线验证”的具体服务承诺；不改动API Key、OpenAI调用、aihub-cli等词条。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。 通用术语不作为SmartTITU已开通能力证明。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 588,
+        "before": "Remote Attestation，机密计算的信任验证机制。平台在完成机密部署后，提供可下载的远程证明报告，用户可使用离线工具自行解析和验证，确认推理运行环境确实在TEE可信执行环境中启动、配置未被篡改。远程证明将安全信任从依赖平台承诺升级为技术可自行验证。",
+        "after": "Remote Attestation，远程证明，是机密计算中用于验证运行环境完整性与可信性的技术机制。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 102,
+    "title": "视频生成模型",
+    "reason": "视频接入记录由5条改为4条，与问题103客户版清单保持一致。",
+    "evidence": "逐项复核问题103、111、118、126的型号记录；记录数按渠道/接入记录计数，不去重为模型家族或推断为全平台模型总数。 AICC edition单条记录的当前交付状态与机密模型版冲突，暂移入待确认清单，非因时长和比例待定而删除。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 773,
+        "before": "Seedance系列视频生成模型支持文生视频、图生视频、视频编辑及可选音频生成。文档型号表列出5条接入记录，具体模型ID和名称见“视频生成模型-模型列表”。",
+        "after": "Seedance系列视频生成模型支持文生视频、图生视频、视频编辑及可选音频生成。本客户版列出4条模型接入记录，具体模型ID和名称见“视频生成模型-模型列表”。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 103,
+    "title": "视频生成模型－模型列表",
+    "reason": "保留4条普通Seedance型号及其原始待定参数；AICC edition单条记录暂从客户版清单移出，等待确认所属服务、部署位置与可调用授权。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。 原文档中心型号表确有AICC edition记录，但现有材料无法区分其是否已交付、是否与计划中的Edge机密接入属于同一范围；不判定其必然未上线。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 782,
+        "before": "模型ID：doubao-seedance-2.0；名称：Seedance 2.0 (AICC edition)；输入：文本、图像、视频；输出：视频；时长：待定；比例：待定。",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 117,
+    "title": "多模态模型",
+    "reason": "多模态记录57→22、渠道4→3；不再介绍腾讯海外模型。",
+    "evidence": "产品介绍PDF物理第6页标注海外模型计划中；销售FAQ物理第6页4.4节明确尚未正式开放；按用户要求删除腾讯海外全部35条接入记录。 逐项复核问题103、111、118、126的型号记录；记录数按渠道/接入记录计数，不去重为模型家族或推断为全平台模型总数。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 855,
+        "before": "文档中心列出57条多模态模型接入记录，分为火山引擎Ark、腾讯国内模型、腾讯海外模型和硅基流动。各渠道的具体模型ID、名称及页面提供的输入输出信息见“多模态模型-模型列表”；不同渠道的同名模型不得混用ID。",
+        "after": "本客户版保留22条多模态模型接入记录，来自火山引擎Ark、腾讯国内模型和硅基流动3个渠道。各渠道的具体模型ID、名称及页面提供的输入输出信息见“多模态模型-模型列表”；不同渠道的同名模型不得混用ID。",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 118,
+    "title": "多模态模型－模型列表",
+    "reason": "删除腾讯海外渠道标题及全部35条型号；保留Ark12、腾讯国内5、硅基流动5条，ID及参数不改。",
+    "evidence": "产品介绍PDF物理第6页标注海外模型计划中；销售FAQ物理第6页4.4节明确尚未正式开放；按用户要求删除腾讯海外全部35条接入记录。 逐项复核问题103、111、118、126的型号记录；记录数按渠道/接入记录计数，不去重为模型家族或推断为全平台模型总数。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 879,
+        "before": "腾讯海外模型：35条接入记录。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 880,
+        "before": "模型ID：gpt-5.6-sol；名称：gpt-5.6-sol。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 881,
+        "before": "模型ID：gpt-5.6-terra；名称：gpt-5.6-terra。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 882,
+        "before": "模型ID：gpt-5.6-luna；名称：gpt-5.6-luna。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 883,
+        "before": "模型ID：gpt-6-astra；名称：gpt-6-astra。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 884,
+        "before": "模型ID：gpt-5.5；名称：gpt-5.5。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 885,
+        "before": "模型ID：gpt-5.4-pro；名称：gpt-5.4-pro。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 886,
+        "before": "模型ID：gpt-5.4；名称：gpt-5.4。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 887,
+        "before": "模型ID：gpt-5.4-nano；名称：gpt-5.4-nano。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 888,
+        "before": "模型ID：gpt-5.4-mini；名称：gpt-5.4-mini。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 889,
+        "before": "模型ID：gpt-5.3-codex；名称：gpt-5.3-codex。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 890,
+        "before": "模型ID：gpt-5.1；名称：gpt-5.1。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 891,
+        "before": "模型ID：gpt-5；名称：gpt-5。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 892,
+        "before": "模型ID：gpt-5-mini；名称：gpt-5-mini。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 893,
+        "before": "模型ID：gpt-5-nano；名称：gpt-5-nano。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 894,
+        "before": "模型ID：gpt-4.1；名称：gpt-4.1。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 895,
+        "before": "模型ID：gemini-3.8-flash；名称：gemini-3.8-flash。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 896,
+        "before": "模型ID：gemini-3.7-flash；名称：gemini-3.7-flash。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 897,
+        "before": "模型ID：gemini-3.6-flash；名称：gemini-3.6-flash。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 898,
+        "before": "模型ID：gemini-3.5-flash-lite；名称：gemini-3.5-flash-lite。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 899,
+        "before": "模型ID：gemini-3.5-flash；名称：gemini-3.5-flash。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 900,
+        "before": "模型ID：gemini-3.1-flash-lite；名称：gemini-3.1-flash-lite。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 901,
+        "before": "模型ID：gemini-3.1-pro-preview；名称：gemini-3.1-pro-preview。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 902,
+        "before": "模型ID：gemini-3-flash-preview；名称：gemini-3-flash-preview。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 903,
+        "before": "模型ID：gk-4-1-fast-reasoning；名称：gk-4-1-fast-reasoning。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 904,
+        "before": "模型ID：gk-4.1-fast-non-reasoning；名称：gk-4.1-fast-non-reasoning。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 905,
+        "before": "模型ID：gk-4-20-non-reasoning；名称：gk-4-20-non-reasoning。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 906,
+        "before": "模型ID：gk-4-20-reasoning；名称：gk-4-20-reasoning。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 907,
+        "before": "模型ID：gk-4.3；名称：gk-4.3。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 908,
+        "before": "模型ID：cd-fable-5；名称：cd-fable-5。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 909,
+        "before": "模型ID：cd-opus-5；名称：cd-opus-5。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 910,
+        "before": "模型ID：cd-sonnet-5；名称：cd-sonnet-5。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 911,
+        "before": "模型ID：cd-opus-4.8；名称：cd-opus-4.8。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 912,
+        "before": "模型ID：cd-opus-4.7；名称：cd-opus-4.7。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 913,
+        "before": "模型ID：cd-sonnet-4.6；名称：cd-sonnet-4.6。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 914,
+        "before": "模型ID：cd-opus-4.6；名称：cd-opus-4.6。",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 278,
+    "title": "产品计费－企业服务方案",
+    "reason": "删除机密模型服务整行，保留企业服务版的标准API接入、支持及报价联系说明，不改金额或计费规则。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 1859,
+        "before": "机密模型服务 | 金融、政企等对安全要求极高的客户 | TEE 机密计算、物理隔离资源池、专属运维",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 282,
+    "title": "数据安全－应用层加密",
+    "reason": "仅去除“只在模型计算节点可信环境中解密”的位置承诺；保留应用层加密、密文传输、代理使用说明。",
+    "evidence": "原问题256本地代理工作原理写为远端AI网关鉴权及解密，原问题282写为仅在模型计算节点可信环境解密；移除未能一致确认的解密位置承诺，保留应用层加密、代理和SDK调用技术内容。",
+    "removed_entire_question": false,
+    "paragraph_changes": [
+      {
+        "index": 1889,
+        "before": "• 仅在模型计算节点的可信环境中解密",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 286,
+    "title": "数据安全－机密计算",
+    "reason": "整题暂从客户版移出，保留编号空缺；不把TEE机密模型服务擅自改成已提供或确定未上线。",
+    "evidence": "产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。",
+    "removed_entire_question": true,
+    "paragraph_changes": [
+      {
+        "index": 1911,
+        "before": "问题286 数据安全－机密计算",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 1912,
+        "before": "原文链接：https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/security-compliance/sec-data/95",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 1913,
+        "before": "来源：文档中心－安全合规－数据安全",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 1914,
+        "before": "SmartTITU机密模型服务基于 TEE 可信执行环境，提供最高等级的安全保障：",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 1915,
+        "before": "• 内存加密：数据在使用中也保持加密（内存加密技术）",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 1916,
+        "before": "• 远程证明：可验证运行时环境完整性，确保代码未被篡改",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 1917,
+        "before": "• 物理隔离：专属资源池，管理员无法访问，物理层面隔离",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 1918,
+        "before": "• 合规背书：满足金融、政企等高安全等级客户的需求",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  },
+  {
+    "question": 304,
+    "title": "第三方SDK收集个人信息清单",
+    "reason": "第三方SDK隐私清单整体暂从客户问答版移出，待产品与法务核对：含Azure OpenAI服务提供描述及未确认TEE/推理节点解密承诺。未改写官方法律文本，其他OpenAI兼容SDK、接口示例完整保留。",
+    "evidence": "产品介绍PDF物理第6页标注海外模型计划中；销售FAQ物理第6页4.4节明确尚未正式开放；按用户要求删除腾讯海外全部35条接入记录。 产品介绍PDF物理第16页将Edge机密计算列为计划中，但第12、23、29页、Hub手册第3页及销售FAQ第10页5.3—5.4节存在适配、套餐和已交付的相反表述；无法据此确定当前可用版本，冲突内容暂不进入客户答案。 原问题304是实际第三方接入与数据处理披露，不能把其写成泛化技术说明，也不宜擅自拼接一份不完整的合规清单。",
+    "removed_entire_question": true,
+    "paragraph_changes": [
+      {
+        "index": 2112,
+        "before": "问题304 第三方SDK收集个人信息清单",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2113,
+        "before": "原文链接：https://sf2h3b8m07shcqb2s0tts.apigateway-cn-guangzhou.volceapi.com/docs/legal-terms/terms-sdk-personal-info-list/97",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2114,
+        "before": "来源：文档中心－法律条款－第三方SDK收集个人信息清单",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2115,
+        "before": "为保障中企通信SmartTITU智信词元网站（相关功能的实现和应用的安全稳定运行，我们会接入由第三方提供的软件开发包（SDK）实现该目的。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2116,
+        "before": "我们会对第三方SDK进行严格的安全检测，并要求合作伙伴采取严格的措施来保护您的个人数据。在满足新的服务需求及业务功能变更时，我们可能会调整我们接入的第三方SDK，并及时在本目录中向您公开说明接入第三方SDK的最新情况。请注意，第三方SDK可能因为版本升级、策略调整等原因导致数据类型存在一些变化，请以其公示的官方说明为准。",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2117,
+        "before": "第三方名称：腾讯云大模型服务平台所属机构：Tencent Cloud International Pte. Ltd.使用场景：大模型 API 调用、智能体推理使用目的：在可信执行环境内完成模型推理，为用户输入的敏感数据提供端到端加密保护，防止业务明文在链路与推理环节被未授权读取务收集个人信息类型：用户调用 API 时输入的信息（包括文字、图片、视频、按键操作等）、账号标识（腾讯云 UIN）、设备与网络信息、服务调用与审计日志第三方隐私政策链接 https://privacy.qq.com/document/preview/91d5fd3c98ce4468ae462ac59233bba2",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2118,
+        "before": "第三方名称：阿里云百炼大模型服务平台所属机构：阿里云计算有限公司使用场景：大模型 API 加密调用使用目的：基于 TEE 硬件级机密计算构建端到端加密链路，在机密推理节点内完成解密与推理，保障提示词在云端推理过程中的隐私与安全收集个人信息类型：用户输入并上传的提示词、对话消息等内容、API-Key 及账号信息、调用日志；平台不留存明文提示词、模型输出与加密密钥第三方隐私政策链接： https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20230801173543354/20230801173543354.html",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2119,
+        "before": "第三方名称：火山方舟大模型服务平台所属机构：北京火山引擎科技有限公司使用场景：大模型 API 调用（开启应用层端到端加密功能）使用目的：开启后由平台为推理实例下发唯一身份认证证书，客户数据以该证书公钥加密，仅持有对应私钥的沙箱环境可解密，保障数据端到端安全、防止落入错误接收端收集个人信息类型：用户输入内容（提示词、上传文件/图片/音视频/文本）、 账号与注册信息、使用数据与日志；第三方隐私政策链接：https://www.volcengine.com/docs/6256/64902",
+        "after": "",
+        "image_parts": []
+      },
+      {
+        "index": 2120,
+        "before": "第三方名称：Azure OpenAI Service SDK所属机构：Microsoft Corporation使用场景：企业级 App 内通过 Azure 调用 OpenAI 模型使用目的：提供 Azure OpenAI 推理服务，数据传输与静态均加密，支持客户管理密钥（CMK）收集个人信息类型：Prompts / 输入输出、Embeddings、微调文件（数据隔离在租户内，不用于训练）第三方隐私政策链接：https://learn.microsoft.com/zh-cn/azure/foundry/responsible-ai/openai/data-privacy",
+        "after": "",
+        "image_parts": []
+      }
+    ]
+  }
+]
