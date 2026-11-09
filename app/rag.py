@@ -86,7 +86,9 @@ def post_json(url,payload,key,timeout=60,stage='retrieval'):
     started=time.monotonic()
     event('retrieval_model_started',model_stage=stage)
     try:
-        result=request_json(url,payload,key,timeout)
+        from .cost_metrics import inference
+        with inference(stage,payload.get('model',''), {'input_count':len(payload.get('input',[])), 'document_count':len(payload.get('documents',[]))}):
+            result=request_json(url,payload,key,timeout)
         event('retrieval_model_completed',model_stage=stage,elapsed_ms=round((time.monotonic()-started)*1000,2))
         return result
     except Exception as error:

@@ -286,11 +286,21 @@ class RequestTrace:
         self.time=datetime.now(ZoneInfo(os.getenv('LOG_TIMEZONE','Asia/Shanghai'))).isoformat(timespec='milliseconds')
         self.started=time.monotonic()
         self.lock=threading.RLock();self.closed=False;self.steps=[];self.raw_steps=[];self.truncated=False
-        self.input={};self.output={};self.metadata={};self.failures=[]
+        self.input={};self.output={};self.metadata={};self.failures=[];self.cost_calls=[]
         self.content=os.getenv('LOG_DEBUG_CONTENT','false').lower()=='true'
 
     def record(self,name,fields,level='INFO'):
         with self.lock:
+            if name in ('inference_cost','inference_cost_started'):
+                call={k:v for k,v in fields.items() if k in ('call_id','stage','model','purpose','status','elapsed_ms','usage','resources','workload')}
+                existing=next((r for r in self.cost_calls if r.get('call_id')==call.get('call_id') and call.get('call_id')),None)
+                if existing is None:self.cost_calls.append(call)
+                else:existing.update(call)
+                if self.closed:
+                    try:
+                        from .cost_metrics import summarize,save_request
+                        save_request(self.time,self.metadata,self.output,summarize(self.cost_calls))
+                    except Exception:pass
             if self.closed:return
             for key in ('http_request_id','request_id','session_ref','window_id','tenant_ref','user_ref','question_category'):
                 if fields.get(key) is not None:self.metadata[key]=fields[key]
@@ -326,6 +336,13 @@ class RequestTrace:
                             '企业标识':self.metadata.get('tenant_ref'),'用户标识':self.metadata.get('user_ref'),
                             '问题分类':self.metadata.get('question_category')}
             safe_output={key:value for key,value in self.output.items() if key!='最终响应'}
+            from .cost_metrics import summarize,save_request
+            summary=summarize(self.cost_calls)
+            safe_output['用量统计']={k:v for k,v in summary.items() if k!='calls'}
+            try:
+                save_request(self.time,self.metadata,self.output,summary)
+            except Exception:
+                safe_output['用量报告写入失败']=True
             if self.failures:
                 recovered=self.output.get('状态')=='answered' and any(step.get('事件')=='answer_repair_completed' for step in self.steps)
                 safe_output['已恢复异常' if recovered else '失败节点']=self.failures[0]

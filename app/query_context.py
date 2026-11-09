@@ -54,8 +54,10 @@ def resolve(model,question,history):
     if not users or not dependent(question) or model is None:return fallback
     previous=next((h.get('response') or {} for h in reversed(history) if h['role']=='assistant'),{})
     titles=[c.get('section_title') or c.get('title','') for c in previous.get('citations',[])]
-    raw=model.complete([{'role':'system','content':PROMPT},{'role':'user','content':json.dumps({
-        'question':question,'recent_user_questions':users,'previous_source_titles':titles},ensure_ascii=False)}])
+    from .cost_metrics import purpose
+    with purpose('query_context'):
+        raw=model.complete([{'role':'system','content':PROMPT},{'role':'user','content':json.dumps({
+            'question':question,'recent_user_questions':users,'previous_source_titles':titles},ensure_ascii=False)}])
     data=json.loads(re.sub(r'^```(?:json)?\s*|\s*```$','',raw.strip()))
     if not isinstance(data,dict) or data.get('kind') not in ('independent','followup','clarify'):raise ValueError('invalid question resolution')
     if data['kind']=='clarify':data['question']=question

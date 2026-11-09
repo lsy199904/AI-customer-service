@@ -276,49 +276,59 @@ class Model:
             raise
 
     def _complete_request(self,messages,on_delta=None):
-        from langchain.chat_models import init_chat_model
-        from .transport import client,async_client
+        from .cost_metrics import usage_counts, model_purpose
         from .observability import event
-        options={}
-        if 'qwen3' in self.config.model.lower() and os.getenv('MODEL_DISABLE_THINKING','true').lower()=='true':
-            options['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
-        from .deadlines import remaining
-        from .evidence_selection import model_options
-        call_options=model_options() or {}
-        model=init_chat_model(self.config.model,model_provider='openai',base_url=self.config.model_url,
-            api_key=self.config.model_key,http_client=client(),http_async_client=async_client(),timeout=remaining(call_options.get('timeout',45)),max_retries=0,
-            max_tokens=call_options.get('max_tokens',int(os.getenv('MODEL_MAX_TOKENS','2048'))),temperature=0.1,http_socket_options=(),**options)
-        from langsmith import tracing_context
-        started=time.monotonic();size=0;chunks=[];response=None
-        with tracing_context(enabled=False):
-            if on_delta is None:
-                response=model.invoke(messages)
-                text=response.content
-            else:
-                stream=model.stream(messages)
-                try:
-                    for chunk in stream:
-                        response=chunk if response is None else response+chunk
-                        if not isinstance(chunk.content,str):raise RuntimeError('模型文本响应无效')
-                        if not chunk.content:continue
-                        size+=len(chunk.content.encode('utf-8'))
-                        if size>1024*1024:raise RuntimeError('模型响应过大')
-                        if not chunks:event('model_first_token',elapsed_ms=round((time.monotonic()-started)*1000,2))
-                        chunks.append(chunk.content);on_delta(chunk.content)
-                finally:
-                    stream.close()
-                text=''.join(chunks)
-        if not isinstance(text,str) or not text.strip():raise RuntimeError('模型未返回文本')
-        if len(text.encode('utf-8'))>1024*1024:raise RuntimeError('模型响应过大')
-        metadata=getattr(response,'response_metadata',{}) or {}
-        finish=metadata.get('finish_reason')
-        if finish in ('stop','length','content_filter','tool_calls'):
-            event('model_finish',level='WARNING' if finish!='stop' else 'INFO',finish_reason=finish)
-        usage=getattr(response,'usage_metadata',None)
-        if isinstance(usage,dict):
-            counts={key:usage[key] for key in ('input_tokens','output_tokens','total_tokens') if isinstance(usage.get(key),int)}
-            event('model_usage',**counts)
-        return text
+        response=None; status='failed'; accounting_started=time.monotonic()
+        purpose_name=model_purpose(on_delta is not None)
+        from uuid import uuid4
+        cost_call_id=uuid4().hex
+        event('inference_cost_started',call_id=cost_call_id,stage='llm',model=self.config.model,purpose=purpose_name,status='running',elapsed_ms=0,usage=None)
+        try:
+            from langchain.chat_models import init_chat_model
+            from .transport import client,async_client
+            from .observability import event
+            options={}
+            if 'qwen3' in self.config.model.lower() and os.getenv('MODEL_DISABLE_THINKING','true').lower()=='true':
+                options['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
+            from .deadlines import remaining
+            from .evidence_selection import model_options
+            call_options=model_options() or {}
+            model=init_chat_model(self.config.model,model_provider='openai',base_url=self.config.model_url,
+                api_key=self.config.model_key,http_client=client(),http_async_client=async_client(),timeout=remaining(call_options.get('timeout',45)),max_retries=0,
+                max_tokens=call_options.get('max_tokens',int(os.getenv('MODEL_MAX_TOKENS','2048'))),temperature=0.1,stream_usage=True,http_socket_options=(),**options)
+            from langsmith import tracing_context
+            started=time.monotonic();size=0;chunks=[]
+            with tracing_context(enabled=False):
+                if on_delta is None:
+                    response=model.invoke(messages)
+                    text=response.content
+                else:
+                    stream=model.stream(messages)
+                    try:
+                        for chunk in stream:
+                            response=chunk if response is None else response+chunk
+                            if not isinstance(chunk.content,str):raise RuntimeError('模型文本响应无效')
+                            if not chunk.content:continue
+                            size+=len(chunk.content.encode('utf-8'))
+                            if size>1024*1024:raise RuntimeError('模型响应过大')
+                            if not chunks:event('model_first_token',elapsed_ms=round((time.monotonic()-started)*1000,2))
+                            chunks.append(chunk.content);on_delta(chunk.content)
+                    finally:
+                        stream.close()
+                    text=''.join(chunks)
+            if not isinstance(text,str) or not text.strip():raise RuntimeError('模型未返回文本')
+            if len(text.encode('utf-8'))>1024*1024:raise RuntimeError('模型响应过大')
+            metadata=getattr(response,'response_metadata',{}) or {}
+            finish=metadata.get('finish_reason')
+            if finish in ('stop','length','content_filter','tool_calls'):
+                event('model_finish',level='WARNING' if finish!='stop' else 'INFO',finish_reason=finish)
+            status='completed'
+            return text
+        finally:
+            event('inference_cost',call_id=cost_call_id,stage='llm',model=self.config.model,
+                  purpose=purpose_name,status=status,
+                  elapsed_ms=round((time.monotonic()-accounting_started)*1000,2),
+                  usage=usage_counts(response))
 
 class Service:
     def __init__(self, config, model=None):

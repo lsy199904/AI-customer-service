@@ -28,7 +28,9 @@ def semantic_decision(model,question,answer,history,evidence,candidates,guidance
         'business_flows':FLOW_TITLES,
         'sources':[{'id':r['id'],'title':r['title'],'content':r['content']} for r in evidence],
         'candidate_images':[{'id':r['id'],'title':r['title'],'flow_ids':r.get('flow_ids',[]),'kind':r.get('kind'),'purpose':r.get('purpose')} for r in candidates]}
-    raw=model.complete([{'role':'system','content':PROMPT},{'role':'user','content':json.dumps(payload,ensure_ascii=False)}])
+    from .cost_metrics import purpose
+    with purpose('image_policy'):
+        raw=model.complete([{'role':'system','content':PROMPT},{'role':'user','content':json.dumps(payload,ensure_ascii=False)}])
     raw=re.sub(r'^```(?:json)?\s*|\s*```$','',raw.strip())
     data=json.loads(raw)
     return validate_decision(data,evidence,candidates)
