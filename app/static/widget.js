@@ -57,7 +57,9 @@
   function apiURL(path) {
     const base = new URL(config.apiBase, location.href);
     if (!['http:', 'https:'].includes(base.protocol)) throw new Error('服务地址无效');
-    return base.href.replace(/\/$/, '') + path;
+    const prefix='/smart-bot';
+    const relative=path.startsWith(prefix+'/')?path:prefix+path;
+    return base.origin + relative;
   }
   async function token() {
     if (config.getToken) {
@@ -302,10 +304,10 @@
   function safeImage(value) {
     if(typeof value!=='string')return null;
     if(/^data:image\/(?:png|jpeg|webp|gif);base64,[a-zA-Z0-9+/=]+$/.test(value)&&value.length<2*1024*1024)return value;
-    if(/^\/media\/[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value)) {
+    if(/^\/(?:smart-bot\/)?media\/[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value)) {
       try{return apiURL(value);}catch{return null;}
     }
-    try {const url=new URL(value),base=new URL(config.apiBase);return url.origin===base.origin&&/^\/media\/[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(url.pathname)&&!url.search&&!url.username&&!url.password?url.href:null;}catch{return null;}
+    try {const url=new URL(value),base=new URL(config.apiBase);return url.origin===base.origin&&/^\/(?:smart-bot\/)?media\/[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(url.pathname)&&!url.search&&!url.username&&!url.password?apiURL(url.pathname):null;}catch{return null;}
   }
   function renderImages(parent,images) {
     const group=element('div','reply-images'),seen=new Set();
@@ -375,18 +377,18 @@
     setBusy(true); transcript.replaceChildren();quick.replaceChildren();clearStatus();
     transcript.append(element('div','loading','正在连接客服…'));
     try {
-      const boot=await request('/v1/bootstrap');
+      const boot=await request('/smart-bot/v1/bootstrap');
       config.streaming=boot.capabilities?.streaming===true;
       linkPolicy={hosts:Array.isArray(boot.link_policy?.hosts)?boot.link_policy.hosts:[]};
       if (version !== generation) return;
       idleSeconds=boot.idle_timeout_seconds || 1800;
       // Restore only the most recent session belonging to the authenticated user, as verified by the backend.
       transcript.firstChild.textContent='正在加载您的会话…';
-      const sessions=await request('/v1/sessions');
+      const sessions=await request('/smart-bot/v1/sessions');
       if (version !== generation) return;
       sessionId=sessions.items?.[0]?.session_id || null;
       let history={items:[]};
-      if (sessionId) {transcript.firstChild.textContent='正在恢复历史对话…';history=await request(`/v1/sessions/${sessionId}/messages`);}
+      if (sessionId) {transcript.firstChild.textContent='正在恢复历史对话…';history=await request(`/smart-bot/v1/sessions/${sessionId}/messages`);}
       if (version !== generation) return;
       transcript.replaceChildren();
       transcript.append(element('div','welcome-label','SMARTTITU · 企业智能服务'));
@@ -418,10 +420,10 @@
     const loading=element('div','loading','正在为您解答…');transcript.append(loading);scroll();
     try {
       if (!sessionId) {
-        const created=await request('/v1/sessions','POST',{context:{page_path:location.pathname.slice(0,200),page_title:document.title.slice(0,200)}},rid);
+        const created=await request('/smart-bot/v1/sessions','POST',{context:{page_path:location.pathname.slice(0,200),page_title:document.title.slice(0,200)}},rid);
         if (v!==generation) return;sessionId=created.session_id;
       }
-      const path=`/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
+      const path=`/smart-bot/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
       const r=config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
         const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
@@ -451,7 +453,7 @@
     const back=element('button','source-back','← 返回对话');back.onclick=()=>{sourcePane.hidden=true;input.focus();};sourcePane.append(back);back.focus();
     const content=element('div','source-content','正在加载来源…');sourcePane.append(content);
     try {
-      const r=await request('/v1/sources/'+encodeURIComponent(source.id));
+      const r=await request('/smart-bot/v1/sources/'+encodeURIComponent(source.id));
       if(v!==generation) return;
       content.replaceChildren(element('h3','',sourceLabel(r)),element('div','meta',[r.document_title || r.source_file,r.version && r.version!=='未标注' ? r.version : ''].filter(Boolean).join(' · ')),element('p','',String(r.content || '').split('\n').filter(line=>!/^\s*(?:图片\s*URL|原文链接|来源)\s*[:：]/i.test(line)).join('\n').replace(/https?:\/\/raw\.githubusercontent\.com\/[^\s<>]+/gi,'[内部地址已隐藏]')));
     } catch(err) {if(v===generation) content.textContent=err.message;}
@@ -469,7 +471,7 @@
       const more=element('button','source older','加载更早消息');more.onclick=async()=>{
         const v=generation;more.disabled=true;
         try {
-          const older=await request(`/v1/sessions/${sessionId}/messages?before=${encodeURIComponent(data.next_before)}`);
+          const older=await request(`/smart-bot/v1/sessions/${sessionId}/messages?before=${encodeURIComponent(data.next_before)}`);
           if(v===generation)renderHistory(older,true);
         } catch(err) {if(v===generation)notice(err.message);more.disabled=false;}
       };transcript.prepend(more);
@@ -482,7 +484,7 @@
     const back=element('button','source-back','← 返回对话');back.onclick=()=>{sourcePane.hidden=true;input.focus();};sourcePane.append(back,element('h3','','历史会话'));back.focus();
     const list=element('div','source-content','正在加载…');sourcePane.append(list);
     try {
-      const data=await request('/v1/sessions');if(v!==generation)return;
+      const data=await request('/smart-bot/v1/sessions');if(v!==generation)return;
       list.replaceChildren();if(!data.items?.length)list.textContent='还没有保存的会话。';
       for(const item of data.items || []) {
         const row=element('div','contact');
@@ -490,7 +492,7 @@
         const load=element('button','source','打开');load.onclick=async()=>{
           if(busy)return;setBusy(true);
           try {
-            const history=await request(`/v1/sessions/${item.session_id}/messages`);if(v!==generation)return;
+            const history=await request(`/smart-bot/v1/sessions/${item.session_id}/messages`);if(v!==generation)return;
             sessionId=item.session_id;transcript.replaceChildren();renderHistory(history);sourcePane.hidden=true;retry=null;clearStatus();scroll();
           } catch(err){if(v===generation)notice(err.message);}
           finally{if(v===generation)setBusy(false);}
@@ -500,7 +502,7 @@
           if(!armed){armed=true;remove.textContent='确认删除';return;}
           remove.disabled=true;
           try {
-            await request(`/v1/sessions/${item.session_id}`,'DELETE');if(v!==generation)return;
+            await request(`/smart-bot/v1/sessions/${item.session_id}`,'DELETE');if(v!==generation)return;
             row.remove();if(sessionId===item.session_id){sessionId=null;retry=null;transcript.replaceChildren();message('assistant','会话已删除。您可以开始新对话。');}
           } catch(err){if(v===generation){remove.disabled=false;remove.textContent='删除失败，重试';}}
         };
@@ -524,7 +526,7 @@
     if(input) input.value='';if(status) clearStatus();close(false);
   }
   function brandLogo(className) {
-    const img=element('img',className);img.src=new URL('/media/smarttitu-logo.png',config.apiBase).href;img.alt='SmartTITU';img.width=150;img.height=40;return img;
+    const img=element('img',className);img.src=new URL('/smart-bot/media/smarttitu-logo.png',config.apiBase).href;img.alt='SmartTITU';img.width=150;img.height=40;return img;
   }
   function mount() {
     if(host) return;
@@ -545,7 +547,7 @@
     `;
     root.append(css);
     launcher=element('button','launch');launcher.type='button';launcher.setAttribute('aria-label','打开智能客服');launcher.setAttribute('aria-expanded','false');launcher.setAttribute('aria-controls','smarttitu-panel');
-    const mascot=element('img','launch-mascot');mascot.src=new URL('/media/support-robot-b.png',config.apiBase).href;mascot.alt='';mascot.width=88;mascot.height=80;launcher.title='智能客服';mascot.onerror=()=>{const fallback=roleAvatar('assistant');fallback.classList.add('launch-fallback');launcher.replaceChildren(fallback);};launcher.append(mascot);launcher.onclick=()=>opened?close():open();root.append(launcher);
+    const mascot=element('img','launch-mascot');mascot.src=new URL('/smart-bot/media/support-robot-b.png',config.apiBase).href;mascot.alt='';mascot.width=88;mascot.height=80;launcher.title='智能客服';mascot.onerror=()=>{const fallback=roleAvatar('assistant');fallback.classList.add('launch-fallback');launcher.replaceChildren(fallback);};launcher.append(mascot);launcher.onclick=()=>opened?close():open();root.append(launcher);
     panel=element('section','panel');panel.id='smarttitu-panel';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','SmartTITU智能客服');
     const header=element('header');const title=element('div');title.className='brand-heading';title.append(brandLogo('header-logo'),element('div','subtitle','智能客服 · 产品答疑与接入指引'));
     const actions=element('div','head-actions');

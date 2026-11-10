@@ -5,7 +5,7 @@ try{localStorage.removeItem('smarttitu-v3-user-id');}catch{}
 async function getToken(){
   if(cachedToken&&Date.now()<expires-60000)return cachedToken;
   if(!pending)pending=(async()=>{
-    const response=await fetch('/widget/demo-auth',{cache:'no-store',credentials:'same-origin',headers:cachedToken?{Authorization:'Bearer '+cachedToken}:{},signal:AbortSignal.timeout(10000)});
+    const response=await fetch('/smart-bot/widget/demo-auth',{cache:'no-store',credentials:'same-origin',headers:cachedToken?{Authorization:'Bearer '+cachedToken}:{},signal:AbortSignal.timeout(10000)});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error?.message||'客服暂时不可用，请稍后重试');
     if(typeof data.token!=='string'||!data.token)throw new Error('客服连接失败，请稍后重试');

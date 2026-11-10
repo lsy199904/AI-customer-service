@@ -17,6 +17,7 @@ from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
 import anyio
+from .url_prefix import public_payload
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -231,6 +232,8 @@ def create_app(config=None,model=None,service=None):
                 docs_url=None,redoc_url=None,openapi_url=None)
     app.state.ready=False
     app.add_middleware(RequestBoundary,config=config)
+    from .url_prefix import PublicPrefix
+    app.add_middleware(PublicPrefix)
 
     @app.exception_handler(APIError)
     async def api_error(request,exc):
@@ -331,10 +334,10 @@ def create_app(config=None,model=None,service=None):
     def media(name:str,service=Depends(current_service)):return asset('/media/'+name,service)
 
     @app.get('/v1/bootstrap',tags=['assistant'])
-    def bootstrap(user=Depends(actor),service=Depends(current_service)):return service.bootstrap()
+    def bootstrap(user=Depends(actor),service=Depends(current_service)):return public_payload(service.bootstrap())
 
     @app.get('/v1/sessions',tags=['sessions'])
-    def sessions(user=Depends(actor),service=Depends(current_service)):return service.sessions(user)
+    def sessions(user=Depends(actor),service=Depends(current_service)):return public_payload(service.sessions(user))
 
     @app.post('/v1/sessions',status_code=201,tags=['sessions'])
     def create(body:SessionBody,user=Depends(actor),service=Depends(current_service)):
@@ -342,11 +345,11 @@ def create_app(config=None,model=None,service=None):
 
     @app.get('/v1/sessions/{sid}/messages',tags=['sessions'])
     def history(sid:str,before:str|None=None,user=Depends(actor),service=Depends(current_service)):
-        return service.history(user,sid,before)
+        return public_payload(service.history(user,sid,before))
 
     @app.post('/v1/sessions/{sid}/messages',tags=['sessions'])
     def chat(sid:str,body:ChatBody,user=Depends(actor),service=Depends(current_service)):
-        return service.chat(user,sid,body.model_dump())
+        return public_payload(service.chat(user,sid,body.model_dump()))
 
     @app.post('/v1/sessions/{sid}/messages/stream',tags=['assistant'],response_class=StreamingResponse,
               responses={200:{'description':'Authenticated SSE: status, delta, complete, error',
@@ -367,7 +370,7 @@ def create_app(config=None,model=None,service=None):
                     except QueueTimeout:
                         if cancel.is_set():pending.cancel();raise RequestCancelled()
             task=loop.run_in_executor(None,functools.partial(copy_context().run,service.chat,user,sid,body.model_dump(),observe,cancel))
-            def event(kind,payload):return 'event: '+kind+'\ndata: '+json.dumps(payload,ensure_ascii=False)+'\n\n'
+            def event(kind,payload):return 'event: '+kind+'\ndata: '+json.dumps(public_payload(payload),ensure_ascii=False)+'\n\n'
             item=None
             try:
                 yield event('status',{'stage':'connected'})
@@ -432,7 +435,7 @@ def create_app(config=None,model=None,service=None):
     def delete(sid:str,user=Depends(actor),service=Depends(current_service)):return service.delete(user,sid)
 
     @app.get('/v1/sources/{key}',tags=['knowledge'])
-    def source(key:str,user=Depends(actor),service=Depends(current_service)):return service.source(key)
+    def source(key:str,user=Depends(actor),service=Depends(current_service)):return public_payload(service.source(key))
 
     @app.get('/v1/documents/{document_id}/revisions/{revision}/download',tags=['knowledge'])
     def document(document_id:str,revision:str,user=Depends(actor),service=Depends(current_service)):

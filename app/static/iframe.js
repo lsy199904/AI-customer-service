@@ -33,7 +33,7 @@
     button.style.cssText='position:fixed;right:24px;bottom:24px;z-index:2147483001;background:#135de4;color:white;border:0;border-radius:28px;padding:15px 22px;font:15px sans-serif;cursor:pointer;box-shadow:0 8px 28px #155ce53b';
     frame=document.createElement('iframe');frame.title='SmartTITU 智能客服';frame.hidden=true;frame.referrerPolicy='no-referrer';
     frame.style.cssText='position:fixed;right:16px;bottom:84px;z-index:2147483002;width:min(414px,calc(100vw - 32px));height:min(680px,calc(100dvh - 100px));border:1px solid #dfe7f0;border-radius:18px;background:white;box-shadow:0 18px 60px #203c6530';
-    frame.src=base+'/chatbot?parent_origin='+encodeURIComponent(location.origin);
+    frame.src=base+'/smart-bot/chatbot?parent_origin='+encodeURIComponent(location.origin);
     button.onclick=()=>opened?close():open();window.addEventListener('message',message);
     document.body.append(button,frame);
   }

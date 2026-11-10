@@ -11,8 +11,8 @@ async function setup({enabled=true,parent='https://portal.example',blocked=false
    location:{origin:'https://assistant.example',search:parent?'?parent_origin='+encodeURIComponent(parent):''},
    Date:{now:()=>clock},AbortSignal:{timeout:()=>({})},
    fetch:async(url,options)=>{calls.push([url,options]);
-     if(url==='/widget/config')return {ok:true,json:async()=>({anonymous_widget_enabled:enabled,frame_origins:['https://portal.example']})};
-     assert.equal(url,'/widget/anonymous-auth');assert.equal(options.method,'POST');assert.equal(options.body,'{}');
+     if(url==='/smart-bot/widget/config')return {ok:true,json:async()=>({anonymous_widget_enabled:enabled,frame_origins:['https://portal.example']})};
+     assert.equal(url,'/smart-bot/widget/anonymous-auth');assert.equal(options.method,'POST');assert.equal(options.body,'{}');
      assert.equal(options.headers['Content-Type'],'application/json');
      return {ok:!blocked,json:async()=>blocked?{error:{message:'blocked'}}:{token:'signed-token',expires_in:3600}};
    }};
@@ -37,8 +37,8 @@ async function setup({enabled=true,parent='https://portal.example',blocked=false
    document:{currentScript:{src:'https://assistant.example/iframe-anonymous.js'},readyState:'complete',
       createElement:tag=>{const e={tag,style:{},setAttribute(k,v){this[k]=v;},focus(){},remove(){this.removed=true;},append(){},replaceChildren(){},attachShadow(){return {append(){}};},contentWindow:{postMessage(){}}};elements.push(e);return e;},body:{append(){}}}});
  const frame=elements.find(e=>e.tag==='iframe'),button=elements.find(e=>e.tag==='button'),mascot=elements.find(e=>e.tag==='img');
- assert(frame.src.includes('/chatbot/anonymous?parent_origin='));
- assert.equal(mascot.src,'https://assistant.example/media/support-robot-b.png');
+ assert(frame.src.includes('/smart-bot/chatbot/anonymous?parent_origin='));
+ assert.equal(mascot.src,'https://assistant.example/smart-bot/media/support-robot-b.png');
  assert.equal(mascot.width,88);assert.equal(mascot.height,80);
  window.SmartTITUAnonymousEmbed.open();assert.equal(frame.hidden,false);assert.equal(button['aria-expanded'],'true');
  window.SmartTITUAnonymousEmbed.close();assert.equal(frame.hidden,true);assert.equal(button['aria-expanded'],'false');
