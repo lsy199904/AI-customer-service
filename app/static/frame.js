@@ -17,11 +17,11 @@
     panel.hidden=true;window.SmartTITUAssistant.open();
   }
   async function connect(){
-    if(!embedded){location.replace('/widget/demo');return;}
+    if(!embedded){location.replace('/smart-bot/widget/demo');return;}
     const candidate=new URLSearchParams(location.search).get('parent_origin');
     let parsed;try{parsed=new URL(candidate);}catch{throw new Error('嵌入地址缺少有效的 parent_origin');}
     if(!['http:','https:'].includes(parsed.protocol)||parsed.origin!==candidate)throw new Error('嵌入来源无效');
-    const response=await fetch('/widget/config',{cache:'no-store',credentials:'omit'});
+    const response=await fetch('/smart-bot/widget/config',{cache:'no-store',credentials:'omit'});
     if(!response.ok)throw new Error('无法读取客服接入配置');
     const config=await response.json();
     if(candidate!==location.origin && !config.frame_origins.includes(candidate))throw new Error('当前企业页面尚未获授权，请联系管理员配置 FRAME_ORIGINS');

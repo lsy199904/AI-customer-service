@@ -34,11 +34,11 @@
       @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
     `;
     button=document.createElement('button');button.type='button';button.className='launch';button.title='智能客服';button.setAttribute('aria-expanded','false');button.setAttribute('aria-label','打开智能客服');button.setAttribute('aria-controls','smarttitu-anonymous-panel');
-    const mascot=document.createElement('img');mascot.className='launch-mascot';mascot.src=base+'/media/support-robot-b.png';mascot.alt='';mascot.width=88;mascot.height=80;
+    const mascot=document.createElement('img');mascot.className='launch-mascot';mascot.src=base+'/smart-bot/media/support-robot-b.png';mascot.alt='';mascot.width=88;mascot.height=80;
     mascot.onerror=()=>{const fallback=document.createElement('span');fallback.className='launch-fallback';fallback.textContent='✦';button.replaceChildren(fallback);};button.append(mascot);
     frame=document.createElement('iframe');frame.id='smarttitu-anonymous-panel';frame.title='SmartTITU 智能客服';frame.hidden=true;frame.referrerPolicy='no-referrer';
     frame.style.cssText='position:fixed;right:16px;bottom:84px;z-index:2147483002;width:min(414px,calc(100vw - 32px));height:min(680px,calc(100dvh - 100px));border:1px solid #dfe7f0;border-radius:18px;background:white;box-shadow:0 18px 60px #203c6530';
-    frame.src=base+'/chatbot/anonymous?parent_origin='+encodeURIComponent(location.origin);
+    frame.src=base+'/smart-bot/chatbot/anonymous?parent_origin='+encodeURIComponent(location.origin);
     button.onclick=()=>opened?close():open();window.addEventListener('message',message);
     root.append(css,button,frame);document.body.append(host);
   }

@@ -7,7 +7,7 @@
   async function getToken(){
     if(token&&Date.now()<expires-60000)return token;
     if(!pending)pending=(async()=>{
-      const response=await fetch('/widget/anonymous-auth',{
+      const response=await fetch('/smart-bot/widget/anonymous-auth',{
         method:'POST',credentials:'same-origin',cache:'no-store',
         headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:'{}',signal:AbortSignal.timeout(10000)});
       const data=await response.json();
@@ -19,7 +19,7 @@
     return pending;
   }
   async function connect(){
-    const response=await fetch('/widget/config',{cache:'no-store',credentials:'omit'});
+    const response=await fetch('/smart-bot/widget/config',{cache:'no-store',credentials:'omit'});
     if(!response.ok)throw new Error('无法读取客服接入配置');
     const config=await response.json();
     if(!config.anonymous_widget_enabled)throw new Error('匿名客服入口未开启，请联系服务提供方');
