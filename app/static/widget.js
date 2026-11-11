@@ -566,7 +566,7 @@
     const entry=element('div','entry');input=element('textarea');input.placeholder='输入您的问题…';input.maxLength=2000;input.setAttribute('aria-label','客服问题');
     input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();}});
     sendButton=element('button','send','发送');sendButton.type='button';sendButton.onclick=()=>send();entry.append(input,sendButton);
-    const foot=element('div','foot');foot.append(element('span','','AI 回答仅供参考 · Enter 发送'));
+    const foot=element('div','foot');foot.append(element('span','','内容由AI生成，请仔细甄别'));
     const human=element('button','human','联系人工');human.type='button';human.onclick=()=>send('转人工客服');foot.append(human);
     composer.append(quick,status,entry,foot);panel.append(composer);
     sourcePane=element('div','source-pane');sourcePane.hidden=true;panel.append(sourcePane);root.append(panel);
