@@ -1,43 +1,25 @@
+# Runtime configuration and credentials
 .env
 .env.*
 !.env.example
-var/
-backups/
+/deploy/generated/
+# Runtime data, reports, private exports and backups
+/var/
+/backups/
+/migration-storage/
+/evaluation/private/
+/models/
+.venv/
+node_modules/
 __pycache__/
 *.py[cod]
 *.db
 *.db-wal
 *.db-shm
 *.sqlite3
+*.dump
+*.zip
+*.tar.gz
 .DS_Store
-
-/models/
-
-# Private Word and original PDF attachments are copied separately.
-/knowledge_sources/*.docx
-/knowledge_sources/*.pdf
-/docs/sources/*.pdf
-
-# Illustrations belonging to the six questions removed from the current Word.
-/app/static/media/ppt-01.png
-/app/static/media/ppt-05.png
-/app/static/media/ppt-11.png
-/app/static/media/ppt-18.png
-/app/static/media/ppt-22.png
-/app/static/media/ppt-24.png
-
-# Generated infrastructure credentials and private evaluation datasets.
-/deploy/generated/
-/evaluation/private/
-
-# Public WeChat article PDFs explicitly approved for v3 distribution.
-!/knowledge_sources/SmartTITU网站上线，三大核心价值助力企业安全、高效、低成本用好大模型！.pdf
-!/knowledge_sources/中企通信成功通过中国信通院首批Token聚合服务平台能力评估.pdf
-!/knowledge_sources/企业级五大安全可信Token应用场景，看这一篇就够了！.pdf
-
-# Restore-only portable database snapshots
-/migration-storage/
-
-# Load-test credentials and generated results.
-/pressure_test/tokens.txt
-/load-results-*/
+# Corporate knowledge sources are deliberately versioned in the private repository.
+# Review additions before git add; do not upload customer conversation exports.

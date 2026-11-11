@@ -15,7 +15,7 @@ class PrefixTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.app=create_app(Settings(secret=SECRET,db=str(Path(self.temp.name)/'chat.db'),
             retrieval_backend='lexical',mode='extractive',anonymous_widget_enabled=True,
-            demo_auto_login=True,origins=('https://portal.example.com',),frame_origins=('https://portal.example.com',)))
+            origins=('https://portal.example.com',),frame_origins=('https://portal.example.com',)))
         self.client=TestClient(self.app,base_url='https://assistant.example.com')
         self.client.__enter__()
     def tearDown(self):
@@ -40,7 +40,7 @@ class PrefixTests(unittest.TestCase):
             headers={'Authorization':'Bearer '+self.auth(other).json()['token']}
             self.assertEqual(other.get(f'/smart-bot/v1/sessions/{sid}/messages',headers=headers).status_code,404)
     def test_prefixed_assets_and_legacy_health(self):
-        for path in ('/iframe-anonymous.js','/widget.js','/chatbot/anonymous','/widget/anonymous-frame.js','/widget/frame.css','/widget/demo','/widget/demo.js','/media/support-robot-b.png','/health','/ready'):
+        for path in ('/iframe-anonymous.js','/widget.js','/chatbot/anonymous','/widget/anonymous-frame.js','/widget/frame.css','/media/support-robot-b.png','/health','/ready'):
             self.assertEqual(self.client.get('/smart-bot'+path).status_code,200,path)
         self.assertEqual(self.client.get('/ready').status_code,200)
         html=self.client.get('/smart-bot/chatbot/anonymous').text

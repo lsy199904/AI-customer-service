@@ -17,7 +17,7 @@
     panel.hidden=true;window.SmartTITUAssistant.open();
   }
   async function connect(){
-    if(!embedded){location.replace('/smart-bot/widget/demo');return;}
+    if(!embedded){location.replace('/smart-bot/widget/anonymous-demo');return;}
     const candidate=new URLSearchParams(location.search).get('parent_origin');
     let parsed;try{parsed=new URL(candidate);}catch{throw new Error('嵌入地址缺少有效的 parent_origin');}
     if(!['http:','https:'].includes(parsed.protocol)||parsed.origin!==candidate)throw new Error('嵌入来源无效');

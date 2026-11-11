@@ -15,7 +15,7 @@ class AnonymousIframeTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.config=Settings(secret=SECRET,db=str(Path(self.temp.name)/'chat.db'),
             retrieval_backend='lexical',mode='extractive',anonymous_widget_enabled=True,
-            demo_auto_login=False,frame_origins=('https://portal.example.com',))
+            frame_origins=('https://portal.example.com',))
         self.app=create_app(self.config)
         self.client=TestClient(self.app,base_url='https://assistant.example.com')
         self.client.__enter__()
@@ -100,28 +100,3 @@ class AnonymousIframeTests(unittest.TestCase):
             self.assertIn('SameSite=lax',r.headers['set-cookie'])
             self.assertNotIn('Secure',r.headers['set-cookie'])
         finally:http.close()
-
-class AnonymousConfigurationTests(unittest.TestCase):
-    def test_configuration_preserves_secrets_and_original_credentials(self):
-        import importlib.util
-        import sys
-        import contextlib
-        import io
-        spec=importlib.util.spec_from_file_location('configure_anonymous','scripts/configure_anonymous.py')
-        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);env=root/'.env'
-            env.write_text('AUTH_SECRET=private-secret\nMODEL_API_KEY=model-key\nDEMO_AUTO_LOGIN=false\nFRAME_ORIGINS=https://old.example\n')
-            output=io.StringIO()
-            with patch.object(module,'ROOT',root),patch.object(sys,'argv',['configure','enable','--origin','https://portal.example.com','--https-cookie']),contextlib.redirect_stdout(output):module.main()
-            text=env.read_text()
-            for original in ('AUTH_SECRET=private-secret','MODEL_API_KEY=model-key','DEMO_AUTO_LOGIN=false'):
-                self.assertIn(original,text)
-            self.assertIn('FRAME_ORIGINS=https://old.example,https://portal.example.com',text)
-            self.assertIn('ANONYMOUS_WIDGET_ENABLED=true',text)
-            self.assertIn('ANONYMOUS_COOKIE_SECURE=true',text)
-            self.assertEqual(env.stat().st_mode&0o777,0o600)
-            self.assertNotIn('private-secret',output.getvalue())
-            self.assertEqual(len(list((root/'backups').glob('*/env.before'))),1)
-            with patch.object(module,'ROOT',root),patch.object(sys,'argv',['configure','disable']),contextlib.redirect_stdout(output):module.main()
-            self.assertIn('ANONYMOUS_WIDGET_ENABLED=false',env.read_text())

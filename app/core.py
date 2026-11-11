@@ -33,7 +33,6 @@ DEMO_TENANT='__smarttitu_demo__'
 class Settings:
     anonymous_cookie_secure: bool = field(default_factory=lambda:os.getenv('ANONYMOUS_COOKIE_SECURE','false').lower()=='true')
     anonymous_widget_enabled: bool = field(default_factory=lambda:os.getenv('ANONYMOUS_WIDGET_ENABLED','false').lower()=='true')
-    demo_auto_login: bool = field(default_factory=lambda:os.getenv('DEMO_AUTO_LOGIN','false').lower()=='true')
     database_url: str = field(default_factory=lambda: os.getenv('DATABASE_URL',''))
     db: str = field(default_factory=lambda: os.getenv('DATABASE_PATH', str(BASE / 'var' / 'assistant.db')))
     knowledge: str = field(default_factory=lambda: os.getenv('KNOWLEDGE_PATH', str(BASE / 'data' / 'knowledge.jsonl')))
@@ -385,7 +384,7 @@ class Service:
                 'message': '可联系专属客户经理,或使用以下渠道联系人工客服。'}
 
     def bootstrap(self):
-        return {'name': 'SmartTITU 智能客服', 'version':'v2', 'welcome': WELCOME,
+        return {'name': 'SmartTITU 智能客服', 'version':'release-anonymous-20261111', 'welcome': WELCOME,
                 'link_policy':{'hosts':PublicLinks().hosts},
                 'quick_questions': list(QUICK_QUESTIONS),
                 'idle_timeout_seconds': self.config.idle_seconds, 'contact': self.contact(),

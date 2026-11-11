@@ -7,10 +7,10 @@ __pycache__
 **/__pycache__
 tests
 backups
-prototype
-knowledge
 models
 deploy/generated
-evaluation/private
-
+evaluation
+migration-storage
 knowledge_sources
+*.zip
+*.tar.gz

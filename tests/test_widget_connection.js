@@ -39,11 +39,5 @@ function setup(override={}){
  suggestionsContext.renderSuggestions(parent,{suggestions:['如何开发票'],actions:[{type:'handoff',message:'ignored-untrusted-value'}]});
  assert.equal(parent.children[0].children.length,2);parent.children[0].children[0].onclick();parent.children[0].children[1].onclick();
  assert.equal(sent.join('|'),'如何开发票|转人工客服');
- let configured=null,opens=0,asked='';const demo={location:{origin:'https://assistant.example'},localStorage:{removeItem(){}},
- AbortSignal,Date,fetch:async()=>({ok:true,json:async()=>({token:'visitor-token',expires_in:3600})}),
- document:{querySelectorAll:()=>[]},window:{SmartTITUAssistant:{configure(options){configured=options;},open:async()=>{opens++;},ask:async q=>{asked=q;}}}};
- vm.runInNewContext(fs.readFileSync('app/static/demo.js','utf8'),demo);
- await flush();assert.equal(await configured.getToken(),'visitor-token');
- await demo.openSupport();await demo.openSupport('注册流程');assert.equal(opens,1);assert.equal(asked,'注册流程');
- console.log('Connection regression checks passed: token/fetch/body deadlines, cancel, network/auth errors, anonymous demo access');
+ console.log('Connection regression checks passed: token/fetch/body deadlines, cancel, network/auth errors, SSE transport and suggestions');
 })().catch(error=>{console.error(error);process.exitCode=1;});

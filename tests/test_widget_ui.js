@@ -8,12 +8,12 @@ const {chromium}=require('playwright');
   const page=await browser.newPage({viewport:{width:1100,height:900}}),requests=[],errors=[];let guideStep=0;
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('https://widget.test/**',async route=>{
-   const req=route.request(),path=new URL(req.url()).pathname;
+   const req=route.request(),path=new URL(req.url()).pathname.replace(/^\/smart-bot(?=\/)/,'');
    if(path==='/')return route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="zh"><head><meta charset="utf-8"></head><body style="background:#eef3fb"><script src="/widget.js"></script></body></html>'});
    if(path==='/widget.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync('app/static/widget.js','utf8')});
    if(['/media/hub-03.png','/media/business-verification.png'].includes(path))return route.fulfill({contentType:'image/png',body:fs.readFileSync('app/static'+path)});
    let data;
-   if(path==='/v1/bootstrap')data={welcome:'您好，我是 SmartTITU 智能客服。',quick_questions:['注册流程','企业认证流程','服务订购流程','客户充值流程','账单支付流程','在线开票流程'],capabilities:{streaming:false}};
+   if(path==='/v1/bootstrap')data={welcome:'您好，我是 SmartTITU 智能客服。',link_policy:{hosts:['www.smarttitu.cn']},quick_questions:['注册流程','企业认证流程','服务订购流程','客户充值流程','账单支付流程','在线开票流程'],capabilities:{streaming:false}};
    else if(path==='/v1/sessions'&&req.method()==='GET')data={items:[]};
    else if(path==='/v1/sessions')data={session_id:'preview-session'};
    else if(path.endsWith('/messages')){
