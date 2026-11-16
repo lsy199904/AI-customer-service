@@ -407,7 +407,7 @@ class Service:
             suffix=' FOR UPDATE' if self.config.database_url else ''
             row=self.db.execute('SELECT events FROM tenant_message_limits WHERE owner=?'+suffix,(owner,)).fetchone()
             events=[t for t in json.loads(row['events']) if t>now-60]
-            if len(events)>=self.config.requests_per_minute:raise APIError(429,'tenant_rate_limited','当前企业提问较多，请稍后再试')
+            if len(events)>=self.config.requests_per_minute:raise APIError(429,'tenant_rate_limited','当前提问较多，请稍后再试')
             events.append(now)
             self.db.execute('UPDATE tenant_message_limits SET events=?,updated=? WHERE owner=?',(json.dumps(events),now,owner))
 
