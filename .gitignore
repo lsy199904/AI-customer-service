@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# Reviewed Kubernetes application template contains no real credentials.
+!/deploy/kubernetes/app.env.example
 /deploy/generated/
 # Runtime data, reports, private exports and backups
 /var/
