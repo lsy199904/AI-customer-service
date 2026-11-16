@@ -117,9 +117,9 @@ class DailyFiles(logging.Handler):
                 policies={self.prefix:self.days}
                 if self.prefix=='app':
                     # Purge expired content even after content collection is disabled.
-                    policies['debug']=max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3'))))
+                    policies['debug']=max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','7'))))
                 from .conversation_logs import prune_conversations
-                prune_conversations(self.directory,day,int(os.getenv('LOG_RETENTION_DAYS','30')),max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3')))))
+                prune_conversations(self.directory,day,int(os.getenv('LOG_RETENTION_DAYS','30')),max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','7')))))
                 for path in self.directory.iterdir():
                     match = re.fullmatch(r'(app|debug)-(\d{4}-\d{2}-\d{2})-\d+\.jsonl(?:\.[1-4])?', path.name)
                     if not match or match[1] not in policies:continue
@@ -173,7 +173,7 @@ def configure(directory=None):
                 event('log_storage_unavailable', level='ERROR')
         event('logging_configured', retention_days=days, timezone=str(timezone))
         if os.getenv('LOG_DEBUG_CONTENT','false').lower()=='true':
-            debug_days=int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3'))
+            debug_days=int(os.getenv('LOG_DEBUG_RETENTION_DAYS','7'))
             if not 1<=debug_days<=30:raise ValueError('LOG_DEBUG_RETENTION_DAYS must be 1..30')
             _debug_log.setLevel(logging.INFO);_debug_log.propagate=False
             if directory:
