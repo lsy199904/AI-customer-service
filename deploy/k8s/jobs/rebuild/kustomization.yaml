@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 全量重建：换 Embedding 模型、改切分参数、升级 PDF 解析器之后使用。
+#   make rebuild
+#
+# Job 的 spec 不可变，所以这里换了名字（assistant-ingest-rebuild），
+# 避免和已完成的 assistant-ingest 冲突。
+resources:
+  - ../base
+  - ../../base/config
+
+patches:
+  - target:
+      kind: Job
+      name: assistant-ingest
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: assistant-ingest-rebuild
+      - op: replace
+        path: /spec/template/spec/containers/0/args
+        value: ["ingest", "--rebuild"]

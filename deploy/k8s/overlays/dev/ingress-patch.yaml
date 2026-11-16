@@ -1,0 +1,18 @@
+# 开发走 HTTP：tls 置空。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: assistant
+spec:
+  tls: []
+  rules:
+    - host: assistant-dev.example.com
+      http:
+        paths:
+          - path: /smart-bot
+            pathType: Prefix
+            backend:
+              service:
+                name: assistant
+                port:
+                  number: 8200

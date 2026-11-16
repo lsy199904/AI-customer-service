@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 独立成一个子 kustomization，是为了让 jobs/ 下的入库任务也能引用同一份配置，
+# 而不必把整个 base（含 Deployment）带进去。
+#
+# 这里刻意关闭了名字哈希：
+#   - 关闭后名字稳定为 assistant-config，任何 overlay 都能用 patch 覆盖单个键；
+#   - 代价是改完 config.env 必须显式 rollout restart（Makefile 的 apply-* 已包含）。
+# 若更想要"改配置自动滚更"，去掉 disableNameSuffixHash 即可，
+# 但 overlay 里按名字 patch ConfigMap 的做法会失效，需要改成在生成器里分环境。
+configMapGenerator:
+  - name: assistant-config
+    envs:
+      - config.env
+    # kustomize v5 起，这类开关必须放在 options 下（顶层写法已移除）
+    options:
+      disableNameSuffixHash: true

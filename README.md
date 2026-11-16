@@ -28,18 +28,18 @@ sh scripts/v3.sh doctor
 
 ## 目录
 
-| 路径 | 用途 |
-|---|---|
-| `app/` | FastAPI服务、LangGraph流程、检索及模型调用 |
-| `app/static/` | 浮窗、iframe脚本与正式图片资源 |
-| `data/` | 图片登记、业务流程配置及兼容知识数据 |
-| `knowledge_sources/` | 正式入库源文档；新部署前核对完整性与版本 |
-| `deploy/` | PostgreSQL初始化及Nginx示例；`generated/`仅在本机生成 |
-| `scripts/` | 配置、启动、入库、备份恢复和日志查询工具 |
-| `docs/部署说明.md` | 唯一正式部署与接入说明 |
-| `tests/` | 匿名身份、会话归属、前端接入及部署流程自动回归 |
-| `compose.v3.yaml` | 应用、PostgreSQL、etcd、MinIO、Milvus统一入口 |
-| `.env.example` | 配置模板，无真实密钥 |
-| `Dockerfile`、`requirements.lock` | 应用构建与锁定依赖 |
+| 路径                              | 用途                                                  |
+|-----------------------------------|-------------------------------------------------------|
+| `app/`                            | FastAPI服务、LangGraph流程、检索及模型调用            |
+| `app/static/`                     | 浮窗、iframe脚本与正式图片资源                        |
+| `data/`                           | 图片登记、业务流程配置及兼容知识数据                  |
+| `knowledge_sources/`              | 正式入库源文档；新部署前核对完整性与版本              |
+| `deploy/`                         | PostgreSQL初始化及Nginx示例；`generated/`仅在本机生成 |
+| `scripts/`                        | 配置、启动、入库、备份恢复和日志查询工具              |
+| `docs/部署说明.md`                | 唯一正式部署与接入说明                                |
+| `tests/`                          | 匿名身份、会话归属、前端接入及部署流程自动回归        |
+| `compose.v3.yaml`                 | 应用、PostgreSQL、etcd、MinIO、Milvus统一入口         |
+| `.env.example`                    | 配置模板，无真实密钥                                  |
+| `Dockerfile`、`requirements.lock` | 应用构建与锁定依赖                                    |
 
 `var/`、`backups/`、真实`.env`和Docker命名数据卷不进入Git。源文档与图片属于内部知识资产，只推送至授权的公司仓库。旧原型、压测脚本、测试报告及历史部署说明已从本分支移除。
