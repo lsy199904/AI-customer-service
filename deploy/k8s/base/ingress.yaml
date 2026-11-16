@@ -1,0 +1,36 @@
+# 关键点：
+# 1. 不要加 rewrite-target。应用内部用 PublicPrefix 中间件处理 /smart-bot 前缀，
+#    并把返回的链接、Cookie Path 一起改写。strip 掉前缀会导致所有接口 404。
+# 2. SSE 必须关闭缓冲，否则前端看到的是一次性吐出整段回答。
+# 3. 超时不短于模型预算：检索 15s + 生成，网关侧给 240s。
+# 域名与证书在各 overlay 里覆盖。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: assistant
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "240"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "240"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "5"
+    # 应用自身限制请求体 1..16384 字节并返回结构化 413，
+    # 网关放宽到 1m 让应用去判定，避免网关直接抛 HTML 错误页。
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - assistant.example.com
+      secretName: assistant-tls
+  rules:
+    - host: assistant.example.com
+      http:
+        paths:
+          - path: /smart-bot
+            pathType: Prefix
+            backend:
+              service:
+                name: assistant
+                port:
+                  number: 8200

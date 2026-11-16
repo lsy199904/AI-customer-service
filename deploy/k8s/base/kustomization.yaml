@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 环境无关的部分：Deployment / Service / Ingress / PVC / PDB + 配置生成器。
+# namespace 不在这里写，由 overlay 注入，避免 base 绑死某个环境。
+resources:
+  - config
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - pvc.yaml

@@ -1,0 +1,21 @@
+# 生产域名与证书。SMP 对 rules / tls 这类无合并键的列表是整体替换。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: assistant
+spec:
+  tls:
+    - hosts:
+        - assistant.smarttitu.cn
+      secretName: smarttitu-assistant-tls
+  rules:
+    - host: assistant.smarttitu.cn
+      http:
+        paths:
+          - path: /smart-bot
+            pathType: Prefix
+            backend:
+              service:
+                name: assistant
+                port:
+                  number: 8200

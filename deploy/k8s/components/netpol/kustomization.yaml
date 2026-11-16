@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Component
+
+# 可选组件。默认不启用：不同集群 CNI 对 NetworkPolicy 的支持不同，
+# 且策略里的 CIDR 必须按实际网段改，写错会把出站流量全掐断。
+# 启用方式：在 overlay 的 kustomization.yaml 里加 components: [../../components/netpol]
+resources:
+  - networkpolicy.yaml

@@ -1,0 +1,147 @@
+# 应用负载。无状态（除 var/ 下的日志与 PDF 图片），状态全部在外部 PostgreSQL 与 Milvus。
+#
+# 与单机 compose 的对应关系：
+#   network_mode: host      -> ClusterIP Service
+#   .:/ai_customer          -> 镜像内已含 app/ data/ manage.py，只有 var/ 需要卷
+#   env_file: .env          -> ConfigMap + Secret（按需注入，不再全量下发）
+#   depends_on healthy      -> startupProbe（PG/Milvus 未就绪就不会被判定启动成功）
+#
+# 单副本是本项目的目标形态：业务是内部客服，并发个位数；且代码用 flock 做会话
+# 日志互斥、日志保留期靠 unlink 清理，多写者共享存储反而更脆弱。
+# 扩副本的前提与改动见 README「扩到多副本之前」。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant
+  labels:
+    app.kubernetes.io/name: smarttitu-assistant
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  minReadySeconds: 10
+  # RWO 云盘不能同时挂到两个节点，所以只能先停后起。
+  # 中断约 20~30 秒；内部服务在维护窗口执行即可。
+  # 若将来改用 RWX 存储，可换回 RollingUpdate（maxUnavailable: 0 / maxSurge: 1）。
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: smarttitu-assistant
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: smarttitu-assistant
+        app.kubernetes.io/component: api
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 200
+      # 私有仓库需要拉取凭证；把它建在同命名空间后取消下面注释
+      # imagePullSecrets:
+      #   - name: harbor-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: assistant
+          image: harbor.example.com/ai/smarttitu-assistant:release-20261111
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.server"]
+          # 与 compose 的 working_dir 对齐。镜像默认 WORKDIR 是 /srv/assistant，
+          # 而代码里有相对路径默认值（COST_REPORT_DIR=var/cost-reports），
+          # 不设这一项会尝试写只读根文件系统，且失败是静默的。
+          workingDir: /ai_customer
+          ports:
+            - name: http
+              containerPort: 8200
+          envFrom:
+            - configMapRef:
+                name: assistant-config
+            - secretRef:
+                name: assistant-secret
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          # 启动要先连 PG（连接池 wait 15s）并跑 LangGraph checkpoint 的
+          # PostgresSaver.setup()，最长给 200 秒。
+          startupProbe:
+            httpGet:
+              path: /smart-bot/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 40
+          # 存活只看进程；不要把 /ready 当 liveness，否则 PG/Milvus 抖动会连锁重启
+          livenessProbe:
+            httpGet:
+              path: /smart-bot/health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # /ready 会 SELECT 1、把全部知识 chunk 读进内存、再查 Milvus collection，
+          # 属于重查询。数据库是 1C2G 时单核会被这类扫描打满，所以间隔放到 60s。
+          # 上调前先读 README「四个硬约束」。
+          readinessProbe:
+            httpGet:
+              path: /smart-bot/ready
+              port: http
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 3
+            successThreshold: 1
+          lifecycle:
+            preStop:
+              exec:
+                # 先让 Endpoint 摘除，再排空 SSE 长连接；直接 SIGTERM 会掐断正在生成
+                # 的回答。配合 terminationGracePeriodSeconds 200s 覆盖 180s 优雅退出。
+                command: ["sh", "-c", "sleep 8"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 3Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # var/ 根目录用 emptyDir：代码启动时会 mkdir，而根文件系统是只读的。
+            # 真正需要持久化的四个目录都从两块云盘按 subPath 挂进来。
+            - name: var-scratch
+              mountPath: /ai_customer/var
+            - name: var-data
+              mountPath: /ai_customer/var/logs
+              subPath: logs
+            - name: var-data
+              mountPath: /ai_customer/var/cost-reports
+              subPath: cost-reports
+            - name: data
+              mountPath: /ai_customer/var/pdf_media
+              subPath: pdf_media
+            - name: data
+              mountPath: /ai_customer/knowledge_sources
+              subPath: knowledge_sources
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: var-scratch
+          emptyDir: {}
+        - name: var-data
+          persistentVolumeClaim:
+            claimName: assistant-var
+        - name: data
+          persistentVolumeClaim:
+            claimName: assistant-data
+        - name: tmp
+          emptyDir: {}
