@@ -267,8 +267,9 @@ def create_app(config=None,model=None,service=None):
     @app.post('/widget/anonymous-auth',include_in_schema=False)
     def anonymous_auth(request:Request):
         if not config.anonymous_widget_enabled:raise APIError(404,'not_found','匿名客服入口未开启')
-        from .anonymous import TENANT, COOKIE, LIFETIME, PATTERN, issue_cookie, read_cookie
-        identity=read_cookie(config.secret,request.cookies.get(COOKIE,''))
+        from .anonymous import TENANT, LIFETIME, PATTERN, issue_cookie, read_cookie
+        cookie_name=config.anonymous_cookie_name
+        identity=read_cookie(config.secret,request.cookies.get(cookie_name,''))
         # Only a valid token for this anonymous namespace can renew an identity
         # when browsers block third-party cookies. IDs in query/body are ignored.
         supplied=request.headers.get('authorization','')
@@ -281,7 +282,7 @@ def create_app(config=None,model=None,service=None):
         response=JSONResponse({'token':issue_token(config.secret,TENANT,identity,3600),'expires_in':3600},
                               headers={'Cache-Control':'no-store','Pragma':'no-cache'})
         secure=config.anonymous_cookie_secure or request.url.scheme=='https'
-        response.set_cookie(COOKIE,issue_cookie(config.secret,identity),max_age=LIFETIME,
+        response.set_cookie(cookie_name,issue_cookie(config.secret,identity),max_age=LIFETIME,
                             httponly=True,secure=secure,samesite='none' if secure else 'lax',
                             path='/widget/anonymous-auth')
         # Supporting browsers isolate this cookie by top-level site. Other browsers
