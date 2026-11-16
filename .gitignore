@@ -23,3 +23,11 @@ __pycache__/
 .DS_Store
 # Corporate knowledge sources are deliberately versioned in the private repository.
 # Review additions before git add; do not upload customer conversation exports.
+### Example user template template
+### Example user template
+
+# IntelliJ project files
+.idea
+*.iml
+out
+gen
