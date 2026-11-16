@@ -5,7 +5,7 @@ services:
     build: .
     env_file: .env
     network_mode: host
-    user: "${ASSISTANT_UID:?use scripts/external.sh}:${ASSISTANT_GID:?use scripts/external.sh}"
+    user: "${ASSISTANT_UID:?use scripts/dev.sh}:${ASSISTANT_GID:?use scripts/dev.sh}"
     working_dir: /ai_customer
     environment:
       HOST: "${APP_HOST:-127.0.0.1}"

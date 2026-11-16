@@ -22,7 +22,7 @@ class ConfigurationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        shutil.copy2(ROOT / '.env.external.example', self.root / '.env.external.example')
+        shutil.copy2(ROOT / '.env.example', self.root / '.env.example')
 
     def test_initialization_is_private_stable_and_does_not_connect(self):
         configure.initialize(self.root)
@@ -33,6 +33,16 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual((self.root / '.env').stat().st_mode & 0o777, 0o600)
         self.assertGreaterEqual(len(after['AUTH_SECRET']), 32)
         self.assertTrue(after['MILVUS_COLLECTION'].startswith('smarttitu_ext_'))
+
+    def test_existing_env_gains_new_template_keys_without_replacing_secret(self):
+        configure.initialize(self.root)
+        env = self.root / '.env'
+        original = configure.read_env(env)
+        env.write_text('\n'.join(line for line in env.read_text().splitlines() if not line.startswith('K8S_'))+'\n')
+        configure.initialize(self.root)
+        updated = configure.read_env(env)
+        self.assertEqual(original['AUTH_SECRET'], updated['AUTH_SECRET'])
+        self.assertEqual(updated['K8S_NAMESPACE'], 'smarttitu')
 
     def source(self):
         p = self.root / 'old.env'
@@ -156,9 +166,9 @@ class OrchestrationTests(unittest.TestCase):
         for failure in ['initialize','ingest','doctor',None]:
             with tempfile.TemporaryDirectory() as temp:
                 root=Path(temp);(root/'scripts').mkdir();(root/'bin').mkdir()
-                for name in ['external.sh','configure_external.py']:
+                for name in ['dev.sh','configure_external.py']:
                     shutil.copy2(ROOT/'scripts'/name,root/'scripts'/name)
-                shutil.copy2(ROOT/'.env.external.example',root/'.env.external.example')
+                shutil.copy2(ROOT/'.env.example',root/'.env.example')
                 configure.initialize(root)
                 envfile=root/'.env';text=envfile.read_text()
                 fills={'DATABASE_URL':'postgresql://u:p@localhost/newdb','MILVUS_URI':'http://localhost:19530',
@@ -172,7 +182,7 @@ class OrchestrationTests(unittest.TestCase):
                     + ('  *"'+failure+'"*) exit 1;;\n' if failure else '')+'esac\nexit 0\n')
                 docker.chmod(0o755)
                 env={**os.environ,'PATH':str(root/'bin')+os.pathsep+str(Path(sys.executable).parent)+os.pathsep+os.environ['PATH'],'CALLS':str(log)}
-                result=subprocess.run(['sh',str(root/'scripts/external.sh'),'deploy','--image','existing:test'],env=env,capture_output=True,text=True)
+                result=subprocess.run(['sh',str(root/'scripts/dev.sh'),'deploy','--image','existing:test'],env=env,capture_output=True,text=True)
                 calls=log.read_text() if log.exists() else ''
                 if failure:
                     self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)

@@ -5,14 +5,14 @@ umask 077
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 export ASSISTANT_UID="$(id -u)" ASSISTANT_GID="$(id -g)"
-compose() { docker compose --project-directory "$ROOT" -f "$ROOT/compose.external.yaml" "$@"; }
+compose() { docker compose --project-directory "$ROOT" -f "$ROOT/compose.dev.yaml" "$@"; }
 run() { compose run --rm --no-deps -T assistant "$@"; }
 action=${1:-help}
 [ "$#" -eq 0 ] || shift
 case "$action" in
  init) exec python3 scripts/configure_external.py "$@" ;;
  help) echo '首次：init → 填写.env → deploy；已有镜像：deploy --image 镜像名；测试自动建库可追加 --create-database'
-       echo '其他：check | ingest | start | restart | stop | doctor | documents | logs | ps'
+       echo '其他：build | check | ingest | start | restart | stop | doctor | documents | logs | ps'
        exit 0 ;;
 esac
 python3 scripts/configure_external.py --check
@@ -51,11 +51,12 @@ case "$action" in
    ;;
  check) run python -m app.deployment check "$@" ;;
  ingest) run python -m app.deployment initialize; run python manage.py ingest "$@" ;;
+ build) compose build assistant ;;
  start|restart) compose up -d --wait --no-deps --force-recreate assistant ;;
  stop) compose stop assistant ;;
  doctor) run python manage.py doctor --models ;;
  documents) run python manage.py documents ;;
  logs) compose logs --tail 100 assistant ;;
  ps) compose ps ;;
- *) echo '未知命令，查看：sh scripts/external.sh help' >&2; exit 2 ;;
+ *) echo '未知命令，查看：sh scripts/dev.sh help' >&2; exit 2 ;;
 esac

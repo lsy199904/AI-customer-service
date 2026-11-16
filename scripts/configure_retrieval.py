@@ -19,7 +19,7 @@ def main():
     if not path.is_file() or path.is_symlink():raise SystemExit('未找到普通.env文件，未修改')
     original=path.read_text()
     if not values:
-        print('未指定阈值，已保留.env。执行 sh scripts/v3.sh start 重新加载现有配置。');return
+        print('未指定阈值，已保留.env。执行 sh scripts/production.sh update-config 重新加载现有配置。');return
     backup=ROOT/'backups'/('retrieval-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
     backup.mkdir(parents=True,mode=0o700)
     shutil.copy2(path,backup/'env.before');(backup/'env.before').chmod(0o600)
@@ -35,6 +35,6 @@ def main():
     finally:
         if os.path.exists(temp):os.unlink(temp)
     print('已更新显式指定的阈值：'+', '.join(k+'='+v for k,v in values.items())+'；其他配置保持。原.env已备份。')
-    print('执行 sh scripts/v3.sh start 重建容器加载配置，无需重新入库。')
+    print('执行 sh scripts/production.sh update-config 重建容器加载配置，无需重新入库。')
 
 if __name__=='__main__':main()

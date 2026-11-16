@@ -5,8 +5,9 @@ COPY requirements.lock ./
 RUN pip install --no-cache-dir -r requirements.lock
 COPY app ./app
 COPY data ./data
+COPY knowledge_sources ./knowledge_sources
 COPY manage.py ./
-RUN useradd --uid 10001 --create-home assistant && mkdir var knowledge_sources && chown assistant:assistant var knowledge_sources
+RUN useradd --uid 10001 --create-home assistant && mkdir -p var knowledge_sources && chown assistant:assistant var knowledge_sources
 USER assistant
 ENV HOST=0.0.0.0 PORT=8000
 EXPOSE 8000

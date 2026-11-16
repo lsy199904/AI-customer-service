@@ -37,8 +37,25 @@ def initialize(root=ROOT, source=None, database='ai_customer_external_test'):
     target = root / '.env'
     if source and target.exists():
         raise ValueError('已有.env，拒绝从旧环境覆盖；请直接编辑现有配置')
-    text = (target if target.exists() else root / '.env.external.example').read_text()
-    values = read_env(target if target.exists() else root / '.env.external.example')
+    text = (target if target.exists() else root / '.env.example').read_text()
+    values = read_env(target if target.exists() else root / '.env.example')
+    # Upgrade older generated configs by appending newly introduced keys, never replacing values.
+    template_path = root / '.env.example'
+    template_values = read_env(template_path)
+    missing = set(template_values) - set(values)
+    if target.exists() and missing:
+        additions = []; comments = []
+        for line in template_path.read_text().splitlines():
+            if line.startswith('#'):
+                comments.append(line); continue
+            if not line.strip():
+                comments = []; continue
+            key = line.partition('=')[0]
+            if key in missing:
+                additions.extend(comments + [line])
+                values[key] = template_values[key]
+            comments = []
+        text = text.rstrip() + '\n\n# 新版部署模板新增参数（原配置保留）\n' + '\n'.join(additions) + '\n'
     updates = {}
     if not target.exists() and values.get('COMPOSE_PROJECT_NAME') == 'smarttitu_external':
         updates['COMPOSE_PROJECT_NAME'] = 'smarttitu_ext_' + secrets.token_hex(4)

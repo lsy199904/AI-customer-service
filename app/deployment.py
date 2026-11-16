@@ -163,11 +163,15 @@ def main():
         config = Settings(); config.validate()
         rag = RAGSettings(); rag.validate()
         if not config.database_url or rag.vector_backend != 'milvus' or not os.getenv('DEPLOYMENT_ID'):
-            raise DeploymentError('请先通过external.sh init准备配置')
+            raise DeploymentError('请先通过production.sh init或dev.sh init准备配置')
         stage = 'PG连接与部署隔离检查'
         with database_connection(args.create_database) as conn:
             owned = check_database(conn)
             output('PG连接及隔离检查通过', existing_deployment=owned)
+            if args.action == 'check' and owned:
+                state = conn.execute('SELECT fingerprint FROM knowledge.rag_state WHERE id=1').fetchone()
+                if not state or state[0] != rag.fingerprint:
+                    raise DeploymentError('Embedding或切片配置已变化，请执行production.sh update-knowledge --rebuild后再启动')
             stage = '文档与图片检查'; check_media_and_sources(config, rag)
             stage = '模型接口检查'; dimensions = check_models(config, rag)
             stage = 'Milvus连接检查'; check_milvus(rag, owned, dimensions)

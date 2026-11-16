@@ -11,6 +11,5 @@ models
 deploy/generated
 evaluation
 migration-storage
-knowledge_sources
 *.zip
 *.tar.gz
