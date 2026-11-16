@@ -91,7 +91,7 @@ class ConversationFiles(logging.Handler):
         try:
             day=datetime.fromtimestamp(record.created,self.timezone).date()
             if self.day!=day:
-                prune_conversations(self.directory,day,int(os.getenv('LOG_RETENTION_DAYS','30')),max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','3')))))
+                prune_conversations(self.directory,day,int(os.getenv('LOG_RETENTION_DAYS','30')),max(1,min(30,int(os.getenv('LOG_DEBUG_RETENTION_DAYS','7')))))
                 self.day=day
             parent=self.directory
             for part in ('conversations',*parts[:-1]):

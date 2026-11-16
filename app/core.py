@@ -31,6 +31,7 @@ DEMO_TENANT='__smarttitu_demo__'
 
 @dataclass
 class Settings:
+    anonymous_cookie_name: str = field(default_factory=lambda:os.getenv('ANONYMOUS_COOKIE_NAME','smarttitu_anonymous_visitor'))
     anonymous_cookie_secure: bool = field(default_factory=lambda:os.getenv('ANONYMOUS_COOKIE_SECURE','false').lower()=='true')
     anonymous_widget_enabled: bool = field(default_factory=lambda:os.getenv('ANONYMOUS_WIDGET_ENABLED','false').lower()=='true')
     database_url: str = field(default_factory=lambda: os.getenv('DATABASE_URL',''))
@@ -58,6 +59,8 @@ class Settings:
     cleanup_interval: int = field(default_factory=lambda:int(os.getenv('SESSION_CLEANUP_INTERVAL_SECONDS','300')))
 
     def validate(self):
+        import re
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}',self.anonymous_cookie_name):raise ValueError('ANONYMOUS_COOKIE_NAME格式无效')
         if not 1<=self.retention_days<=365 or not 1<=self.context_rounds<=1000:raise ValueError('会话保留天数须为1至365，上下文轮数须为1至1000')
         if not 1<=self.requests_per_minute<=10000:raise ValueError('企业每分钟消息额度须为1至10000')
         if not math.isfinite(self.retrieval_timeout) or not .01<=self.retrieval_timeout<=300:raise ValueError('检索总超时须为0.01至300秒')
@@ -407,7 +410,7 @@ class Service:
             suffix=' FOR UPDATE' if self.config.database_url else ''
             row=self.db.execute('SELECT events FROM tenant_message_limits WHERE owner=?'+suffix,(owner,)).fetchone()
             events=[t for t in json.loads(row['events']) if t>now-60]
-            if len(events)>=self.config.requests_per_minute:raise APIError(429,'tenant_rate_limited','当前企业提问较多，请稍后再试')
+            if len(events)>=self.config.requests_per_minute:raise APIError(429,'tenant_rate_limited','当前提问较多，请稍后再试')
             events.append(now)
             self.db.execute('UPDATE tenant_message_limits SET events=?,updated=? WHERE owner=?',(json.dumps(events),now,owner))
 

@@ -19,7 +19,8 @@ class MilvusVectors:
             if self._client is None:
                 from pymilvus import MilvusClient
                 from .deadlines import remaining
-                self._client=MilvusClient(uri=self.config.milvus_uri,token=self.config.milvus_token,timeout=remaining(15))
+                self._client=MilvusClient(uri=self.config.milvus_uri,token=self.config.milvus_token,
+                    db_name=getattr(self.config,'milvus_database','default'),timeout=remaining(15))
             return self._client
 
     def ensure(self,dimension):
@@ -35,7 +36,10 @@ class MilvusVectors:
         schema.add_field('document_id',DataType.VARCHAR,max_length=80)
         schema.add_field('revision',DataType.VARCHAR,max_length=64)
         schema.add_field('vector',DataType.FLOAT_VECTOR,dim=dimension)
-        index=c.prepare_index_params();index.add_index(field_name='vector',index_type='HNSW',metric_type='COSINE',params={'M':16,'efConstruction':128})
+        index=c.prepare_index_params()
+        kind=getattr(self.config,'milvus_index_type','HNSW')
+        options={'params':{'M':16,'efConstruction':128}} if kind=='HNSW' else {}
+        index.add_index(field_name='vector',index_type=kind,metric_type='COSINE',**options)
         c.create_collection(collection_name=self.collection,schema=schema,index_params=index,consistency_level='Strong')
 
     def upsert(self,rows):
@@ -60,7 +64,7 @@ class MilvusVectors:
         # Strong consistency + active revision filters prevents newly inserted/stale data leaking.
         result=self.client.search(collection_name=self.collection,data=[vector],limit=min(limit,len(records)),
             filter=self.active_filter(records),output_fields=['id'],
-            search_params={'metric_type':'COSINE','params':{'ef':max(64,limit*2)}},consistency_level='Strong',timeout=remaining(15))
+            search_params={'metric_type':'COSINE','params':({'ef':max(64,limit*2)} if getattr(self.config,'milvus_index_type','HNSW')=='HNSW' else {})},consistency_level='Strong',timeout=remaining(15))
         check()
         allowed={r['id'] for r in records}
         return {hit['id']:float(hit['distance']) for hit in result[0] if hit['id'] in allowed}

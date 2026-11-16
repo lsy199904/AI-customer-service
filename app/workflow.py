@@ -211,10 +211,10 @@ class SupportWorkflow:
             from .deadlines import RetrievalTimeout
             if isinstance(error,RetrievalTimeout):
                 self.service.observe('retrieval_timeout',0)
-                return {'reason':'retrieval_timeout','answer':'资料查询超时了，请稍后重试，也可以试试下面的问题。',
+                return {'reason':'retrieval_timeout','answer':'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。',
                     'retrieval_failed':True,'retrieval':{'matched':False,'method':self.service.config.retrieval_backend,'reason':'retrieval_timeout','timeout_seconds':self.service.config.retrieval_timeout,'similarity':None}}
             self.service.observe('retrieval_failed',0)
-            return {'reason':'retrieval_unavailable','answer':'资料查询暂时不可用，请稍后再试，也可以试试下面的问题。',
+            return {'reason':'retrieval_unavailable','answer':'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。',
                 'retrieval_failed':True,'retrieval':{'matched':False,'method':self.service.config.retrieval_backend,'reason':'retrieval_unavailable','similarity':None}}
         finally:self.service.observe('retrieval',time.monotonic()-started)
 
@@ -293,7 +293,7 @@ class SupportWorkflow:
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             s.observe('generation_failed',0)
             if conversation:return {'answer':REPLIES[intent],'success':True,'reason':'conversation_fallback'}
-            return {'reason':'model_unavailable','answer':'我这边暂时没能完成回答，请稍后重试，也可以试试下面的问题。'}
+            return {'reason':'model_unavailable','answer':'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。'}
         finally:s.observe('generation',time.monotonic()-started)
 
     def validate(self,state:State,runtime:Runtime[Context]):
