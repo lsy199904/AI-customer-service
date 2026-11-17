@@ -357,9 +357,15 @@ class SemanticKnowledge:
         else:
             ranked_candidates=[{**s,'score':s['rrf']} for s in candidates]
             eligible=ranked_candidates
+        # Documentation examples do not establish executable assistant capabilities.
+        # Apply before title shortcuts and selector fallback so neither can rescue them.
+        from .evidence_selection import example_only_for_execution
+        rejected_examples={s['row']['id'] for s in ranked_candidates
+                           if example_only_for_execution(question,s['row'])}
+        eligible=[s for s in eligible if s['row']['id'] not in rejected_examples]
         # Protect a unique, explicitly named subject BEFORE applying the rerank gate.
         # This is navigation to active knowledge, not a hard-coded answer or global threshold bypass.
-        strong=[s for s in ranked_candidates if s.get('strong_title')]
+        strong=[s for s in ranked_candidates if s.get('strong_title') and s['row']['id'] not in rejected_examples]
         preferred=next((s for s in strong if s['row']['id']==preferred_id),None)
         groups={(s['row'].get('document_id',''),topic(s['row']['title'])) for s in strong}
         primary_group=(preferred['row'].get('document_id',''),topic(preferred['row']['title'])) if preferred else next(iter(groups)) if len(groups)==1 else None
@@ -394,6 +400,7 @@ class SemanticKnowledge:
             if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_semantic_evidence' if semantic_selection is not None else 'selected_query_coverage_fallback' if fallback_policy=='query_coverage_fallback' else 'selected_ranked_evidence'
             elif fallback_policy in ('query_coverage_fallback','fallback_no_support') and s in eligible:reason='insufficient_distinctive_query_coverage'
             elif semantic_selection is not None and s in eligible:reason='not_selected_by_semantic_evidence'
+            elif s['row']['id'] in rejected_examples:reason='example_not_runtime_capability'
             elif primary:reason='different_subject_from_primary'
             elif c.rerank_enabled and s['score']<c.rerank_min_score:reason='below_rerank_threshold'
             elif anchors and not s['title_match']:reason='different_subject_from_title'
@@ -409,12 +416,13 @@ class SemanticKnowledge:
         for dense,row in ranked[:c.top_k]:
             if row['id'] not in seen:decisions.append({'id':row['id'],'title':row['title'],'similarity':round(dense,6),
                 'rerank_score':None,'selected':False,'reason':'below_dense_gate_and_no_qualified_lexical_recall'})
+        report['_suggestion_titles']=[r['title'] for _,r in ranked[:3] if r['id'] not in rejected_examples and r['title'] in report['_suggestion_titles']]
         report['_candidate_decisions']=decisions
         report['hits']=[(s['score'],{**s['row'],'_similarity':round(s['dense'],4),
                          '_rerank_score':s['score'] if c.rerank_enabled else None,
                          '_title_match':s['title_match'],'_primary_title':s['row']['id'] in primary_ids},s['dense']) for s in final]
         report['matched']=bool(report['hits'])
-        if not report['matched']:report['reason']='no_supporting_evidence' if semantic_selection is not None or fallback_policy=='fallback_no_support' else 'all_below_rerank_threshold' if c.rerank_enabled else 'no_selected_evidence'
+        if not report['matched']:report['reason']='no_supporting_evidence' if rejected_examples or semantic_selection is not None or fallback_policy=='fallback_no_support' else 'all_below_rerank_threshold' if c.rerank_enabled else 'no_selected_evidence'
         if diagnostics:report['_diagnostics']['reranked']=[{'id':s['row']['id'],'title':s['row']['title'],
             'score':s['score'],'title_match':s['title_match'],'selected':s['row']['id'] in final_ids,
             'reason':next(d['reason'] for d in decisions if d['id']==s['row']['id'])} for s in ranked_candidates]

@@ -258,6 +258,7 @@ class SupportWorkflow:
                 if value:runtime.context.delta(value)
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
                 '_resolved_question':state['retrieval'].get('query',state['question']),
+                '_runtime_tools':sorted(s.tools.tools),
                 '_on_delta':safe_delta if runtime.context.observer else None,
                 '_guidance':state.get('guide_context'),'_reserved_qr':bool(qr)}
             result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],generation_evidence(state['evidence'],bool(qr)),context)

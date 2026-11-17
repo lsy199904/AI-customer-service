@@ -54,13 +54,14 @@ def recommended_questions(knowledge,question,evidence=(),sensitive=False,related
     """Suggest curated titles only; do not lower the answer threshold or call models."""
     from .retrieval import lexical_ranking,title_text,topic
     related=[]
-    records=list(knowledge.rows.values())
+    from .evidence_selection import example_only_for_execution
+    records=[row for row in knowledge.rows.values() if not example_only_for_execution(question,row)]
     labels={row['title']:customer_question(row) for row in records}
     if not sensitive:
-        related.extend(customer_question(row) for row in evidence)
-        related.extend(labels.get(title,title) for title in related_titles if isinstance(title,str))
+        related.extend(customer_question(row) for row in evidence if not example_only_for_execution(question,row))
+        related.extend(labels[title] for title in related_titles if isinstance(title,str) and title in labels)
         try:
-            rows=[(0,{**row,'content':''}) for row in knowledge.rows.values()]
+            rows=[(0,{**row,'content':''}) for row in records]
             ranking=lexical_ranking(question,rows)
             related.extend(customer_question(s['row']) for s in sorted(ranking,key=lambda s:s['lexical'],reverse=True)
                            if s['lexical']>0 and s['coverage']>=.2)
