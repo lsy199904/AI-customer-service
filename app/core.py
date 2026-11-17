@@ -63,6 +63,7 @@ class Settings:
 
     def validate(self):
         import re
+        if os.getenv('MODEL_THINKING_FORMAT','vllm') not in ('vllm','enable_thinking','none'):raise ValueError('MODEL_THINKING_FORMAT仅支持vllm/enable_thinking/none')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}',self.anonymous_cookie_name):raise ValueError('ANONYMOUS_COOKIE_NAME格式无效')
         if not 1<=self.retention_days<=365 or not 1<=self.context_rounds<=1000:raise ValueError('会话保留天数须为1至365，上下文轮数须为1至1000')
         if not 1<=self.requests_per_minute<=10000:raise ValueError('企业每分钟消息额度须为1至10000')
@@ -241,6 +242,16 @@ def customer_answer(text):
     text=re.sub(r'\b(?:KB|DOC)-[a-f0-9]{3,64}\b','',text,flags=re.I)
     return re.sub(r'[ \t]+([，。；：,.!?])',r'\1',text).strip()
 
+def thinking_options(model):
+    """Explicit provider wire format; preserve legacy Qwen3/vLLM behavior by default."""
+    format_name=os.getenv('MODEL_THINKING_FORMAT','vllm')
+    if format_name not in ('vllm','enable_thinking','none'):
+        raise ValueError('MODEL_THINKING_FORMAT仅支持vllm/enable_thinking/none')
+    if os.getenv('MODEL_DISABLE_THINKING','true').lower()!='true' or format_name=='none':return {}
+    if format_name=='enable_thinking':return {'extra_body':{'enable_thinking':False}}
+    if 'qwen3' in model.lower():return {'extra_body':{'chat_template_kwargs':{'enable_thinking':False}}}
+    return {}
+
 class Model:
     def __init__(self, config):
         self.config = config
@@ -295,9 +306,7 @@ class Model:
             from langchain.chat_models import init_chat_model
             from .transport import client,async_client
             from .observability import event
-            options={}
-            if 'qwen3' in self.config.model.lower() and os.getenv('MODEL_DISABLE_THINKING','true').lower()=='true':
-                options['extra_body']={'chat_template_kwargs':{'enable_thinking':False}}
+            options=thinking_options(self.config.model)
             from .deadlines import remaining
             from .evidence_selection import model_options
             call_options=model_options() or {}
