@@ -63,7 +63,7 @@ def initialize(root=ROOT, source=None, database='ai_customer_external_test'):
         previous = read_env(source)
         # Copy only model/client policy settings; never reuse source DB, namespace or signing key.
         for key in values:
-            if (key.startswith(('MODEL_', 'EMBEDDING_', 'RERANK_', 'RAG_')) or key in ('SEMANTIC_MIN_SIMILARITY','RETRIEVAL_TIMEOUT_SECONDS','SESSION_RETENTION_DAYS','SESSION_CONTEXT_ROUNDS','SESSION_IDLE_SECONDS','SESSION_CLEANUP_INTERVAL_SECONDS','TENANT_MESSAGES_PER_MINUTE')) and key in previous:
+            if (key.startswith(('MODEL_', 'EMBEDDING_', 'RERANK_', 'RAG_')) or key in ('SEMANTIC_MIN_SIMILARITY','RETRIEVAL_TIMEOUT_SECONDS','SESSION_RETENTION_DAYS','SESSION_CONTEXT_ROUNDS','SESSION_IDLE_SECONDS','SESSION_CLEANUP_INTERVAL_SECONDS','TENANT_MESSAGES_PER_MINUTE','GLOBAL_RAG_QUESTIONS_PER_DAY')) and key in previous:
                 updates[key] = previous[key]
         for key in ('MILVUS_URI', 'MILVUS_TOKEN', 'MILVUS_DATABASE'):
             if previous.get(key):
