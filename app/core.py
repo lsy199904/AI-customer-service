@@ -15,6 +15,8 @@ import time
 import urllib.request
 import urllib.parse
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 
 from .public_links import PublicLinks
@@ -55,6 +57,7 @@ class Settings:
     retention_days: int = field(default_factory=lambda:int(os.getenv('SESSION_RETENTION_DAYS','7')))
     context_rounds: int = field(default_factory=lambda:int(os.getenv('SESSION_CONTEXT_ROUNDS','20')))
     requests_per_minute: int = field(default_factory=lambda:int(os.getenv('TENANT_MESSAGES_PER_MINUTE','20')))
+    global_rag_questions_per_day: int = field(default_factory=lambda:int(os.getenv('GLOBAL_RAG_QUESTIONS_PER_DAY','1000')))
     retrieval_timeout: float = field(default_factory=lambda:float(os.getenv('RETRIEVAL_TIMEOUT_SECONDS','15')))
     cleanup_interval: int = field(default_factory=lambda:int(os.getenv('SESSION_CLEANUP_INTERVAL_SECONDS','300')))
 
@@ -63,6 +66,7 @@ class Settings:
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}',self.anonymous_cookie_name):raise ValueError('ANONYMOUS_COOKIE_NAME格式无效')
         if not 1<=self.retention_days<=365 or not 1<=self.context_rounds<=1000:raise ValueError('会话保留天数须为1至365，上下文轮数须为1至1000')
         if not 1<=self.requests_per_minute<=10000:raise ValueError('企业每分钟消息额度须为1至10000')
+        if not 1<=self.global_rag_questions_per_day<=10000000:raise ValueError('全局每日RAG额度须为1至10000000')
         if not math.isfinite(self.retrieval_timeout) or not .01<=self.retrieval_timeout<=300:raise ValueError('检索总超时须为0.01至300秒')
         if not 1<=self.idle_seconds<=86400 or not 1<=self.cleanup_interval<=86400:raise ValueError('空闲时间与清理间隔须为1至86400秒')
         if len(self.secret.encode()) < 32:
@@ -375,6 +379,7 @@ class Service:
                 request_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
                 payload TEXT NOT NULL, created REAL NOT NULL);
             CREATE UNIQUE INDEX IF NOT EXISTS message_request ON messages(session,request_id,role);
+            CREATE TABLE IF NOT EXISTS global_rag_daily_limits(day TEXT PRIMARY KEY, used INTEGER NOT NULL CHECK(used>=0), updated REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS rate_limits(owner TEXT PRIMARY KEY, window INTEGER, count INTEGER);
             CREATE TABLE IF NOT EXISTS tenant_message_limits(owner TEXT PRIMARY KEY, events TEXT NOT NULL, updated REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS message_retention ON messages(created);
@@ -404,6 +409,7 @@ class Service:
     def policies(self):
         return {'session_retention_days':self.config.retention_days,'session_context_rounds':self.config.context_rounds,
                 'tenant_messages_per_minute':self.config.requests_per_minute,'rate_window_seconds':60,
+                'global_rag_questions_per_day':self.config.global_rag_questions_per_day,'daily_reset_timezone':'Asia/Shanghai',
                 'rate_scope':'tenant','retrieval_timeout_seconds':self.config.retrieval_timeout}
 
     def rate(self, actor):
@@ -418,6 +424,23 @@ class Service:
             if len(events)>=self.config.requests_per_minute:raise APIError(429,'tenant_rate_limited','当前提问较多，请稍后再试')
             events.append(now)
             self.db.execute('UPDATE tenant_message_limits SET events=?,updated=? WHERE owner=?',(json.dumps(events),now,owner))
+
+    def reserve_rag_quota(self):
+        # All tenants sharing this business database share one atomic daily counter.
+        # Reserve before any RAG model work; failed admitted requests still count.
+        with self.lock,self.db:
+            if self.config.database_url:
+                day=self.db.execute("SELECT to_char(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD') AS day").fetchone()['day']
+            else:
+                day=datetime.fromtimestamp(time.time(),ZoneInfo('Asia/Shanghai')).date().isoformat()
+            now=time.time()
+            self.db.execute('INSERT INTO global_rag_daily_limits(day,used,updated) VALUES(?,?,?) ON CONFLICT(day) DO NOTHING',(day,0,now))
+            row=self.db.execute('UPDATE global_rag_daily_limits SET used=used+1,updated=? WHERE day=? AND used<? RETURNING used',
+                                (now,day,self.config.global_rag_questions_per_day)).fetchone()
+        from .observability import event
+        event('global_rag_quota',day=day,allowed=row is not None,limit=self.config.global_rag_questions_per_day,
+              used=row['used'] if row else None)
+        return row is not None
 
     def cutoff(self):return time.time()-self.config.retention_days*86400
 

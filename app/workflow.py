@@ -142,6 +142,11 @@ class SupportWorkflow:
 
     def retrieve(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('retrieving');started=time.monotonic()
+        if not self.service.reserve_rag_quota():
+            return {'success':False,'reason':'global_daily_limit','retrieval_failed':True,
+                    'answer':'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。',
+                    'evidence':[],'candidates':[],'selected':[],
+                    'retrieval':{'matched':False,'method':'skipped','reason':'global_daily_limit'}}
         try:
             from .chains import retrieve
             from .deadlines import run,check

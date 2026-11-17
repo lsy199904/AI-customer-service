@@ -223,6 +223,7 @@ def debug_event(name, **fields):
 # A shared mutable buffer is propagated to sync workers and SSE tasks through ContextVar.
 _trace = ContextVar('request_trace', default=None)
 _NODE_NAMES = {
+    'global_rag_quota':'全局每日RAG额度检查',
     'chat_started':'接收问题','question_classified':'问题分类',
     'retrieval_model_started':'检索模型调用开始','retrieval_model_completed':'检索模型调用完成',
     'question_resolved':'追问与主题解析完成','question_resolution_unavailable':'追问解析回退',
@@ -391,7 +392,7 @@ def grounding_warning(issues,evidence,guidance=None):
 
 # Compact production view; detailed snapshots remain opt-in with LOG_TRACE_DETAIL=full.
 def compact_steps(steps):
-    keep={'chat_started','chat_cache_hit','faq_answered','question_resolved','retrieval_candidates','retrieval_completed',
+    keep={'global_rag_quota','chat_started','chat_cache_hit','faq_answered','question_resolved','retrieval_candidates','retrieval_completed',
           'evidence_selection_completed','evidence_selection_unavailable','generation_completed',
           'model_request_completed','model_first_token','image_selection_completed','chat_completed',
           'stream_completed','http_completed'}
