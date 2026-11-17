@@ -371,8 +371,6 @@ class Service:
         self.db = open_database(config.db,config.database_url)
         from .tools import ToolRegistry
         self.tools=ToolRegistry()
-        from .faq import FAQCatalog
-        self.faq=FAQCatalog(BASE/'data/faq.json')
         self._workflow=None
         self.metrics=collections.Counter()
         from contextlib import nullcontext
@@ -408,7 +406,6 @@ class Service:
         return {'name': 'SmartTITU 智能客服', 'version':'release-anonymous-20261111', 'welcome': WELCOME,
                 'link_policy':{'hosts':PublicLinks().hosts},
                 'quick_questions': list(QUICK_QUESTIONS),
-                'faq':self.faq.batch(),
                 'idle_timeout_seconds': self.config.idle_seconds, 'contact': self.contact(),
                 'policies':self.policies(),
                 'answer_mode': self.config.mode, 'knowledge_count': len(self.knowledge.rows), 'retrieval_backend':self.config.retrieval_backend,
@@ -605,13 +602,9 @@ class Service:
 
     def _chat(self, actor, sid, body, observer=None, cancelled=None):
         from .observability import event,error_fields
-        if set(body)-{'message','request_id','faq_id'}:
-            raise APIError(400,'invalid_fields','仅接受 message/request_id/faq_id')
-        faq_id=body.get('faq_id')
-        faq=self.faq.rows.get(faq_id) if isinstance(faq_id,str) else None
-        if faq_id is not None and faq is None:raise APIError(404,'faq_not_found','该常见问题已更新，请换一批后重试')
+        if set(body)-{'message','request_id'}:
+            raise APIError(400,'invalid_fields','仅接受 message/request_id')
         question=body.get('message'); rid=body.get('request_id')
-        if faq is not None and question!=faq['question']:raise APIError(400,'invalid_faq','常见问题与编号不一致，请刷新后重试')
         if not isinstance(question,str) or not question.strip() or len(question)>2000:
             raise APIError(400,'invalid_message','问题须为1至2000字的文本')
         if not isinstance(rid,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',rid):
@@ -622,7 +615,7 @@ class Service:
             if cached:
                 if cached['created']<self.cutoff():raise APIError(409,'request_expired','该请求已过期，请使用新的request_id重试')
                 prev=self.db.execute("SELECT content FROM messages WHERE session=? AND request_id=? AND role='user'",(sid,rid)).fetchone()
-                if prev['content']!=question.strip() or json.loads(cached['payload']).get('faq_id')!=faq_id:
+                if prev['content']!=question.strip():
                     raise APIError(409,'request_id_conflict','相同request_id不能用于不同问题')
                 from .observability import event
                 event('chat_cache_hit')
@@ -631,28 +624,19 @@ class Service:
                 raise APIError(409,'session_busy','该会话正在回答,请等待完成')
             self.active.add(sid)
         try:
-            key=None
-            if faq is not None:
-                # Authenticated ownership/idempotency/persistence remain shared with normal chat.
-                # No paid-RAG rate consumption, query resolution, vectors, rerank, graph or LLM.
-                state={'success':True,'reason':'standard_faq','answer':faq['answer'],'intent':'faq',
-                       'images':[self.media.public(self.media.rows[k]) for k in faq.get('image_ids',[]) if k in self.media.rows],
-                       'selected':[],'retrieval':{'matched':False,'method':'not_used','reason':'standard_faq'}}
-                event('faq_answered',faq_id=faq_id,faq_version=self.faq.version)
-            else:
-                self.rate(actor)
-                history=self.context_history(actor,sid)
-                question=question.strip()
-                # Resolve short follow-ups with previous user question; idle sessions resume without old context.
-                idle=time.time()-session['updated']>self.config.idle_seconds
-                if idle:
-                    history=[]
-                from .workflow import SupportWorkflow
-                with self.lock:
-                    if self._workflow is None:self._workflow=SupportWorkflow(self)
-                state,key=self._workflow.invoke({'question':question,'history':history,
-                    'page_context':json.loads(session['context']),'actor':{'tenant_id':actor['tenant_id'],'sub':actor['sub']},
-                    'session_id':sid,'request_id':rid},observer,cancelled)
+            self.rate(actor)
+            history=self.context_history(actor,sid)
+            question=question.strip()
+            # Resolve short follow-ups with previous user question; idle sessions resume without old context.
+            idle=time.time()-session['updated']>self.config.idle_seconds
+            if idle:
+                history=[]
+            from .workflow import SupportWorkflow
+            with self.lock:
+                if self._workflow is None:self._workflow=SupportWorkflow(self)
+            state,key=self._workflow.invoke({'question':question,'history':history,
+                'page_context':json.loads(session['context']),'actor':{'tenant_id':actor['tenant_id'],'sub':actor['sub']},
+                'session_id':sid,'request_id':rid},observer,cancelled)
             if cancelled is not None and cancelled.is_set():
                 from .workflow import RequestCancelled
                 raise RequestCancelled()
@@ -660,11 +644,10 @@ class Service:
             answer=PublicLinks().clean(answer)
             result={'session_id':sid,'request_id':rid,'message_id':str(uuid.uuid4()),
                 'answer':answer,'status':'answered' if success else 'handoff' if state['intent']=='handoff' else 'suggestions','intent':state['intent'],'images':state['images'],
-                'reason':reason,'answer_mode':'fixed' if faq is not None else self.config.mode,'retrieval':{k:v for k,v in state['retrieval'].items() if k not in ('hits','_suggestion_titles','_candidate_decisions','_diagnostics','_configuration')},
+                'reason':reason,'answer_mode':self.config.mode,'retrieval':{k:v for k,v in state['retrieval'].items() if k not in ('hits','_suggestion_titles','_candidate_decisions','_diagnostics','_configuration')},
                 'citations':[self.citation(r) for r in state['selected']],
                 'suggestions':state.get('suggestions',[]),'suggestion_sources':state.get('suggestion_sources',[]),'actions':state.get('actions',[]),'guidance':state.get('guidance'),
                 'handoff':state['intent']=='handoff','contact':self.contact() if state['intent']=='handoff' else None,'created_at':time.time()}
-            if faq is not None:result.update(faq_id=faq_id,faq_version=self.faq.version)
             result=PublicLinks().response(result)
             event('response_persist_started')
             try:
@@ -674,13 +657,12 @@ class Service:
                     self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
                         (result['message_id'],sid,rid,'assistant',answer,json.dumps(result,ensure_ascii=False),result['created_at']))
                     self.db.execute('UPDATE sessions SET updated=? WHERE id=?',(result['created_at'],sid))
-                    if key:self.db.execute('INSERT INTO workflow_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated=excluded.updated',(key,sid,rid,'complete',result['created_at'],result['created_at']))
+                    self.db.execute('INSERT INTO workflow_runs VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,updated=excluded.updated',(key,sid,rid,'complete',result['created_at'],result['created_at']))
             except Exception as error:
                 event('response_persist_failed',level='ERROR',**error_fields(error))
                 raise
             event('response_persist_completed')
-            try:
-                if key:self._workflow.saver.delete_thread(key)
+            try:self._workflow.saver.delete_thread(key)
             except Exception as error:
                 self.observe('checkpoint_cleanup_failed',0)
                 event('checkpoint_cleanup_failed',level='WARNING',**error_fields(error))

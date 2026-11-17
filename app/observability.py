@@ -229,7 +229,7 @@ _NODE_NAMES = {
     'question_resolved':'追问与主题解析完成','question_resolution_unavailable':'追问解析回退',
     'image_planning_started':'配图语义判断开始','image_planning_unavailable':'配图判断不可用',
     'image_selection_started':'配图最终校验开始','image_selection_completed':'本轮配图选择完成',
-    'faq_answered':'常见问题直接回答','evidence_selection_completed':'回答证据选择完成','evidence_selection_unavailable':'证据判断回退','retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'旧版回答依据拦截','generation_grounding_warning':'回答依据告警（不阻断）','generation_grounding_check_unavailable':'依据检查不可用',
+    'evidence_selection_completed':'回答证据选择完成','evidence_selection_unavailable':'证据判断回退','retrieval_candidates':'检索候选选择明细','generation_grounding_rejected':'旧版回答依据拦截','generation_grounding_warning':'回答依据告警（不阻断）','generation_grounding_check_unavailable':'依据检查不可用',
     'retrieval_model_failed':'检索模型调用失败','retrieval_completed':'知识检索完成',
     'retrieval_failed':'知识检索失败','model_request_started':'回答模型调用开始',
     'model_request_completed':'回答模型调用完成','model_request_failed':'回答模型调用失败',
@@ -392,7 +392,7 @@ def grounding_warning(issues,evidence,guidance=None):
 
 # Compact production view; detailed snapshots remain opt-in with LOG_TRACE_DETAIL=full.
 def compact_steps(steps):
-    keep={'global_rag_quota','chat_started','chat_cache_hit','faq_answered','question_resolved','retrieval_candidates','retrieval_completed',
+    keep={'global_rag_quota','chat_started','chat_cache_hit','question_resolved','retrieval_candidates','retrieval_completed',
           'evidence_selection_completed','evidence_selection_unavailable','generation_completed',
           'model_request_completed','model_first_token','image_selection_completed','chat_completed',
           'stream_completed','http_completed'}

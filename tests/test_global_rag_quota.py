@@ -56,7 +56,7 @@ class GlobalRAGQuotaTests(unittest.TestCase):
         self.assertEqual(result['answer'],'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。')
         self.assertEqual(result['evidence'],[])
 
-    def test_http_equivalent_chat_is_global_cached_and_faq_still_works(self):
+    def test_chat_quota_is_global_cached_and_handoff_still_works(self):
         self.config.global_rag_questions_per_day=1
         a={'tenant_id':'tenant-a','sub':'alice'};b={'tenant_id':'tenant-b','sub':'bob'}
         sa=self.service.create(a,{})['session_id'];sb=self.service.create(b,{})['session_id']
@@ -67,9 +67,9 @@ class GlobalRAGQuotaTests(unittest.TestCase):
         self.assertEqual(self.service.chat(a,sa,{'message':'注册流程','request_id':'daily-first-request'}),first)
         blocked=self.service.chat(b,sb,{'message':'企业认证流程','request_id':'daily-blocked-request'})
         self.assertEqual(blocked['reason'],'global_daily_limit')
-        faq=self.service.faq.rows['faq-05']
-        fixed=self.service.chat(b,sb,{'message':faq['question'],'faq_id':faq['id'],'request_id':'daily-faq-request'})
-        self.assertEqual(fixed['reason'],'standard_faq')
+        handoff=self.service.chat(b,sb,{'message':'转人工客服','request_id':'daily-handoff-request'})
+        self.assertEqual(handoff['intent'],'handoff')
+        self.assertNotIn('faq',self.service.bootstrap())
         self.assertEqual(self.service.db.execute('SELECT SUM(used) FROM global_rag_daily_limits').fetchone()[0],1)
         self.service.model.answer.assert_not_called()
 

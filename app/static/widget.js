@@ -10,7 +10,7 @@
     onResize: null,
     getToken: null
   };
-  let host, root, panel, launcher, transcript, input, sendButton, quick, status, sourcePane, faqBox, faqList, faqCount, faqSwap;
+  let host, root, panel, launcher, transcript, input, sendButton, quick, status, sourcePane;
   const windowId='window-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2));
   let sessionId = null, initialized = false, busy = false, opened = false, expanded = false;
   let idleTimer, controller, generation = 0, retry = null, lastFocus;
@@ -23,7 +23,6 @@
     .panel.expanded{right:16px;bottom:84px;width:min(860px,calc(100vw - 32px));height:calc(100dvh - 100px);min-height:0}header>div:not(.head-actions):not(.avatar){min-width:0}h2,.subtitle{white-space:nowrap}.head-actions{flex-shrink:0}
     header{padding:19px 20px;display:flex;align-items:center;gap:11px;background:linear-gradient(115deg,#edf5ff,#f9fcff);border-bottom:1px solid #e8eef6}.avatar{height:42px;width:42px;border-radius:14px;background:#155de6;display:grid;place-items:center;color:#fff;font-size:22px}h2{font-size:16px;line-height:1.4;margin:0;font-weight:650}.subtitle{font-size:11px;color:#6b809a}.head-actions{margin-left:auto;display:flex;gap:4px}.ghost{border:0;background:transparent;color:#62778f;border-radius:8px;padding:7px 9px}.ghost:hover{background:#e1edff;color:#135de4}
     .body{flex:1;overflow:auto;padding:20px;background:#f7f9fc;overscroll-behavior:contain}.welcome-label{font-size:11px;letter-spacing:.12em;color:#547491;margin-bottom:10px}.message{margin-bottom:17px;display:flex;flex-direction:column;align-items:flex-start}.message.user{align-items:flex-end}.message-role{display:flex;align-items:center;gap:7px;margin:0 2px 7px;color:#61758f;font-size:11px;font-weight:500}.user .message-role{flex-direction:row-reverse}.message-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:9px;background:#e6efff;color:#155de6;flex-shrink:0}.message-avatar svg{width:18px;height:18px}.user .message-avatar{background:#edf0f5;color:#65748a}.message .bubble{margin-left:2px}.message.user .bubble{margin-left:0;margin-right:2px}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:94%;border-radius:3px 15px 15px 15px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px #192c4a05;border:1px solid #e6ecf4;font-size:13px}.bubble a{color:#155de6;text-decoration:underline;text-underline-offset:2px}.user .bubble a{color:inherit}.bubble a:focus-visible{outline:2px solid currentColor;outline-offset:3px}.bubble pre{white-space:pre;overflow:auto;max-width:100%;background:#f1f5fa;border-radius:7px;padding:10px;font:11px/1.7 monospace}.reply-images{max-width:94%;display:flex;flex-direction:column;gap:8px;margin-top:9px}.image-button{border:1px solid #e0e8f4;border-radius:11px;background:#fff;padding:8px;text-align:left}.image-button img{display:block;max-width:100%;max-height:220px;object-fit:contain;border-radius:7px}.image-caption{color:#6380a0;font-size:11px;padding-top:5px}.preview-image{display:block;max-width:100%;max-height:75vh;object-fit:contain}.user .bubble{background:#155de6;color:#fff;border-color:#155de6;border-radius:15px 3px 15px 15px}.meta{font-size:10px;color:#73879d;margin:5px 3px}.sources{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-width:100%}.source{background:#eff5ff;color:#245ba4;border:1px solid #dae7fb;border-radius:7px;font-size:11px;padding:5px 8px;text-align:left;max-width:100%}
-    .faq-panel{flex-shrink:0;margin:0;padding:10px 16px 12px;border-bottom:1px solid #e7edf5;background:#f5f8ff}.faq-panel[hidden]{display:none}.faq-header{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;color:#315c96;font-size:12px}.faq-header::-webkit-details-marker{display:none}.faq-title{font-weight:600}.faq-title:before{content:'▾';margin-right:6px}.faq-panel:not([open]) .faq-title:before{content:'▸'}.faq-count{font-size:10px;color:#8493aa}.faq-swap{margin-left:auto;border:0;background:transparent;color:#155de6;font-size:11px;cursor:pointer;padding:3px 0 3px 8px}.faq-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:9px}.faq-question{border:1px solid #dce6f5;border-radius:8px;padding:8px;background:#fff;color:#46648b;text-align:left;font-size:11px;line-height:1.5;cursor:pointer}.faq-question:hover{border-color:#8db2ef;background:#edf4ff}.faq-question:disabled,.faq-swap:disabled{opacity:.55;cursor:wait}.faq-answer-tag{font-size:10px;color:#738ba6;margin:5px 3px}.faq-question:focus-visible,.faq-swap:focus-visible{outline:2px solid #5c91e9;outline-offset:2px}@media(max-width:500px){.faq-list{grid-template-columns:repeat(2,minmax(0,1fr))}.faq-panel{padding:8px 12px}.faq-question{padding:6px}}
     .quick{display:flex;flex-wrap:wrap;gap:7px;padding-top:2px;margin-bottom:18px}.quick button{border:1px solid #dce6f4;border-radius:999px;background:white;color:#34577f;font-size:12px;padding:7px 10px}.quick button:hover{border-color:#7ba6ef;background:#f0f6ff}.notice{font-size:12px;color:#9a611c;white-space:pre-wrap;margin:12px 0}.composer{padding:12px 16px 10px;border-top:1px solid #e7edf5;background:#fff}.entry{display:flex;gap:8px;align-items:flex-end;border:1px solid #d7e1ed;border-radius:13px;padding:8px}.entry:focus-within{border-color:#6797ee;box-shadow:0 0 0 2px #eaf1ff}textarea{resize:none;border:0;outline:0!important;background:transparent;flex:1;min-width:0;width:auto;height:44px;max-height:100px;font-size:13px;padding:3px 5px;color:#17283b}.send{flex-shrink:0;white-space:nowrap;border:0;border-radius:9px;color:#fff;background:#155de6;padding:9px 12px;font-size:12px}.foot{display:flex;align-items:center;justify-content:space-between;margin-top:7px;font-size:10px;color:#8a99ab}.human{border:0;padding:0;background:transparent;color:#5d789c;font-size:11px}.contact{background:#f1f6ff;border-radius:10px;padding:11px 12px;margin-top:9px;font-size:12px;max-width:100%}.contact a{display:block;color:#235cac}.contact img{display:block;width:128px;height:128px;object-fit:contain;margin-top:9px}.contact .hint{font-size:11px;color:#6b809a}
     .suggestions{margin:10px 0 0;max-width:100%}.suggestions .handoff-choice{border-color:#9cb8e6;color:#155de6;font-weight:600}
     .source-pane{position:absolute;inset:0;background:#fff;z-index:2;padding:20px;overflow:auto}.source-pane h3{font-size:15px;margin:10px 0}.source-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}.source-back{border:1px solid #dce6f4;background:#f5f8fc;color:#34577f;padding:6px 10px;border-radius:8px}.loading{color:#73879d;font-size:12px;padding:10px 0}.retry{border:1px solid #ddd;background:#fff;color:#9a611c;border-radius:7px;padding:5px 10px}
@@ -196,7 +195,6 @@
         evidenceParent=element('details','guidance-media');evidenceParent.append(element('summary','','查看流程图与用户手册'));row.append(evidenceParent);
       }
     }
-    if(response?.answer_mode==='fixed')row.append(element('div','faq-answer-tag','常见问题'));
     if(response?.images?.length)renderImages(evidenceParent,response.images);
     if(response?.citations?.length)renderSources(evidenceParent,response.citations);
     if(!response?.guidance&&response?.status!=='suggestions'&&response?.actions?.length)renderAssistantActions(row,response.actions);
@@ -373,27 +371,7 @@
     scroll();
   }
   function clearStatus() { status.textContent='';status.hidden=true; }
-  function setBusy(value) { busy=value;sendButton.disabled=value;input.disabled=value;faqList?.querySelectorAll('button').forEach(b=>{b.disabled=value;});if(faqSwap)faqSwap.disabled=value; }
-  let faqItems=[];
-  function renderFAQ(batch) {
-    faqItems=Array.isArray(batch?.items)?batch.items:[];
-    faqList.replaceChildren();faqBox.hidden=!faqItems.length;
-    faqCount.textContent=batch?.total ? `${batch.total}个问题` : '';
-    for(const item of faqItems.slice(0,6)) {
-      const button=element('button','faq-question',item.question);button.type='button';button.disabled=busy;
-      button.onclick=()=>send(item.question,false,item.id);faqList.append(button);
-    }
-  }
-  async function nextFAQ() {
-    if(busy||!initialized)return;
-    const version=generation;faqSwap.disabled=true;
-    try {
-      const exclude=faqItems.map(item=>item.id).join(',');
-      const batch=await request('/smart-bot/v1/faq?exclude='+encodeURIComponent(exclude));
-      if(version===generation)renderFAQ(batch);
-    } catch(error) {if(version===generation)notice('常见问题暂时无法换一批，请稍后重试。',nextFAQ);}
-    finally {if(version===generation)faqSwap.disabled=busy;}
-  }
+  function setBusy(value) { busy=value;sendButton.disabled=value;input.disabled=value; }
   let linkPolicy={hosts:[]};
   async function initialize(version) {
     setBusy(true); transcript.replaceChildren();quick.replaceChildren();clearStatus();
@@ -403,7 +381,6 @@
       config.streaming=boot.capabilities?.streaming===true;
       linkPolicy={hosts:Array.isArray(boot.link_policy?.hosts)?boot.link_policy.hosts:[]};
       if (version !== generation) return;
-      renderFAQ(boot.faq);
       idleSeconds=boot.idle_timeout_seconds || 1800;
       // Restore only the most recent session belonging to the authenticated user, as verified by the backend.
       transcript.firstChild.textContent='正在加载您的会话…';
@@ -430,15 +407,15 @@
     controller?.abort();controller=new AbortController();const v=++generation;
     return initialize(v);
   }
-  async function send(value, retrying=false, faqId=null) {
+  async function send(value, retrying=false) {
     const text=(value ?? input.value).trim();
     if (!text || busy) return;
     if (!initialized) { notice('请先完成客服连接。',()=>refresh());return; }
     if (text.length>2000) { notice('问题不能超过2000字');return; }
     const v=generation;setBusy(true);clearStatus();activity();
-    const rid=retrying && retry?.text===text && (retry?.faqId||null)===faqId ? retry.id : ('msg-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2)));
+    const rid=retrying && retry?.text===text ? retry.id : ('msg-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2)));
     if (!retrying) message('user',text);
-    input.value='';retry={text,id:rid,faqId};
+    input.value='';retry={text,id:rid};
     let live=null,liveText='';
     const loading=element('div','loading','正在为您解答…');transcript.append(loading);scroll();
     try {
@@ -447,7 +424,7 @@
         if (v!==generation) return;sessionId=created.session_id;
       }
       const path=`/smart-bot/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
-      const r=faqId ? await request(`/smart-bot/v1/sessions/${sessionId}/faq`,'POST',{faq_id:faqId,request_id:rid}) : config.streaming ? await streamReply(path,payload,stage=>{
+      const r=config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
         const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
         loading.textContent=stage==='assembling'&&!loading.hidden?'正在加载相关图示…':(labels[stage] || '正在为您解答…');
@@ -466,7 +443,7 @@
       if (v!==generation) return;
       const finished=message('assistant',r.answer,r);if(live){live.remove();live=null;finished.style.animation='none';}retry=null;activity();
     } catch(err) {
-      if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true,faqId));
+      if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true));
     } finally {
       live?.remove();loading.remove();if(v===generation) {setBusy(false);input.focus();scroll();}
     }
@@ -545,7 +522,6 @@
   }
   function reset() {
     generation++;controller?.abort();controller=new AbortController();sessionId=null;initialized=false;retry=null;busy=false;
-    if(faqBox)faqBox.hidden=true;if(faqList)faqList.replaceChildren();faqItems=[];
     if(transcript) transcript.replaceChildren();if(quick) quick.replaceChildren();if(sourcePane) {sourcePane.replaceChildren();sourcePane.hidden=true;}
     if(input) input.value='';if(status) clearStatus();close(false);
   }
@@ -585,11 +561,6 @@
     if(config.layout==='iframe'&&!config.onResize)resize.hidden=true;
     actions.append(fresh,historyButton,resize,minimize);
     header.append(title,actions);panel.append(header);
-    faqBox=element('details','faq-panel');faqBox.open=true;faqBox.hidden=true;
-    const faqHeader=element('summary','faq-header');faqHeader.append(element('span','faq-title','常见问题'));
-    faqCount=element('span','faq-count','');faqHeader.append(faqCount);
-    faqSwap=element('button','faq-swap','换一批');faqSwap.type='button';faqSwap.onclick=e=>{e.preventDefault();e.stopPropagation();nextFAQ();};faqHeader.append(faqSwap);
-    faqList=element('div','faq-list');faqList.setAttribute('aria-label','常见问题直接解答');faqBox.append(faqHeader,faqList);panel.append(faqBox);
     transcript=element('div','body');transcript.setAttribute('role','log');transcript.setAttribute('aria-live','polite');panel.append(transcript);
     const composer=element('div','composer');quick=element('div','quick');status=element('div','notice');status.setAttribute('role','status');status.hidden=true;
     const entry=element('div','entry');input=element('textarea');input.placeholder='输入您的问题…';input.maxLength=2000;input.setAttribute('aria-label','客服问题');

@@ -23,7 +23,6 @@ sh scripts/production.sh deploy
 | 路径 | 用途 |
 |---|---|
 | `app/` | 原有问答、检索、匿名身份、日志及初始化代码 |
-| `data/faq.json` | 24个固定常见问答，页面随机展示6题，点击直接返回；与自由输入RAG独立 |
 | `knowledge_sources/` | 正式Word、PDF知识源，随镜像交付 |
 | `app/static/media/`、`data/media.json` | 图片及知识配图登记，随镜像交付 |
 | `.env.example` | 唯一配置模板；生成的真实.env不提交Git |
