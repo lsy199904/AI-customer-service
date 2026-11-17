@@ -161,6 +161,11 @@ class ChatBody(BaseModel):
     message: str=Field(min_length=1,max_length=2000)
     request_id: str=Field(min_length=8,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
 
+class FAQBody(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    faq_id:str=Field(pattern=r'^faq-[a-z0-9-]{1,40}$')
+    request_id:str=Field(min_length=8,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
+
 bearer=HTTPBearer(auto_error=False)
 
 def current_service(request:Request):return request.app.state.service
@@ -315,6 +320,16 @@ def create_app(config=None,model=None,service=None):
 
     @app.get('/v1/bootstrap',tags=['assistant'])
     def bootstrap(user=Depends(actor),service=Depends(current_service)):return public_payload(service.bootstrap())
+
+    @app.get('/v1/faq',tags=['assistant'])
+    def faq_batch(exclude:str='',user=Depends(actor),service=Depends(current_service)):
+        return service.faq.batch(exclude.split(',')[:24])
+
+    @app.post('/v1/sessions/{sid}/faq',tags=['assistant'])
+    def faq_answer(sid:str,body:FAQBody,user=Depends(actor),service=Depends(current_service)):
+        row=service.faq.rows.get(body.faq_id)
+        if row is None:raise APIError(404,'faq_not_found','该常见问题已更新，请换一批后重试')
+        return public_payload(service.chat(user,sid,{'message':row['question'],'request_id':body.request_id,'faq_id':body.faq_id}))
 
     @app.get('/v1/sessions',tags=['sessions'])
     def sessions(user=Depends(actor),service=Depends(current_service)):return public_payload(service.sessions(user))

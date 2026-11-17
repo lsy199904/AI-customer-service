@@ -80,7 +80,7 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>window.SmartTITUAssistant.ask('测试失败'));
   await page.getByText('反馈问题',{exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'复制问题编号',exact:true}).count(),1);
-  assert((await page.locator('details').innerText()).includes(requests.at(-1).body.request_id));
+  assert((await page.locator('details.meta').innerText()).includes(requests.at(-1).body.request_id));
   await page.setViewportSize({width:375,height:812});
   assert(await page.locator('#smarttitu-panel').evaluate(el=>el.getBoundingClientRect().width<=window.innerWidth));
   await page.getByRole('button',{name:'放大窗口',exact:true}).click();
