@@ -28,7 +28,7 @@ sh scripts/production.sh deploy
 | `.env.example` | 唯一配置模板；生成的真实.env不提交Git |
 | `scripts/cloud.sh`、`docs/cloud` | 云端业务库及专用账号准备 |
 | `scripts/production.sh`、`docs/kubernetes` | Kubernetes初始化、部署、更新、日志及停止 |
-| `scripts/dev.sh`、`compose.dev.yaml` | 研发环境仅启动App的验证入口 |
+| `scripts/dev.sh`、`deploy/compose/compose.dev.yaml` | 研发环境仅启动App的验证入口 |
 | `docs/部署说明.md` | 部署及日常维护说明 |
 | `var/` | 运行时生成；生产挂载PVC，保存原有日志和PDF图片 |
 | `tests/` | 部署隔离及原有功能回归测试 |

@@ -1,6 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-# 任务模板本体。被 jobs/ingest 与 jobs/rebuild 复用。
-resources:
-  - job.yaml

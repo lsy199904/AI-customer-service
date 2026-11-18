@@ -1,0 +1,33 @@
+[project]
+name = "titu-assistant"
+version = "1.0.0"                      # 见 §2，或改用 hatch-vcs 动态派生
+requires-python = ">=3.12,<3.13"       # 锁定 3.12，锁文件体积最小、与镜像一致
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "langchain>=1,<2",
+    "langchain-core>=1,<2",
+    "langchain-openai>=1,<2",
+    "langgraph>=1,<2",
+    "langgraph-checkpoint-sqlite>=3,<4",
+    "langgraph-checkpoint-postgres>=3,<4",
+    "psycopg[binary,pool]>=3.2,<4",
+    "pymilvus>=2.6,<3",
+    "httpx>=0.28,<1",
+    "pypdf>=5,<7",
+    "python-dotenv>=1.2,<2",
+    "pydantic-settings>=2,<3",         # §1 代码重组时引入，现在可不加
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-cov", "ruff", "mypy", "httpx"]   # 原 requirements-dev.txt 内容并入
+
+#[project.scripts]                      # P2 拆 CLI 时启用
+#titu = "titu.cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]                # 重组前用 ["app"] 过渡
