@@ -1,0 +1,56 @@
+# 一次性初始化 Job：建表 + 知识入库 + 模型连通检查。
+# Job模板不可变更：每次发版前先删除旧Job再apply：
+#   kubectl -n app-zone delete job titu-assistant-init --ignore-not-found
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: titu-assistant-init
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+    smarttitu-role: maintenance
+spec:
+  backoffLimit: 0                   # 失败不重试，修正配置后重建Job
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 86400    # 完成一天后自动清理
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: titu-assistant
+        smarttitu-role: maintenance
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: assistant-init
+          image: harbor.rd.dsi/smarttitu/assistant:v1.0.0-20261118   # 与40-deployment.yml保持同一镜像
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-ec", "python -m app.deployment initialize && python manage.py ingest && python manage.py doctor --models"]
+          envFrom:
+            - configMapRef:
+                name: titu-assistant-config
+            - secretRef:
+                name: titu-assistant-secret
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: var
+              mountPath: /srv/assistant/var
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: var
+          persistentVolumeClaim:
+            claimName: titu-assistant-var

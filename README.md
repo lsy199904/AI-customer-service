@@ -26,8 +26,8 @@ sh scripts/production.sh deploy
 | `knowledge_sources/` | 正式Word、PDF知识源，随镜像交付 |
 | `app/static/media/`、`data/media.json` | 图片及知识配图登记，随镜像交付 |
 | `.env.example` | 唯一配置模板；生成的真实.env不提交Git |
-| `scripts/cloud.sh`、`deploy/cloud/` | 云端业务库及专用账号准备 |
-| `scripts/production.sh`、`deploy/kubernetes/` | Kubernetes初始化、部署、更新、日志及停止 |
+| `scripts/cloud.sh`、`docs/cloud` | 云端业务库及专用账号准备 |
+| `scripts/production.sh`、`docs/kubernetes` | Kubernetes初始化、部署、更新、日志及停止 |
 | `scripts/dev.sh`、`compose.dev.yaml` | 研发环境仅启动App的验证入口 |
 | `docs/部署说明.md` | 部署及日常维护说明 |
 | `var/` | 运行时生成；生产挂载PVC，保存原有日志和PDF图片 |

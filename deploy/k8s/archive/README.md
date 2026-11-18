@@ -52,7 +52,7 @@ deploy/k8s/
 
 ### 2.2 Job 不进 base
 
-Job 进 base 的话，`apply` 每次都会碰它。配合 `ttlSecondsAfterFinished`，Job 被 GC 后下一次 apply 会**重新入库一遍**。所以入库是独立入口 `jobs/ingest`、`jobs/rebuild`。
+Job 进 base 的话，`apply` 每次都会碰它。配合 `ttlSecondsAfterFinished`，Job 被 GC 后下一次 apply 会**重新入库一遍**。所以入库是独立入口 `jobs/ingest`、`jobs`。
 
 两个入口共用 `jobs/base`，差异只有 `args`，用 JSON6902 patch 表达：
 
@@ -75,14 +75,14 @@ patches:
 `configMapGenerator` 默认给名字加内容哈希，好处是改配置自动滚更，但它让 overlay 无法用稳定名 patch 单个键。这里选稳定名字：
 
 - 三个 overlay 的 `config-patch.yaml` 只写差异键；
-- `jobs/*` 能直接用同一份配置；
+- `jobs` 能直接用同一份配置；
 - 代价是**改完 `config.env` 必须滚动重启**，`make apply` 已内置 `rollout restart`。
 
 > kustomize v5 起，`disableNameSuffixHash` 必须写在生成器的 `options` 下，写到条目顶层的旧写法会报 `unknown field`。
 
 ### 2.4 配置生成器单独成目录
 
-`base/config/` 是个只有 `configMapGenerator` 的 kustomization，被 `base/` 和 `jobs/*` 同时引用，避免 Job 把 Deployment 一起渲染进来。
+`base/config` 是个只有 `configMapGenerator` 的 kustomization，被 `base` 和 `jobs` 同时引用，避免 Job 把 Deployment 一起渲染进来。
 
 > kustomize 默认的 `LoadRestrictionsRootOnly` 只允许引用上级**目录**，不允许上级**文件**
 > （`resources: [../job.yaml]` 报 `security; file ... is not in or below`）。复用只能靠目录化。
@@ -91,7 +91,7 @@ patches:
 
 ### 3.1 模型地址只接受 HTTPS 或私网 IP
 
-`app/core.py` 的 `Settings.validate()`：
+`../../../app/core.py` 的 `Settings.validate()`：
 
 ```python
 try: private = ipaddress.ip_address(parsed.hostname).is_private

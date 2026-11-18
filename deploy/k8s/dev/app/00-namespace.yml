@@ -1,0 +1,6 @@
+# SmartTITU Assistant —— Dev 环境部署清单按资源拆分，本文件创建应用命名空间。
+# 文件清单与部署步骤见同目录 README.md；参数含义见 docs/kubernetes/app.env.example。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-zone

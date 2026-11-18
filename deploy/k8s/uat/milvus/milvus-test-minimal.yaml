@@ -1,0 +1,85 @@
+# ============================================================
+# Milvus on K8s —— 测试环境资源最小化配置（内置 MinIO + Woodpecker）
+#
+# 目标：最少 Pod / 最小 CPU、内存、存储
+# 手段：etcd 3→1 副本；MinIO distributed→standalone；各组件压低 requests/limits
+# 参考：Operator 官方 milvus_minimum.yaml
+#
+# 【重要】切换前需清理旧 PVC，详见 README「测试资源最小化」章节
+# ============================================================
+
+apiVersion: milvus.io/v1beta1
+kind: Milvus
+metadata:
+  name: milvus-26
+  namespace: milvus-test
+  labels:
+    app: milvus-26
+spec:
+  mode: cluster
+
+  # ===== Milvus 组件：全局最小资源 =====
+  components:
+    image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/milvus:v2.6.4
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    # 各组件保持单副本（默认即 1）；queryNode 内存略放宽避免 OOM
+    queryNode:
+      replicas: 1
+      resources:
+        requests: { cpu: 100m, memory: 512Mi }
+        limits:   { cpu: "1", memory: 2Gi }
+    streamingNode:
+      replicas: 1
+
+  config: {}
+
+  dependencies:
+    msgStreamType: woodpecker
+
+    # ===== etcd：降到 1 副本 =====
+    etcd:
+      inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
+        values:
+          image:
+            registry: ctt-repository-cn-guangzhou.cr.volces.com
+            repository: smarttitu-assistant/etcd
+            tag: "3.5.25-r1"
+          replicaCount: 1
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          persistence:
+            enabled: true
+            storageClass: ebs-ssd
+            accessMode: ReadWriteOnce
+            # 【重要】etcd chart 默认 size=10Gi。写成比默认值小(如 2Gi)会被
+            # Operator 误判为"缩容"，去找不存在的 old-sts ControllerRevision 而卡死。
+            # 首次部署必须写 >= 默认值 10Gi，不要为了省空间写更小。
+            size: 10Gi
+
+    # ===== MinIO：改为 standalone 单实例 =====
+    storage:
+      inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
+        values:
+          mode: standalone        # 从 distributed(4) 降为单实例
+          image:
+            repository: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/minio
+            tag: "RELEASE.2024-12-18T13-15-44Z"
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 1Gi }
+          persistence:
+            enabled: true
+            storageClass: ebs-ssd
+            accessMode: ReadWriteOnce
+            size: 10Gi

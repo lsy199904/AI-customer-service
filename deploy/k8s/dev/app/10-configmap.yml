@@ -1,0 +1,89 @@
+# 非敏感运行配置；密钥一律放 20-secret.yml，不要写在这里。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: titu-assistant-config
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+data:
+  # ---- 应用运行 ----
+  HOST: "0.0.0.0"
+  PORT: "8201"                      # Service targetPort 与此一致
+  APP_WORKERS: "1"
+
+  # ---- 认证与部署标识 ----
+  DEPLOYMENT_ID: "PVkfazVwwNC-ZiOtDIBiS1_BvEK--HZU"                 # 【必填】App与初始化Job须一致，首次生成后不变：
+                                    #   python3 -c 'import secrets; print(secrets.token_urlsafe(24))'
+
+  # ---- Milvus ----
+  VECTOR_BACKEND: "milvus"
+  MILVUS_URI: "http://milvus-26-milvus.milvus.svc.cluster.local:19530"                    # 【必填】含协议与端口，如 http://milvus-26-milvus.milvus.svc.cluster.local:19530
+  MILVUS_DATABASE: "default"
+  MILVUS_COLLECTION: "smarttitu"             # 【必填】集合前缀，确认库内不与其他部署冲突，后续不变
+  MILVUS_INDEX_TYPE: "HNSW"         # 平台仅支持自动索引时改 AUTOINDEX
+
+  # ---- LLM（外部API）----
+  ANSWER_MODE: "llm"
+  MODEL_BASE_URL: "http://10.180.158.23:4001/v1"                # 【必填】OpenAI兼容地址，不带 /chat/completions
+  MODEL_NAME: "Qwen/Qwen3-32B"
+  MODEL_MAX_TOKENS: "2048"
+  MODEL_DISABLE_THINKING: "true"
+  MODEL_THINKING_FORMAT: "vllm"     # 硅基流动用 enable_thinking
+
+  # ---- Embedding ----
+  EMBEDDING_PROVIDER: "openai"
+  EMBEDDING_URL: "http://10.180.158.23:4001/v1/embeddings"                 # 【必填】完整接口地址，如 https://api.siliconflow.cn/v1/embeddings
+  EMBEDDING_MODEL: "bge-m3"
+  EMBEDDING_REVISION: "v1"
+  EMBEDDING_TIMEOUT: "30"
+
+  # ---- Rerank ----
+  RERANK_ENABLED: "true"
+  RERANK_URL: "http://10.180.158.23:4001/v1/rerank"                    # 【必填】完整接口地址
+  RERANK_MODEL: "Qwen3-Reranker-4B"
+  RERANK_TIMEOUT: "60"
+
+  # ---- 检索与模型网络 ----
+  RETRIEVAL_BACKEND: "semantic"
+  MODEL_HTTP_ORIGINS: "http://10.180.158.23:4001"            # 模型接口为HTTP时填写，如 http://10.180.158.23:4001；全HTTPS留空
+  SEMANTIC_MIN_SIMILARITY: "0.60"
+  RERANK_MIN_SCORE: "0"
+  RAG_TOP_K: "12"
+  RAG_CONTEXT_K: "3"
+  RETRIEVAL_TIMEOUT_SECONDS: "60"
+
+  # ---- 匿名身份与前端接入 ----
+  ANONYMOUS_WIDGET_ENABLED: "true"
+  ANONYMOUS_COOKIE_NAME: "smarttitu_ext_40e7b3eaf736"   # 所有Pod同名，上线后不变
+  ANONYMOUS_COOKIE_SECURE: "true"   # 走HTTPS Ingress填true；纯HTTP验证才填false
+  FRAME_ORIGINS: ""                 # 【必填】允许嵌入iframe的业务来源，逗号分隔
+  CORS_ORIGINS: ""                  # 前端跨域直调API时才需要
+
+  # ---- 会话与限流 ----
+  SESSION_RETENTION_DAYS: "7"
+  SESSION_CONTEXT_ROUNDS: "20"
+  SESSION_IDLE_SECONDS: "1800"
+  SESSION_CLEANUP_INTERVAL_SECONDS: "300"
+  TENANT_MESSAGES_PER_MINUTE: "20"
+  GLOBAL_RAG_QUESTIONS_PER_DAY: "1000"
+
+  # ---- 日志 ----
+  LOG_TIMEZONE: "Asia/Shanghai"
+  LOG_RETENTION_DAYS: "30"
+  LOG_DEBUG_CONTENT: "true"
+  LOG_DEBUG_RETENTION_DAYS: "7"
+  LOG_TRACE_DETAIL: "compact"
+
+  # ---- 知识图片与外链 ----
+  PDF_MEDIA_ENABLED: "true"
+  CUSTOMER_LINK_HOSTS: "www.smarttitu.cn,smarttitu.cn,console.smarttitu.cn,doc.smarttitu.cn"
+  SUPPORT_QR_URL: ""
+
+  # ---- 容器内文件路径（与Dockerfile一致，勿改）----
+  KNOWLEDGE_SOURCE_DIR: "/srv/assistant/knowledge_sources"
+  MEDIA_PATH: "/srv/assistant/data/media.json"
+  PDF_MEDIA_DIR: "/srv/assistant/var/pdf_media"
+  LOG_DIR: "/srv/assistant/var/logs"
+  DATABASE_PATH: "/srv/assistant/var/assistant.db"   # 已配置DATABASE_URL，仅为回退保留
+  RAG_INDEX_PATH: "/srv/assistant/var/rag.sqlite3"   # 已配置PG+Milvus，仅为回退保留
