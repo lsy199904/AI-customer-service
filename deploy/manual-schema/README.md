@@ -4,6 +4,49 @@
 
 本目录供DBA与部署人员自行在现有PG业务库、Milvus数据库内建结构，不依赖production.sh、dev.sh或kubernetes.py。不创建云实例，不迁移PG16旧数据。PG14.25已通过应用自动初始化和问答验证；本次交付已完成表结构/迁移逐项比对、SQL与PL/pgSQL语法解析、Milvus创建参数模拟验证；尚未在真实PG14/云Milvus重新执行手工建表验收，发布前需在独立空库验证。
 
+## 0. 具体哪些表、原来怎么创建
+
+PG只需一个业务数据库，在其中分为两个schema：assistant（11张）和knowledge（6张），共17张；不是17个数据库。下列字段是用途摘要，完整字段类型、主键、约束和索引以01_postgresql.sql为准。保留代码原有TEXT/JSON文本、DOUBLE PRECISION时间戳等类型，不自行改成JSONB或TIMESTAMP。
+
+| Schema | 表名 | 用途 | 关键字段 | 原自动创建位置 |
+|---|---|---|---|---|
+| assistant | `external_deployment` | 部署归属登记，防止误连其他部署的库或集合 | id=1；metadata保存DEPLOYMENT_ID及Milvus连接、库名、前缀 | app/deployment.py：claim |
+| assistant | `sessions` | 用户会话及归属 | id；tenant、user、context、创建/更新时间 | app/core.py：Service.__init__ |
+| assistant | `messages` | 用户问题、客服回答和历史响应 | id；session关联sessions；request_id用于去重；seq用于排序 | app/core.py：Service.__init__ |
+| assistant | `global_rag_daily_limits` | 所有用户共享的每日RAG计数 | day为北京时间日期；used为已进入RAG次数 | app/core.py：Service.__init__ |
+| assistant | `rate_limits` | 早期通用限流结构，当前仍保留建表 | owner、window、count；当前每分钟提问限流使用下一张表 | app/core.py：Service.__init__ |
+| assistant | `tenant_message_limits` | 企业共享的滚动60秒提问额度 | owner；events为请求时间列表；updated为更新时间 | app/core.py：Service.__init__ |
+| assistant | `workflow_runs` | 单次请求的工作流运行登记 | id；session、request_id、status；辅助请求恢复和清理 | app/core.py：Service.__init__ |
+| assistant | `checkpoint_migrations` | 检查点数据库结构的迁移版本记录 | v；锁定依赖3.2.0对应0至9，不能只建空表 | app/workflow.py：PostgresSaver.setup / 依赖MIGRATIONS |
+| assistant | `checkpoints` | LangGraph流程状态快照 | thread_id、checkpoint_ns、checkpoint_id联合主键；checkpoint和metadata为JSONB | app/workflow.py：PostgresSaver.setup / 依赖MIGRATIONS |
+| assistant | `checkpoint_blobs` | 检查点各通道的序列化状态 | thread_id、checkpoint_ns、channel、version联合主键；blob为BYTEA | app/workflow.py：PostgresSaver.setup / 依赖MIGRATIONS |
+| assistant | `checkpoint_writes` | 检查点任务的中间写入 | thread_id、checkpoint_ns、checkpoint_id、task_id、idx联合主键；含task_path | app/workflow.py：PostgresSaver.setup / 依赖MIGRATIONS |
+| knowledge | `rag_state` | 当前知识索引配置指纹和代次 | id=1；fingerprint、generation；由ingest更新 | app/rag.py：SCHEMA / DocumentStore |
+| knowledge | `rag_documents` | 知识文档登记和当前有效版本 | id；path、title、current_revision、active | app/rag.py：SCHEMA / DocumentStore |
+| knowledge | `rag_revisions` | 文档各版本及原始文件内容 | document_id、revision联合主键；raw为BYTEA；支持原文下载 | app/rag.py：SCHEMA / DocumentStore |
+| knowledge | `rag_chunks` | 真实知识切片及关联信息 | id；document_id、revision；record为JSON文本，vector为向量JSON文本 | app/rag.py：SCHEMA / DocumentStore |
+| knowledge | `rag_events` | 知识入库、重建、停用、启用等事件 | 自增id；document_id、action、revision、created | app/rag.py：SCHEMA / DocumentStore |
+| knowledge | `rag_embedding_cache` | Embedding计算结果缓存，减少重复向量化 | fingerprint、text_hash联合主键；vector为向量JSON文本 | app/rag.py：SCHEMA / DocumentStore |
+
+原来的创建链路：
+
+```text
+python -m app.deployment initialize
+  ├─ 部署归属校验/登记 → assistant.external_deployment
+  ├─ Service初始化 → assistant下6张业务表
+  ├─ DocumentStore初始化 → knowledge下6张知识表
+  └─ PostgresSaver.setup() → assistant下4张检查点表及迁移记录
+
+python manage.py ingest
+  ├─ 原始文档解析、切片，调用Embedding生成向量
+  ├─ MilvusVectors.ensure() → 必要时创建完整集合及向量索引
+  └─ 向Milvus写向量，向PG发布知识记录及版本
+```
+
+现在改为DBA自行建结构时，不必执行上述建表链路，按后文01_postgresql.sql、02_milvus.py/控制台字段定义预建结构；知识数据仍必须通过ingest生成。
+
+Milvus不是PG的第18张表：是在指定MILVUS_DATABASE下为这套Embedding配置创建1个知识Collection。它存id、document_id、revision、vector，id对应PG的knowledge.rag_chunks.id；Milvus负责向量检索，PG负责取回完整知识片段。配置变化可能产生其他后缀集合，不预先创建研发历史集合。
+
 ## 1. PG：01_postgresql.sql
 
 先由DBA创建专用业务账号和独立空业务数据库。使用业务账号执行本SQL，或DBA先切换到该业务角色（SET ROLE）再执行，确保应用账号拥有两个schema、表与序列；不要全部建在DBA名下再只授予SELECT/INSERT/UPDATE/DELETE。
