@@ -111,6 +111,28 @@ def initialize(root=ROOT, source=None, database='ai_customer_external_test'):
         print('请填写三个模型API、DATABASE_URL、MILVUS_URI、MILVUS_TOKEN后执行deploy。')
 
 
+def repair_api_mode(root=ROOT):
+    """Repair only the three fixed deployment modes; preserve credentials and identity."""
+    target = Path(root) / '.env'
+    read_env(target)  # Reject malformed or duplicate lines before writing anything.
+    text = target.read_text(encoding='utf-8')
+    for key, value in {'ANSWER_MODE': 'llm', 'RETRIEVAL_BACKEND': 'semantic', 'VECTOR_BACKEND': 'milvus'}.items():
+        pattern = r'(?m)^\s*(?:export\s+)?' + key + r'\s*=.*$'
+        if re.search(pattern, text):
+            text = re.sub(pattern, lambda _: key + '=' + value, text)
+        else:
+            text = text.rstrip() + '\n' + key + '=' + value + '\n'
+    temporary = target.parent / ('.env.repair-' + secrets.token_hex(6))
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            handle.write(text)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print('已修复ANSWER_MODE=llm、RETRIEVAL_BACKEND=semantic、VECTOR_BACKEND=milvus；其他配置保留。')
+
+
 def validate_local(root=ROOT):
     values = read_env(Path(root) / '.env')
     required = ('ANONYMOUS_COOKIE_NAME', 'AUTH_SECRET', 'DEPLOYMENT_ID', 'DATABASE_URL', 'MILVUS_URI', 'MILVUS_TOKEN',
@@ -121,7 +143,7 @@ def validate_local(root=ROOT):
     if missing:
         raise ValueError('请填写.env参数：' + ', '.join(missing))
     if values.get('ANSWER_MODE') != 'llm' or values.get('RETRIEVAL_BACKEND') != 'semantic' or values.get('VECTOR_BACKEND') != 'milvus':
-        raise ValueError('本入口固定采用llm + semantic + milvus')
+        raise ValueError('运行模式配置不匹配；请执行 python3 scripts/configure_external.py --repair-api-mode，固定使用ANSWER_MODE=llm、RETRIEVAL_BACKEND=semantic、VECTOR_BACKEND=milvus')
     if values.get('RERANK_ENABLED') != 'true' or values.get('EMBEDDING_PROVIDER') != 'openai':
         raise ValueError('本入口要求三个模型API：openai兼容Embedding与启用Rerank')
     if len(values['AUTH_SECRET'].encode()) < 32:
@@ -144,12 +166,15 @@ if __name__ == '__main__':
     parser.add_argument('--from', dest='source')
     parser.add_argument('--database', default='ai_customer_external_test')
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--repair-api-mode', action='store_true', help='仅修复三个固定运行模式，保留其余.env配置')
     parser.add_argument('--image')
     parser.add_argument('--show-url', action='store_true')
     parser.add_argument('--check-port', action='store_true')
     args = parser.parse_args()
     try:
-        if args.check:
+        if args.repair_api_mode:
+            repair_api_mode()
+        elif args.check:
             validate_local()
         elif args.image:
             if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_./:@-]*', args.image):
