@@ -1,0 +1,26 @@
+# sqlfluff configuration (repository root)
+# 只启用“排版类”规则，避免把业务语义偏好带进格式门禁。
+# V1.0.0 基线（checksum 不可变）与 PL/pgSQL 回调/巡检脚本不交给 sqlfluff；
+# check_sql.py 只 lint 非基线 V 文件与 schema_fingerprint.sql。
+
+[sqlfluff]
+dialect = postgres
+templater = raw
+max_line_length = 120
+rules = capitalisation.keywords, capitalisation.identifiers, capitalisation.types, layout.indent, layout.commas, line_length
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:layout.indent]
+indent_unit = space
+tab_space_size = 4
+
+[sqlfluff:rules:layout.commas]
+line_position = trailing

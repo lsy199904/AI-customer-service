@@ -1,0 +1,60 @@
+
+# syntax=docker/dockerfile:1.7
+
+# ==========================================
+# Stage 1: Builder
+# ==========================================
+ARG PYTHON_VERSION=3.12
+
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
+
+# UV 使用固定版本，生产环境不要使用 latest
+COPY --from=ghcr.io/astral-sh/uv:0.9.5 /uv /uvx /bin/
+
+WORKDIR /app
+
+# UV 配置
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv
+
+# 先复制依赖定义文件，充分利用 Docker 缓存
+COPY pyproject.toml uv.lock ./
+
+# 安装生产依赖，不安装项目本身
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-install-project
+
+# 再复制应用代码
+COPY . .
+
+# 安装项目本身
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable
+
+
+# ==========================================
+# Stage 2: Runtime
+# ==========================================
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:$PATH"
+
+# 创建非 Root 用户
+RUN groupadd --system app && \
+    useradd --system --gid app --create-home app
+
+# 仅复制虚拟环境和应用代码
+COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --from=builder --chown=app:app /app/src /app/src
+
+USER app
+
+EXPOSE 8000
+
+# 根据实际项目入口修改
+CMD ["uvicorn", "agent.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,29 @@
+# EditorConfig for titu-assistant
+# 根配置：编辑器/IDE 先读这里；子目录如需例外再单独覆盖。
+# 说明：只约束编辑器行为，不替代 sqlfluff / CI 的格式门禁。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[*.sql]
+indent_size = 4
+
+[*.conf]
+indent_size = 4
+
+[Makefile]
+indent_style = tab

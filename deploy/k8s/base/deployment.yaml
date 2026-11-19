@@ -1,0 +1,110 @@
+# App 发布前置：
+#   1. 先运行 deploy/k8s/run-db-migrate.sh（独立 Job，执行 Flyway migrate）；
+#   2. 再 apply 本 Deployment。
+# Init-1 只做 validate：若数据库未执行 Job、或存在 pending 版本，App 不启动。
+# 知识入库仍在 Init-2；回滚 = rollout undo（flyway.conf 的 *:future 忽略保证旧镜像可启动）。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: titu-assistant
+  namespace: app-zone                  # overlay 可用 kustomize namespace 统一覆盖
+  labels:
+    app.kubernetes.io/name: titu-assistant
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate                     # RWO 卷不能多节点挂载；Job/入库耗时计入停机窗口，维护窗口内发布
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: titu-assistant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: titu-assistant
+        smarttitu-role: app
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 190   # 等待在答回答与清理，勿调小
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      initContainers:
+        # Init-1 只校验：Job 已把数据库执行到当前镜像的版本；pending/未执行则失败
+        - name: db-verify
+          image: harbor.rd.dsi/smarttitu/db-migrate:v1.2.0     # 与 Job、App 同 commit/tag；CI 写入
+          imagePullPolicy: IfNotPresent
+          args: ["-connectRetries=10", "validate"]
+          env:
+            - { name: FLYWAY_URL, valueFrom: { secretKeyRef: { name: titu-assistant-secret, key: FLYWAY_URL } } }
+            - { name: FLYWAY_PLACEHOLDERS_DEPLOYMENT_ID,   valueFrom: { configMapKeyRef: { name: titu-assistant-config, key: DEPLOYMENT_ID } } }
+            - { name: FLYWAY_PLACEHOLDERS_MILVUS_URI,      valueFrom: { configMapKeyRef: { name: titu-assistant-config, key: MILVUS_URI } } }
+            - { name: FLYWAY_PLACEHOLDERS_MILVUS_DATABASE, valueFrom: { configMapKeyRef: { name: titu-assistant-config, key: MILVUS_DATABASE } } }
+            - { name: FLYWAY_PLACEHOLDERS_MILVUS_PREFIX,   valueFrom: { configMapKeyRef: { name: titu-assistant-config, key: MILVUS_COLLECTION } } }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+        # Init-2 知识入库：增量幂等，指纹无变化时秒级完成；失败阻塞新 Pod 启动（不带病上线）
+        - name: knowledge-ingest
+          image: harbor.rd.dsi/smarttitu/assistant:v1.2.0      # CI 写入或发版前替换
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-ec", "python manage.py ingest"]
+          envFrom:
+            - configMapRef: { name: titu-assistant-config }
+            - secretRef:    { name: titu-assistant-secret }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 4Gi }
+          volumeMounts:
+            - name: var
+              mountPath: /srv/assistant/var
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+      containers:
+        - name: assistant
+          image: harbor.rd.dsi/smarttitu/assistant:v1.2.0      # CI 写入或发版前替换；与 knowledge-ingest 同 tag
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: titu-assistant-config }
+            - secretRef:    { name: titu-assistant-secret }
+          ports:
+            - name: http
+              containerPort: 8201
+          startupProbe:              # 首次启动含知识加载，最长容忍10分钟；首装知识量大时临时上调 failureThreshold
+            httpGet: { path: /smart-bot/ready, port: http }
+            timeoutSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 40
+          readinessProbe:
+            httpGet: { path: /smart-bot/ready, port: http }
+            timeoutSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /smart-bot/health, port: http }
+            timeoutSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: var
+              mountPath: /srv/assistant/var
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: var
+          persistentVolumeClaim:
+            claimName: titu-assistant-var

@@ -1,0 +1,27 @@
+# pre-commit 配置（仓库根）
+#
+# 安装：
+#   python3 -m pip install pre-commit sqlfluff
+#   pre-commit install
+#
+# 说明：
+#   - 这里用 language: system，避免 pre-commit 为 local hook 重新打包本仓库；
+#     代价是开发者本机需安装 sqlfluff，CI 中请固定版本（如 sqlfluff==3.x.y）。
+#   - PL/pgSQL 文件不在 sqlfluff 的 files 范围内；check_sql.py 只 lint 非基线 V 文件与 schema_fingerprint.sql。
+
+repos:
+  - repo: local
+    hooks:
+      - id: sqlfluff-lint
+        name: sqlfluff (postgres)
+        entry: sqlfluff lint --config .sqlfluff
+        language: system
+        files: ^database/postgres/(migrations/.*V[0-9].*\.sql|checks/schema_fingerprint\.sql)$
+        exclude: ^database/postgres/migrations/V1\.0\.0__baseline\.sql$
+
+      - id: postgres-sql-checks
+        name: postgres sql checks
+        entry: python3 scripts/ci/check_sql.py
+        language: system
+        pass_filenames: false
+        files: ^(database/(postgres|archive)|scripts/ci)/.*$

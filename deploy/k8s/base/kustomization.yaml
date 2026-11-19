@@ -1,0 +1,8 @@
+# P2 其余资源（service/configmap/secret/pvc/networkpolicy）随 Kustomize 落地逐步补齐。
+# job-db-migrate.yaml 不入默认资源：发布前由 deploy/k8s/run-db-migrate.sh 单独执行并等待完成；
+# deployment 的 db-verify Init 会校验，未执行则 App 不启动。
+# job-db-baseline.yaml 仅存量手工库接入时人工 apply（见 README）。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
