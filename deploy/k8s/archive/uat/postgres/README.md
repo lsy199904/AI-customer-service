@@ -16,3 +16,12 @@
 ``
 
 postgresql://smarttitu_assistant:dasb386cwwEUChfi#*!jdsadh=@postgres909ea8174503.rds-pg.ivolces.com:5432/smarttitu_assistant?sslmode=disable
+
+
+kubectl -n postgres port-forward svc/postgres-14-cluster-rw 5432:5432 -n app-zone
+
+
+101.96.217.241
+
+
+export DATABASE_URL='postgresql://smarttitu_assistant:dasb386cwwEUChfi#*!jdsadh=@101.96.217.241:5432/smarttitu_assistant?sslmode=disable'

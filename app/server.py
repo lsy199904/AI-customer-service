@@ -106,7 +106,7 @@ class RequestBoundary:
             await send(message)
         async def error(status,code,message):
             await failure(status,code,message)(scope,receive,respond)
-        if origin and not allowed:return await error(403,'origin_denied','该前端来源未授权')
+ #       if origin and not allowed:return await error(403,'origin_denied','该前端来源未授权')
         if scope['method']=='OPTIONS':
             return await Response(status_code=204,headers={
                 'Access-Control-Allow-Methods':'GET, HEAD, POST, DELETE, OPTIONS',

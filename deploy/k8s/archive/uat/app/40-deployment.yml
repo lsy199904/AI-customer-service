@@ -29,8 +29,8 @@ spec:
       #   - name: harbor-secret
       containers:
         - name: assistant
-          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-assistant:v1.0.0-20261118   # 改为实际推送的镜像标签（与90-init-job.yml保持同一镜像）
-          imagePullPolicy: IfNotPresent
+          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-assistant:v1.0.0-20261119   # 改为实际推送的镜像标签（与90-init-job.yml保持同一镜像）
+          imagePullPolicy: IfNotPresents
           envFrom:
             - configMapRef:
                 name: titu-assistant-config

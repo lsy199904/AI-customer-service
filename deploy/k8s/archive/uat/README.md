@@ -14,6 +14,8 @@ Postgres 数据库使用已有的实例 https://console.volcengine.com/dbw/regio
 
 Milvus 需要自己在 k8s 集群 titu-hub-poc 上自行部署 ，创建专属命名空间 milvus-test 依赖 的前置条件 storageless  ebs-ssd
 
+kubectl port-forward --address 0.0.0.0 service/milvus-26-milvus 19530:19530 -n milvus-test
+
 
 智能客服应用 smarttitu-assistant 部署的 namespace 为 app-zone,  依赖的前置条件 storageless  ebs-ssd
 
@@ -25,3 +27,13 @@ Milvus 需要自己在 k8s 集群 titu-hub-poc 上自行部署 ，创建专属�
 
 
 python 02_milvus.py --collection smarttitu_knowledge_1299041d3ee49db9 --dimension 1024
+
+
+
+
+kubectl port-forward --address 0.0.0.0 service/titu-assistant 80:8088 -n app-zone
+
+
+
+
+http://titu-assistant.app-zone.svc.cluster.local:80/smart-bot/iframe-anonymous.js

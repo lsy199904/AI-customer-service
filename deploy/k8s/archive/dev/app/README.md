@@ -16,14 +16,14 @@
 - **基础镜像**：`python:3.12-slim`。
 - **系统依赖**：`libgl1`、`libglib2.0-0`、`libgomp1`。
 - **Python 依赖**：按 `requirements.lock` 锁定版本安装，保证不同时间构建出的镜像依赖一致。
-- **随镜像交付**：`../../../../../app`（问答、检索、匿名身份等代码）、`data/`（含 `media.json` 图片登记）、`knowledge_sources/`（正式知识源）、`manage.py`。知识文档与配图打进镜像，内容变更需重新打镜像。
+- **随镜像交付**：`../../../../../app`（问答、检索、匿名身份等代码）、`data/`（含 `media.json` 图片登记）、`knowledge_sources/`（正式知识源）、`../../../../../database/milvus/manage.py`。知识文档与配图打进镜像，内容变更需重新打镜像。
 - **运行身份**：非 root 用户 `assistant`（uid 10001）；`var/`（日志、PDF 图片等）运行时生成，生产环境挂 PVC。
 - **入口**：默认监听 `8000` 端口（`PORT` 环境变量可覆盖），启动命令 `python -m app.server`。
 
 ## 二、构建前置条件
 
 1. 构建机已安装 Docker，且能访问公司镜像仓库 `harbor.rd.dsi`（未登录时先执行 `docker login harbor.rd.dsi`）。
-2. 在**项目根目录**执行构建：构建上下文必须包含 `../../../../../app`、`data/`、`knowledge_sources/`、`manage.py`、`requirements.lock`，这些路径在 `../../../docker/Dockerfile` 中固定引用，换目录会导致 COPY 失败。
+2. 在**项目根目录**执行构建：构建上下文必须包含 `../../../../../app`、`data/`、`knowledge_sources/`、`../../../../../database/milvus/manage.py`、`requirements.lock`，这些路径在 `../../../docker/Dockerfile` 中固定引用，换目录会导致 COPY 失败。
 3. 确定镜像标签。必须使用**仓库完整地址 + 唯一版本标签**，采用**语义版本 + 日期后缀**格式（如 `v1.0.0-20261118`）：
    - 语义版本按 `主版本.次版本.修订号` 递增：不兼容的配置/接口变更升主版本，新增功能升次版本，问题修复升修订号；
    - 同一语义版本一天内多次构建时递增修订号（如 `v1.0.1-20261118`），保证标签唯一；
@@ -78,7 +78,7 @@ curl http://127.0.0.1:8000/smart-bot/ready
 
 ## 六、Kubernetes 部署与运维（原生 kubectl）
 
-使用本目录的 K8s 清单手工部署与运维，参数含义见 [`../../../../../docs/kubernetes/app.env.example`](../../../../../docs/kubernetes/app.env.example)。清单按资源拆分为独立文件，**文件名带序号，`kubectl apply -f .` 按序号依次应用**：
+使用本目录的 K8s 清单手工部署与运维，参数含义见 [`../../../../../docs/app.env.example`](../../../../../docs/app.env.example)。清单按资源拆分为独立文件，**文件名带序号，`kubectl apply -f .` 按序号依次应用**：
 
 | 文件 | 资源 | 说明 |
 |---|---|---|
