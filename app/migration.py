@@ -28,11 +28,12 @@ KEYS={'rag_revisions':['document_id','revision'],'rag_embedding_cache':['fingerp
 
 def migrate(config,source_chat,source_knowledge,backup_dir):
     if not config.database_url:raise ValueError('迁移需要DATABASE_URL；原SQLite不会被删除')
-    from .core import Service
-    from .rag import DocumentStore,RAGSettings
-    # Initialize destination schemas without calling any external model.
-    service=Service(config);service.close();rag=RAGSettings()
-    DocumentStore(rag.index_path,config.database_url)
+    from .schema import require_postgres_schema
+    check=PostgresDB(config.database_url,'assistant',max_size=1)
+    try:
+        require_postgres_schema(check)
+    finally:
+        check.close()
     backup=Path(backup_dir);backup.mkdir(parents=True,exist_ok=False,mode=0o700)
     snapshots={};connections=[]
     try:

@@ -107,10 +107,16 @@ class FakeConnection:
     def __init__(self, marker=None, metadata=None, tables=0, permitted=True):
         self.marker=marker; self.metadata=metadata; self.tables=tables; self.permitted=permitted
     def execute(self, sql):
+        if 'flyway_schema_history' in sql:
+            if 'to_regclass' in sql:return FakeResult('assistant.flyway_schema_history' if self.marker else None)
+            if 'count(*)' in sql:return FakeResult(0)
+            return FakeResult('1.0.0')
+        if 'checkpoint_migrations' in sql:return FakeResult(9)
+        if 'SELECT EXISTS' in sql:return FakeResult(bool(self.tables))
         if 'to_regclass' in sql:return FakeResult(self.marker)
         if 'SELECT metadata' in sql:return FakeResult(self.metadata)
         if 'count(*)' in sql:return FakeResult(self.tables)
-        if 'has_database_privilege' in sql:return FakeResult(self.permitted)
+        if 'has_schema_privilege' in sql:return FakeResult(self.permitted)
         raise AssertionError('Unexpected SQL: ' + sql)
 
 
@@ -120,14 +126,16 @@ class OwnershipTests(unittest.TestCase):
                                         'MILVUS_COLLECTION':'test_unique','MILVUS_DATABASE':'default'})
         self.env.start();self.addCleanup(self.env.stop)
     def test_existing_unmarked_business_data_is_rejected(self):
-        with self.assertRaises(DeploymentError):check_database(FakeConnection(tables=3))
+        from app.schema import SchemaNotReady
+        with self.assertRaises(SchemaNotReady):check_database(FakeConnection(tables=3))
     def test_other_deployment_marker_is_rejected(self):
         with self.assertRaises(DeploymentError):check_database(FakeConnection(marker='yes',metadata={'id':'old'}))
     def test_owned_deployment_can_be_repeated(self):
-        self.assertTrue(check_database(FakeConnection(marker='yes',metadata=namespace())))
-    def test_empty_database_is_allowed_but_requires_schema_permissions(self):
-        self.assertFalse(check_database(FakeConnection()))
-        with self.assertRaises(DeploymentError):check_database(FakeConnection(permitted=False))
+        self.assertTrue(check_database(FakeConnection(marker='yes',metadata=namespace(),tables=4)))
+    def test_migrated_empty_database_is_allowed_without_create_permission(self):
+        self.assertFalse(check_database(FakeConnection(marker='yes',metadata=namespace())))
+        with self.assertRaises(DeploymentError):
+            check_database(FakeConnection(marker='yes',metadata=namespace(),permitted=False))
 
 
 class VectorConfigurationTests(unittest.TestCase):
