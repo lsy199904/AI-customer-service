@@ -548,6 +548,6 @@ grep -RnE "CREATE (UNIQUE )?(TABLE|SCHEMA|INDEX)|ALTER TABLE|DROP (TABLE|SCHEMA|
 以下内容属于运维/部署改造，见 [`archive/PostgreSQL迁移解耦核对说明.md`](archive/PostgreSQL迁移解耦核对说明.md) §6.9：
 
 - `deploy/docker/Dockerfile` 的 `requirements.lock`、`COPY database`、`manage.py` 路径；
-- `deploy/k8s/base/deployment.yaml` 的 `db-migrate` Init 与 `manage.py ingest` 路径；
+- `../deploy/k8s/dev` 的 `db-migrate` Init 与 `manage.py ingest` 路径；
 - `scripts/dev.sh` 的初始化顺序；
 - 迁移 Job/CronJob、GRANT、索引等数据库侧变更。

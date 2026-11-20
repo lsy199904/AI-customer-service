@@ -43,6 +43,11 @@ database/postgres/
 说明：
 
 - 5 个领域目录和 `repeatable/` 中的 `.gitkeep` 只用于保留空目录，首个脚本落地后可删除。
+- 迁移镜像 `deploy/docker/db-migrate/Dockerfile` 按目录**显式 COPY**，新增领域目录时必须同步补一行：
+  ```dockerfile
+  COPY database/postgres/migrations/<新目录>/ /flyway/migrations/<新目录>/
+  ```
+  `scripts/ci/check_sql.py` 会校验两侧一一对应，漏改则门禁失败。
 - `callbacks/`、`repeatable/` 是全局目录，不放入领域目录。
 - `checks/` 不被 Flyway 执行，只由 `psql` 或 CI 调用。
 - `templates/` 不进入 Flyway 扫描范围，也不会被打包进执行环境。

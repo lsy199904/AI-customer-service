@@ -1,0 +1,5 @@
+# 项目长期约定
+
+- 部署形态（2026-11-20）：当前阶段因工作量大、时间紧，暂不使用 Kustomize，改用 Kubernetes 原生 YAML 清单部署。生效清单位于 `deploy/k8s/dev`：`00-namespace.yml`、`10-configmap.yml`、`20-secret.yml`、`30-pvc.yml`、`40-job-db-migrate.yaml`、`50-job-milvus-init.yaml`、`60-deployment.yml`、`70-service.yml`；发布入口是 `deploy/k8s/dev/release.sh`（停机更新：scale 0 → db-migrate Job → 知识 Job → 删 Job 等 Pod 退出 → apply Deployment → rollout status → Pod 内冒烟）。命名空间在清单里写死 `app-zone`，脚本会校验 `NAMESPACE` 与清单一致。旧 `deploy/k8s/base/` 与 `deploy/k8s/run-*.sh` 已清理，仓库不再保留 `kustomization.yaml`。
+- 发布失败语义（2026-11-20）：Job 阶段失败时只 `kubectl scale --replicas=1` 把旧版本拉回，**不要** `rollout undo`（会退到更早的版本）；只有 apply 之后的失败才 undo。另：`kubectl scale` 不支持 `--ignore-not-found`（仅 `delete` 支持），旧脚本因该无效参数 + `|| true` 静默未停 App，务必用显式 `get deployment` 判断存在性。
+- 镜像职责（2026-11-20，用户明确决策）：**app 镜像（`deploy/docker/app/Dockerfile`）是纯 Python 应用镜像，不打包 Flyway / Java / migrations**；数据库迁移只由独立的 `deploy/docker/db-migrate/Dockerfile` 镜像执行。K8s `40-job-db-migrate.yaml` 用 db-migrate 镜像，`60-deployment.yml` 与 `50-job-milvus-init.yaml` 用 assistant 镜像，两镜像同 tag 配套构建。曾出现过把 Flyway 内置进 app 的"单镜像方案"改动，已按用户决策回退。

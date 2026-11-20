@@ -1,11 +1,11 @@
 # 应用部署（Dev）：镜像打包与 Kubernetes 运维
 
-应用镜像通过项目根目录的 `../../../../docker/Dockerfile` 构建，使用标准 `docker` 命令手工打包并推送到公司镜像仓库；部署与日常运维全部使用原生 `kubectl` 命令操作本目录的清单文件，**不依赖 `scripts/` 下的任何脚本**。
+应用镜像通过项目根目录的 `../../../../docker/Dockerfile` 构建，使用标准 `docker` 命令手工打包并推送到公司镜像仓库；部署与日常运维全部使用原生 `kubectl` 命令操作本目录的清单文件，**不依赖 `../../../../scripts` 下的任何脚本**。
 
 | 位置 | 说明 |
 |---|---|
 | `../../../../docker/Dockerfile`（项目根） | 应用镜像构建定义 |
-| `../../../../../.dockerignore`（项目根） | 构建上下文排除项（`.env`、`var/`、`../../../../../tests` 等，密钥与运行时数据不进镜像） |
+| `../../../../.dockerignore`（项目根） | 构建上下文排除项（`.env`、`../../../../var`、`../../../../../tests` 等，密钥与运行时数据不进镜像） |
 | `requirements.lock` | 镜像内 Python 依赖的锁定版本清单 |
 | `.env.example` | 运行时配置模板（模型 API、PostgreSQL、Milvus 地址等），仅本地验证时使用 |
 | `00-*.yml` ~ `90-*.yml` | 手写 K8s 部署清单，按资源类型拆分（Namespace / ConfigMap / Secret / PVC / Deployment / Service / 初始化 Job），见「六」 |
@@ -16,14 +16,14 @@
 - **基础镜像**：`python:3.12-slim`。
 - **系统依赖**：`libgl1`、`libglib2.0-0`、`libgomp1`。
 - **Python 依赖**：按 `requirements.lock` 锁定版本安装，保证不同时间构建出的镜像依赖一致。
-- **随镜像交付**：`../../../../../app`（问答、检索、匿名身份等代码）、`data/`（含 `media.json` 图片登记）、`knowledge_sources/`（正式知识源）、`../../../../../database/milvus/manage.py`。知识文档与配图打进镜像，内容变更需重新打镜像。
-- **运行身份**：非 root 用户 `assistant`（uid 10001）；`var/`（日志、PDF 图片等）运行时生成，生产环境挂 PVC。
+- **随镜像交付**：`../../../../app`（问答、检索、匿名身份等代码）、`data/`（含 `media.json` 图片登记）、`knowledge_sources/`（正式知识源）、`../../../../../database/milvus/manage.py`。知识文档与配图打进镜像，内容变更需重新打镜像。
+- **运行身份**：非 root 用户 `assistant`（uid 10001）；`../../../../var`（日志、PDF 图片等）运行时生成，生产环境挂 PVC。
 - **入口**：默认监听 `8000` 端口（`PORT` 环境变量可覆盖），启动命令 `python -m app.server`。
 
 ## 二、构建前置条件
 
 1. 构建机已安装 Docker，且能访问公司镜像仓库 `harbor.rd.dsi`（未登录时先执行 `docker login harbor.rd.dsi`）。
-2. 在**项目根目录**执行构建：构建上下文必须包含 `../../../../../app`、`data/`、`knowledge_sources/`、`../../../../../database/milvus/manage.py`、`requirements.lock`，这些路径在 `../../../docker/Dockerfile` 中固定引用，换目录会导致 COPY 失败。
+2. 在**项目根目录**执行构建：构建上下文必须包含 `../../../../app`、`data/`、`knowledge_sources/`、`../../../../../database/milvus/manage.py`、`requirements.lock`，这些路径在 `../../../docker/Dockerfile` 中固定引用，换目录会导致 COPY 失败。
 3. 确定镜像标签。必须使用**仓库完整地址 + 唯一版本标签**，采用**语义版本 + 日期后缀**格式（如 `v1.0.0-20261118`）：
    - 语义版本按 `主版本.次版本.修订号` 递增：不兼容的配置/接口变更升主版本，新增功能升次版本，问题修复升修订号；
    - 同一语义版本一天内多次构建时递增修订号（如 `v1.0.1-20261118`），保证标签唯一；
@@ -78,23 +78,23 @@ curl http://127.0.0.1:8000/smart-bot/ready
 
 ## 六、Kubernetes 部署与运维（原生 kubectl）
 
-使用本目录的 K8s 清单手工部署与运维，参数含义见 [`../../../../../docs/app.env.example`](../../../../../docs/app.env.example)。清单按资源拆分为独立文件，**文件名带序号，`kubectl apply -f .` 按序号依次应用**：
+使用本目录的 K8s 清单手工部署与运维，参数含义见 [`../../../../docs/app.env.example`](../../../../docs/app.env.example)。清单按资源拆分为独立文件，**文件名带序号，`kubectl apply -f .` 按序号依次应用**：
 
 | 文件 | 资源 | 说明 |
 |---|---|---|
 | `00-namespace.yml` | Namespace `app-zone` | 应用命名空间（PG 在 `postgres`、Milvus 在 `milvus`，跨 ns 通过 Service 域名访问） |
-| `10-configmap.yml` | ConfigMap `titu-assistant-config` | 非敏感运行配置 |
-| `20-secret.yml` | Secret `titu-assistant-secret` | 7 个密钥（数据库连接串、AUTH_SECRET、各模型 API Key 等） |
-| `30-pvc.yml` | PVC `titu-assistant-var` | 运行时数据（日志、PDF 图片），挂载到 `/srv/assistant/var` |
-| `40-deployment.yml` | Deployment `titu-assistant` | 单副本；RWO 卷故使用 `Recreate` 更新策略 |
-| `50-service.yml` | Service `titu-assistant` | ClusterIP，`80` → 容器 `8201` |
+| `../10-configmap.yml` | ConfigMap `titu-assistant-config` | 非敏感运行配置 |
+| `../20-secret.yml` | Secret `titu-assistant-secret` | 7 个密钥（数据库连接串、AUTH_SECRET、各模型 API Key 等） |
+| `../30-pvc.yml` | PVC `titu-assistant-var` | 运行时数据（日志、PDF 图片），挂载到 `/srv/assistant/var` |
+| `../40-deployment.yml` | Deployment `titu-assistant` | 单副本；RWO 卷故使用 `Recreate` 更新策略 |
+| `../50-service.yml` | Service `titu-assistant` | ClusterIP，`80` → 容器 `8201` |
 | `90-init-job.yml` | Job `titu-assistant-init` | 一次性初始化：建表 + 知识入库 + 模型连通检查，阶段细节见 [`init-job.md`](init-job.md) |
 
 > 前置依赖：PostgreSQL（`postgres` 命名空间）与 Milvus（`milvus` 命名空间）需已就绪并可跨 ns 访问，`MILVUS_URI` 填集群内 Service 域名（如 `http://milvus-26-milvus.milvus.svc.cluster.local:19530`），`DATABASE_URL` 填 `postgres-14-cluster-rw` 的连接串。参见上级 [README](../README.md)。
 
 ### 6.1 首次部署
 
-1. 填写所有【必填】项：`20-secret.yml` 中的 7 个密钥、`10-configmap.yml` 中的 `DEPLOYMENT_ID` / `MILVUS_URI` / 模型接口地址等，并将 `40-deployment.yml` 与 `90-init-job.yml` 中的 `image` 改为实际推送的镜像标签。
+1. 填写所有【必填】项：`../20-secret.yml` 中的 7 个密钥、`../10-configmap.yml` 中的 `DEPLOYMENT_ID` / `MILVUS_URI` / 模型接口地址等，并将 `../40-deployment.yml` 与 `90-init-job.yml` 中的 `image` 改为实际推送的镜像标签。
 2. 应用并等待初始化完成：
 
    ```bash
@@ -107,7 +107,7 @@ curl http://127.0.0.1:8000/smart-bot/ready
 
 ### 6.2 发版：更新应用镜像（代码 / 依赖 / 知识文档变更）
 
-适用：修改了应用代码、依赖、`../../../../../knowledge_sources` 知识文档、`data/media.json` 图片登记，打了新镜像。发版固定五步，**顺序不能乱**：
+适用：修改了应用代码、依赖、`../../../../knowledge_sources` 知识文档、`data/media.json` 图片登记，打了新镜像。发版固定五步，**顺序不能乱**：
 
 ```bash
 # 1) 缩容旧版本（RWO 卷不允许两个 Pod 同时挂载，且避免初始化与旧版本并发写库）
@@ -132,7 +132,7 @@ kubectl -n app-zone rollout status deployment/titu-assistant --timeout=600s
 
 ### 6.3 仅更新配置（镜像不变）
 
-只调整运行参数（限流阈值、FRAME_ORIGINS、日志保留天数等）时，**不需要打新镜像**，走与 6.2 相同的五步流程——因为 Job 模板不可变更，改配置同样要先删 Job 再 apply，只是第 3 步改为修改 `10-configmap.yml` 或 `20-secret.yml`：
+只调整运行参数（限流阈值、FRAME_ORIGINS、日志保留天数等）时，**不需要打新镜像**，走与 6.2 相同的五步流程——因为 Job 模板不可变更，改配置同样要先删 Job 再 apply，只是第 3 步改为修改 `../10-configmap.yml` 或 `../20-secret.yml`：
 
 ```bash
 # 1) 2) 同 6.2：缩容、删旧 Job
@@ -215,14 +215,14 @@ kubectl delete namespace app-zone
 |---|---|
 | init Job 卡住 / 失败 | `kubectl -n app-zone logs job/titu-assistant-init`；失败阶段与原因见 [`init-job.md`](init-job.md) 第三节 |
 | Pod 一直 Not Ready | `kubectl -n app-zone describe pod -l smarttitu-role=app`；看镜像拉取、PVC 挂载事件 |
-| 镜像拉取失败 | 核对 `40-deployment.yml` 的 image 与推送标签一致；仓库需认证时启用 `imagePullSecrets` |
+| 镜像拉取失败 | 核对 `../40-deployment.yml` 的 image 与推送标签一致；仓库需认证时启用 `imagePullSecrets` |
 | PVC Pending | `kubectl -n app-zone describe pvc titu-assistant-var`；核对 `longhorn-postgres` StorageClass 存在且正常 |
 | 服务 502 / 无响应 | `kubectl -n app-zone logs deployment/titu-assistant --tail=200`；检查 Ingress 转发与 SSE 缓冲配置 |
 
 ## 七、注意事项
 
-- **内容变化必须换新标签**：修改代码、依赖或知识文件后，用新的标签重新 build + push，并在 `40-deployment.yml` 与 `90-init-job.yml` 中同步更新镜像地址。
-- **知识文档 / 图片更新**：`../../../../../knowledge_sources`、`app/static/media/`、`data/media.json` 随镜像交付，更新它们同样要打新镜像；知识入库在发版流程的 init Job 中自动增量执行。
+- **内容变化必须换新标签**：修改代码、依赖或知识文件后，用新的标签重新 build + push，并在 `../40-deployment.yml` 与 `90-init-job.yml` 中同步更新镜像地址。
+- **知识文档 / 图片更新**：`../../../../knowledge_sources`、`app/static/media/`、`data/media.json` 随镜像交付，更新它们同样要打新镜像；知识入库在发版流程的 init Job 中自动增量执行。
 - **依赖变更**：更新 `requirements.txt` 后需同步 `requirements.lock`（镜像按 lock 安装），再打新镜像。
-- **密钥安全**：`../../../../../.dockerignore` 已排除 `.env`、`var/`、`tests/` 等，配置与密钥不会进入镜像；不要为了"方便"在 Dockerfile 或构建命令中注入密钥。
+- **密钥安全**：`../../../../.dockerignore` 已排除 `.env`、`var/`、`tests/` 等，配置与密钥不会进入镜像；不要为了"方便"在 Dockerfile 或构建命令中注入密钥。
 - **配置即清单**：所有运行配置都在本目录 yml 中维护，改配置 = 改文件 + 按 6.3 重放流程；不要在集群里 `kubectl edit` 直接改，否则下次 apply 会被本地文件覆盖。

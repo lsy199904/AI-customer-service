@@ -7,8 +7,16 @@ metadata:
     app.kubernetes.io/name: titu-assistant
 spec:
   replicas: 1
+  # 保留最近 5 个 ReplicaSet：自动回退依赖 rollout undo 找到上一版 Pod 模板
+  revisionHistoryLimit: 5
+  # 就绪后观察 10s 才算可用，能挡住「起来又崩」的坏版本被判成功
+  minReadySeconds: 10
+  # 超过 15 分钟未完成滚动即标记 ProgressDeadlineExceeded，发布脚本据此回退
+  progressDeadlineSeconds: 900
   strategy:
-    type: Recreate                  # RWO 卷不能多节点同时挂载，更新时先停旧再起新
+    # RWO 卷（titu-assistant-var）不允许新旧 Pod 并存，只能先停后起。
+    # 真正的零停机需要先把 media 从这块卷里拆出去，见 docs/不停机升级与自动回退方案.md
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: titu-assistant
@@ -29,7 +37,7 @@ spec:
       #   - name: harbor-secret
       containers:
         - name: assistant
-          image: harbor.rd.dsi/smarttitu/assistant:v1.0.0-20261118   # 改为实际推送的镜像标签（与90-init-job.yml保持同一镜像）
+          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-assistant:v1.0.0-20261119   # 应用镜像（与 50-job-milvus-init.yaml 同镜像）；db-migrate Job 用独立的 db-migrate 镜像
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
@@ -39,15 +47,20 @@ spec:
           ports:
             - name: http
               containerPort: 8201
-          startupProbe:             # 首次启动含知识加载，最长容忍10分钟
-            httpGet: { path: /smart-bot/ready, port: http }
+          # 启动探针只看进程是否活着：知识未入库时 /ready 会 503，
+          # 若拿它当启动探针，会把一个健康但尚未入库的 Pod 反复重启。
+          startupProbe:               # 首次启动含知识加载，最长容忍10分钟
+            httpGet: { path: /smart-bot/health, port: http }
             timeoutSeconds: 10
             periodSeconds: 15
             failureThreshold: 40
+          # 就绪探针是真门禁：/ready 会查数据库、知识行数、Milvus 集合是否存在。
+          # 失败只摘流量不重启，Deployment 到 progressDeadlineSeconds 判失败 → 触发回退。
           readinessProbe:
             httpGet: { path: /smart-bot/ready, port: http }
             timeoutSeconds: 10
-            periodSeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
             failureThreshold: 3
           livenessProbe:
             httpGet: { path: /smart-bot/health, port: http }

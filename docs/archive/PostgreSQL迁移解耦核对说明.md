@@ -5,6 +5,7 @@
 > **核对对象**：`app/`（当前工作树）、`database/postgres/`、`deploy/`、`scripts/`
 > **目标**：PostgreSQL 的初始化、版本升级与全部结构变更，由独立 migration 镜像/任务负责，并成为 app 部署升级的前置条件；app 只保留业务 DML，不再持有任何 PostgreSQL DDL。
 > **关联文档**：[`工程化改造方案-运维域.md`](../工程化改造方案-运维域.md)、[`部署说明.md`](../部署说明.md)、[`../../database/postgres/README.md`](../../database/postgres/README.md)
+> **路径说明**：本文为 2026-11-19 归档核对稿，历史路径保留原样；当前生效的 K8s 清单与脚本见 [`../../deploy/k8s/dev`](../../deploy/k8s/dev/README.md)。
 
 ---
 

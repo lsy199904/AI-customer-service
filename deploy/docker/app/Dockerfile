@@ -4,8 +4,8 @@
 # 应用镜像（assistant）：uv.lock 驱动的两阶段构建。
 # 构建上下文必须是仓库根目录，例如：
 #   deploy/docker/app/build.sh
-# 本镜像同时被知识入库/校验 Job 复用（同源镜像，见 docs/工程化改造方案-运维域.md），
-# 因此保留 knowledge_sources/ 与 manage.py。
+# 本镜像同时被知识入库/校验 Job 复用（同源镜像），因此保留 knowledge_sources/ 与 manage.py。
+# 数据库迁移（Flyway）不打包进本镜像：由独立的 db-migrate 镜像执行，见 deploy/docker/db-migrate/。
 
 # ==========================================
 # Stage 1: Builder
@@ -46,6 +46,9 @@ COPY data ./data
 COPY knowledge_sources ./knowledge_sources
 # 运维/入库 CLI（python manage.py …）：必须与 app 同处 BASE 下才能 import app.core
 COPY database/milvus/manage.py ./manage.py
+# Milvus 建集合 SDK 脚本与 Job 封装同放 database/milvus/，镜像内路径与仓库一致
+COPY database/milvus/02_milvus.py ./database/milvus/02_milvus.py
+COPY database/milvus/knowledge-init.sh ./database/milvus/knowledge-init.sh
 
 
 # ==========================================
@@ -62,7 +65,7 @@ ENV PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
     PORT=8000
 
-# 运行期系统库：opencv-python 需要 libgl1 + libglib2.0-0，onnxruntime 需要 libgomp1
+# 运行期系统库：opencv-python 需要 libgl1 + libglib2.0-0，onnxruntime 需要 libgomp1。
 # APT_MIRROR 留空走官方源；build.sh 默认传 mirrors.aliyun.com
 ARG APT_MIRROR=
 RUN if [ -n "$APT_MIRROR" ]; then \
@@ -70,24 +73,27 @@ RUN if [ -n "$APT_MIRROR" ]; then \
             /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null || true; \
     fi && \
     apt-get update && \
-    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 && \
+    apt-get install -y --no-install-recommends \
+        libgl1 libglib2.0-0 libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
 # 创建非 Root 用户；UID/GID 固定，便于与 PVC、securityContext 对齐
-RUN groupadd --system --gid 10001 app && \
-    useradd --system --uid 10001 --gid app --create-home app
+RUN groupadd --system --gid 10001 assistant && \
+    useradd --system --uid 10001 --gid assistant --create-home assistant
 
 # 仅复制虚拟环境和运行期文件
-COPY --from=builder --chown=app:app /srv/assistant/.venv /srv/assistant/.venv
-COPY --from=builder --chown=app:app /srv/assistant/app /srv/assistant/app
-COPY --from=builder --chown=app:app /srv/assistant/data /srv/assistant/data
-COPY --from=builder --chown=app:app /srv/assistant/knowledge_sources /srv/assistant/knowledge_sources
-COPY --from=builder --chown=app:app /srv/assistant/manage.py /srv/assistant/manage.py
+COPY --from=builder --chown=assistant:assistant /srv/assistant/.venv /srv/assistant/.venv
+COPY --from=builder --chown=assistant:assistant /srv/assistant/app /srv/assistant/app
+COPY --from=builder --chown=assistant:assistant /srv/assistant/data /srv/assistant/data
+COPY --from=builder --chown=assistant:assistant /srv/assistant/knowledge_sources /srv/assistant/knowledge_sources
+COPY --from=builder --chown=assistant:assistant /srv/assistant/manage.py /srv/assistant/manage.py
+COPY --from=builder --chown=assistant:assistant /srv/assistant/database/milvus/02_milvus.py /srv/assistant/database/milvus/02_milvus.py
+COPY --from=builder --chmod=0755 --chown=assistant:assistant /srv/assistant/database/milvus/knowledge-init.sh /srv/assistant/database/milvus/knowledge-init.sh
 
 # 唯一可写目录：SQLite(DATABASE_PATH)、RAG 索引、日志、PDF 媒体都落在 /srv/assistant/var 下
-RUN install -d -o app -g app -m 0750 /srv/assistant/var
+RUN install -d -o assistant -g assistant -m 0750 /srv/assistant/var
 
-USER app
+USER assistant
 
 EXPOSE 8000
 

@@ -49,6 +49,66 @@ def backup_database(database, destination):
     return destination
 
 
+def vector_init(rag,dimension,check_only=False):
+    """Create or strictly verify the Milvus collection for the current app fingerprint.
+
+    Mirrors database/milvus/02_milvus.py: no embedding calls, no data writes, no
+    auto-repair. The collection name comes from RAGSettings, so the app image is
+    the single source of truth for the fingerprint.
+    """
+    from pymilvus import DataType
+    from app.vectors import MilvusVectors
+
+    if not isinstance(dimension,int) or dimension<=0:raise ValueError('向量维度必须大于0')
+    if rag.vector_backend!='milvus':raise ValueError('VECTOR_BACKEND必须为milvus')
+    if not rag.milvus_token:raise ValueError('Milvus部署必须设置MILVUS_TOKEN')
+    if rag.milvus_index_type not in ('HNSW','AUTOINDEX'):raise ValueError('MILVUS_INDEX_TYPE仅支持HNSW/AUTOINDEX')
+    vector=MilvusVectors(rag)
+    client=vector.client
+    collection=vector.collection
+    try:
+        exists=client.has_collection(collection)
+        if check_only and not exists:
+            raise ValueError('Milvus集合不存在：'+collection+'；请先执行vector-init创建')
+        if exists:
+            fields=client.describe_collection(collection)['fields']
+            by_name={f['name']:f for f in fields}
+            if set(by_name)!={'id','document_id','revision','vector'}:
+                raise ValueError('已有集合字段不一致，请停止核对，不覆盖')
+            for name,size in (('id',80),('document_id',80),('revision',64)):
+                field=by_name[name]
+                if int(field['type'])!=int(DataType.VARCHAR) or int(field.get('params',{}).get('max_length',0))!=size:
+                    raise ValueError('已有集合文本字段类型或长度不一致')
+            if not by_name['id'].get('is_primary') or int(by_name['vector']['type'])!=int(DataType.FLOAT_VECTOR):
+                raise ValueError('已有集合主键或向量类型不一致')
+            if int(by_name['vector'].get('params',{}).get('dim',0))!=dimension:
+                raise ValueError('已有集合向量维度不一致')
+            indexes=client.list_indexes(collection_name=collection)
+            index=next((client.describe_index(collection_name=collection,index_name=name) for name in indexes
+                        if client.describe_index(collection_name=collection,index_name=name).get('field_name')=='vector'),None)
+            if not index or index.get('metric_type')!='COSINE' or index.get('index_type')!=rag.milvus_index_type:
+                raise ValueError('已有集合索引与配置不一致；不自动修改')
+            if rag.milvus_index_type=='HNSW' and (int(index.get('M',0))!=16 or int(index.get('efConstruction',0))!=128):
+                raise ValueError('已有HNSW参数不一致；不自动修改')
+            status='checked'
+        else:
+            schema=client.create_schema(auto_id=False,enable_dynamic_field=False)
+            schema.add_field('id',DataType.VARCHAR,is_primary=True,max_length=80)
+            schema.add_field('document_id',DataType.VARCHAR,max_length=80)
+            schema.add_field('revision',DataType.VARCHAR,max_length=64)
+            schema.add_field('vector',DataType.FLOAT_VECTOR,dim=dimension)
+            index=client.prepare_index_params()
+            options={'params':{'M':16,'efConstruction':128}} if rag.milvus_index_type=='HNSW' else {}
+            index.add_index(field_name='vector',index_type=rag.milvus_index_type,metric_type='COSINE',**options)
+            client.create_collection(collection_name=collection,schema=schema,index_params=index,consistency_level='Strong')
+            status='created'
+        client.load_collection(collection_name=collection)
+        return {'collection':collection,'fingerprint':rag.fingerprint[:16],'dimension':dimension,
+                'index_type':rag.milvus_index_type,'status':status,'data_written':False}
+    finally:
+        vector.close()
+
+
 def main():
     parser=argparse.ArgumentParser(description='SmartTITU客服服务管理')
     sub=parser.add_subparsers(dest='command',required=True)
@@ -74,6 +134,9 @@ def main():
     preparation=sub.add_parser('prepare-evaluation',help='为全部知识生成待人工审阅的多样问法，不进入客户检索逻辑')
     preparation.add_argument('--output',required=True);preparation.add_argument('--variants',type=int,default=5)
     sub.add_parser('sync-vectors',help='将已有活动向量同步到Milvus，不调用Embedding')
+    milvus=sub.add_parser('vector-init',help='按当前App指纹创建或严格核对Milvus集合，不调用模型、不写数据')
+    milvus.add_argument('--dimension',type=int,default=1024,help='Embedding输出维度，默认1024(BGE-M3)')
+    milvus.add_argument('--check-only',action='store_true',help='仅核对已存在集合；集合不存在则报错退出')
     doctor=sub.add_parser('doctor',help='检查实际数据库与向量服务；可选检查模型')
     doctor.add_argument('--models',action='store_true')
     migrate=sub.add_parser('migrate-storage',help='停止旧服务后将SQLite历史和知识版本迁移到PostgreSQL')
@@ -93,7 +156,13 @@ def main():
             init_env(BASE/'.env');print('已创建.env并生成随机AUTH_SECRET,请按需编辑配置。');return
         # Containers receive configuration through env_file, without copying the secret file into the image.
         if (BASE/'.env').is_file():load_env(BASE/'.env')
-        elif not os.getenv('AUTH_SECRET'):raise ValueError('未找到.env或AUTH_SECRET环境变量,请先初始化配置')
+        elif args.command!='vector-init' and not os.getenv('AUTH_SECRET'):
+            raise ValueError('未找到.env或AUTH_SECRET环境变量,请先初始化配置')
+        # Milvus 初始化只依赖向量配置，独立 Job 运行时无需应用鉴权/模型配置。
+        if args.command=='vector-init':
+            from app.rag import RAGSettings
+            print(json.dumps(vector_init(RAGSettings(),args.dimension,args.check_only),ensure_ascii=False,indent=2))
+            return
         config=Settings();config.validate()
         if args.command=='pdf-media-report':
             root=Path(config.pdf_media_dir)

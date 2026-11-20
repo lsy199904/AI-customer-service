@@ -35,6 +35,7 @@ DB_DIR = ROOT / "database" / "postgres"
 MIG_DIR = DB_DIR / "migrations"
 CHECKS_DIR = DB_DIR / "checks"
 BASELINE = MIG_DIR / "V1.0.0__baseline.sql"
+DOCKERFILE = DB_DIR.parent.parent / "deploy/docker/db-migrate/Dockerfile"
 SQLFLUFF_CONFIG = ROOT / ".sqlfluff"
 
 # 基线一旦发布即不可变；如确需合法重建基线，走变更评审并同步更新此值与 README.md。
@@ -288,6 +289,49 @@ def base_version_files() -> dict[str, Path] | None:
     return result
 
 
+def check_migrations_packaging() -> None:
+    """迁移镜像按目录显式 COPY，必须与 migrations/ 下的实际目录一一对应。
+
+    显式 COPY 的好处是镜像内容可读，代价是新增领域目录容易漏改 Dockerfile；
+    这里在 CI 阶段把漏改拦下来，避免“迁移写好了但镜像里没有”。
+    """
+    if not DOCKERFILE.exists():
+        errors.append(f"缺少迁移镜像 Dockerfile: {rel(DOCKERFILE)}")
+        return
+
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    pattern = re.compile(
+        r"^COPY\s+database/postgres/migrations/([A-Za-z0-9_.-]+)/\s+"
+        r"/flyway/migrations/([A-Za-z0-9_.-]+)/",
+        re.MULTILINE,
+    )
+    copied = {m.group(1) for m in pattern.finditer(text) if m.group(1) == m.group(2)}
+
+    actual = {
+        item.name
+        for item in MIG_DIR.iterdir()
+        if item.is_dir() and not item.name.startswith(".")
+    }
+
+    for name in sorted(actual - copied):
+        errors.append(
+            f"migrations/{name}/ 未在 {rel(DOCKERFILE)} 中 COPY，镜像会缺少该目录"
+        )
+    for name in sorted(copied - actual):
+        errors.append(
+            f"{rel(DOCKERFILE)} 复制了不存在的目录 migrations/{name}/，构建会失败"
+        )
+
+    if not re.search(
+        r"^COPY\s+database/postgres/migrations/\*\.sql\s+/flyway/migrations/",
+        text,
+        re.MULTILINE,
+    ):
+        errors.append(
+            f"{rel(DOCKERFILE)} 缺少根目录 V*.sql 的 COPY，版本脚本不会进入镜像"
+        )
+
+
 def check_domain_layout() -> None:
     allowed = "、".join(DOMAINS)
     for path in sorted(MIG_DIR.rglob("V*.sql")):
@@ -349,6 +393,7 @@ def main() -> int:
 
     check_naming()
     check_domain_layout()
+    check_migrations_packaging()
     check_duplicate_versions()
     check_new_migrations()
     check_baseline_checksum()

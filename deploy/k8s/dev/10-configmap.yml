@@ -20,7 +20,7 @@ data:
   VECTOR_BACKEND: "milvus"
   MILVUS_URI: "http://milvus-26-milvus.milvus.svc.cluster.local:19530"                    # 【必填】含协议与端口，如 http://milvus-26-milvus.milvus.svc.cluster.local:19530
   MILVUS_DATABASE: "default"
-  MILVUS_COLLECTION: "smarttitu"             # 【必填】集合前缀，确认库内不与其他部署冲突，后续不变
+  MILVUS_COLLECTION: "smarttitu_knowledge"             # 【必填】集合前缀，确认库内不与其他部署冲突，后续不变
   MILVUS_INDEX_TYPE: "HNSW"         # 平台仅支持自动索引时改 AUTOINDEX
 
   # ---- LLM（外部API）----
@@ -57,8 +57,8 @@ data:
   ANONYMOUS_WIDGET_ENABLED: "true"
   ANONYMOUS_COOKIE_NAME: "smarttitu_ext_40e7b3eaf736"   # 所有Pod同名，上线后不变
   ANONYMOUS_COOKIE_SECURE: "true"   # 走HTTPS Ingress填true；纯HTTP验证才填false
-  FRAME_ORIGINS: ""                 # 【必填】允许嵌入iframe的业务来源，逗号分隔
-  CORS_ORIGINS: ""                  # 前端跨域直调API时才需要
+#  FRAME_ORIGINS: ""                 # 【必填】允许嵌入iframe的业务来源，逗号分隔
+#  CORS_ORIGINS: ""                  # 前端跨域直调API时才需要
 
   # ---- 会话与限流 ----
   SESSION_RETENTION_DAYS: "7"

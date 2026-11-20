@@ -1,0 +1,82 @@
+# 知识初始化 Job：与 App 共用 assistant 镜像与同一块 PVC，但作为独立 Job 执行。
+# 共用镜像：集合名由镜像内 RAGSettings 直接算出，不需要跨镜像传递 fingerprint 字符串。
+# 共用 PVC：入库与 PDF 解析产物写入 /srv/assistant/var，App 启动读取同一目录
+#           （RAG_INDEX_PATH、PDF_MEDIA_DIR、DATABASE_PATH 均指向这里）。
+# 执行内容（database/milvus/knowledge-init.sh，四步串行，任一步失败即退出）：
+#   1. 计算完整集合名 = MILVUS_COLLECTION + "_" + RAGSettings.fingerprint[:16]
+#   2. python 02_milvus.py --collection <完整集合名> --dimension 1024   # 建集合/只读核对
+#   3. python manage.py ingest                                         # 解析、切片、Embedding、写 PG + Milvus
+#   4. python manage.py doctor --models                                # 数据库/检查点/模型自检
+# 发布时先删除同名旧 Job，再 apply 本清单并等待完成，最后滚动 Deployment。
+# namespace 不写死，由 kubectl -n <namespace> 指定。
+# 幂等：集合已存在只读核对；ingest 指纹未变时 no-op；可重复执行。
+# 注意：PVC 是 ReadWriteOnce，Job Pod 与 App Pod 必须位于同一节点；发布流程先停 App、
+#       跑完 Job 后删除 Job 释放卷，再启动 App（见 README「发布步骤」）。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: titu-milvus-init
+  labels:
+    app.kubernetes.io/name: titu-assistant
+    app.kubernetes.io/component: milvus-init
+    smarttitu-role: maintenance
+spec:
+  # 重试会重新调用 Embedding（有 API 成本），只留 1 次；超时按「首次全量入库」预留 30 分钟
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  # 短 TTL：Pod 结束后要尽快释放 RWO 卷，否则 App 换节点时无法挂载
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: titu-assistant
+        app.kubernetes.io/component: milvus-init
+        smarttitu-role: maintenance
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        # 10Gi 卷按需改属主，避免每次 Job 启动都递归 chown
+        fsGroupChangePolicy: OnRootMismatch
+      # RWO 卷只允许同节点多 Pod 挂载：App 正在运行时优先把本 Job 调度到 App 所在节点
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: titu-assistant
+                    smarttitu-role: app
+      containers:
+        - name: knowledge-init
+          # 与 60-deployment.yml 使用相同的 assistant 应用镜像；db-migrate Job 用独立的 db-migrate 镜像。
+          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-assistant:v1.0.0-20261119
+          imagePullPolicy: IfNotPresent
+          # 四步串行：算集合名 → 02_milvus.py 建/核对 → manage.py ingest → doctor --models
+          # 脚本内已 cd 到 /srv/assistant，产物落在下面的 PVC 挂载点
+          command: ["sh", "/srv/assistant/database/milvus/knowledge-init.sh"]
+          envFrom:
+            - configMapRef: { name: titu-assistant-config }
+            - secretRef:    { name: titu-assistant-secret }
+          volumeMounts:
+            # 与 60-deployment.yml 完全相同的挂载路径，保证产物路径一致
+            - name: var
+              mountPath: /srv/assistant/var
+          # PDF 解析（opencv/onnxruntime）与批量 Embedding 与 App 同量级，按首次全量入库给资源
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 4Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: var
+          persistentVolumeClaim:
+            claimName: titu-assistant-var

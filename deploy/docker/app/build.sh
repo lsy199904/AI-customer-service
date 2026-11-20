@@ -28,7 +28,7 @@ usage() {
 tag 默认取自 pyproject.toml 的 version 加当天日期。
 
 选项：
-  -t, --tag <tag>           镜像标签，默认 v<app 版本>-<YYYYMMDD>
+  -t, --tag <tag>           镜像标签，默认 v<app 版本>-<YYYYMMDD>-<git短sha>
   -r, --registry <addr>     镜像仓库前缀，默认 harbor.rd.dsi/smarttitu
   -n, --name <name>         镜像名，默认 assistant
       --image <ref>         直接指定完整镜像名，忽略 registry/name/tag
@@ -46,7 +46,7 @@ tag 默认取自 pyproject.toml 的 version 加当天日期。
   PLATFORM PUSH NO_CACHE DRY_RUN
 
 示例：
-  deploy/docker/app/build.sh                                  # 本地构建 v1.0.0-20261119
+  deploy/docker/app/build.sh                                  # 本地构建 v1.0.0-20261119-1b81457
   deploy/docker/app/build.sh -t v1.0.0-hotfix --push           # 指定 tag 并推送
   deploy/docker/app/build.sh --uv-image ghcr.m.daocloud.io/astral-sh/uv:0.9.5
   deploy/docker/app/build.sh --apt-mirror ""                   # 用官方 Debian 源
@@ -62,6 +62,10 @@ app_version() {
     local ver
     ver="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$ROOT/pyproject.toml" 2>/dev/null | head -n 1)"
     echo "${ver:-0.0.0}"
+}
+
+git_rev() {
+    git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit
 }
 
 while [[ $# -gt 0 ]]; do
@@ -89,7 +93,7 @@ command -v docker >/dev/null 2>&1 || die "未找到 docker 命令"
 [[ "$PLATFORM" == *,* && "$PUSH" != "1" ]] && die "多平台构建无法 --load 到本地，请加 --push"
 
 if [[ -z "$IMAGE_REF" ]]; then
-    [[ -n "$TAG" ]] || TAG="v$(app_version)-$(date +%Y%m%d)"
+    [[ -n "$TAG" ]] || TAG="v$(app_version)-$(date +%Y%m%d)-$(git_rev)"
     if [[ -n "$REGISTRY" ]]; then
         IMAGE_REF="$REGISTRY/$IMAGE_NAME:$TAG"
     else

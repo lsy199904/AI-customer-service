@@ -199,12 +199,12 @@ tar tzf milvus-operator-1.3.7.tgz >/dev/null && echo "包完整"
 
 # 2) 用本地 tgz 安装
 helm install milvus-operator \
-  -n milvus-operator --create-namespace \
+  -n milvus-test --create-namespace \
   --wait --wait-for-jobs \
   -f operator-values.yaml \
   ./milvus-operator-1.3.7.tgz
 
-kubectl get pods -n milvus-operator
+kubectl get pods -n milvus-test
 ```
 
 确认 operator Pod 为 `Running` 后再继续。
@@ -212,17 +212,29 @@ kubectl get pods -n milvus-operator
 
 ### 6. 部署 Milvus 实例
 
+测试场景可用 `milvus-test-minimal.yaml`，核心手段（参考 Operator 官方 `milvus_minimum.yaml`）：
+
+| 调整项 | 生产默认 | 测试最小化 | 收益 |
+|---|---|---|---|
+| etcd 副本 | 3 | `replicaCount: 1` | 少 2 个 Pod + 2 块 PVC |
+| MinIO 模式 | distributed（4 实例） | `mode: standalone` | 少 3 个 Pod + 3 块 PVC |
+| Milvus 全局资源 | 500m/1Gi ~ 2核/4Gi | 100m/256Mi ~ 1核/2Gi | 大幅降低 requests/limits |
+| queryNode | 1核/4Gi ~ 4核/16Gi | 100m/512Mi ~ 1核/2Gi | 测试数据量小，够用 |
+| etcd 存储 | 10Gi × 3 | 10Gi × 1（**不能写更小**） | 少 2 块 PVC |
+
+> **坑：etcd `persistence.size` 不能小于 10Gi**（首次部署也会中招）。Operator 内嵌 etcd chart 默认 size 是 10Gi，若 CR 写成更小（如 2Gi），Operator 会误判为"缩容"，去找不存在的 `xxx-etcd-old-sts` ControllerRevision 而卡在 Pending（报 `ControllerRevision ... not found`）。**即使全新部署，etcd size 也必须写 10Gi**。实测 Pod 数可从 12 降到 7、PVC 从 7 块降到 2 块（etcd 10Gi + MinIO 5Gi），CR 正常转 Healthy。
+
+**从当前部署切换（会重建依赖，注意数据）**：
+
 ```bash
-# 创建命名空间
-kubectl create ns milvus
 
-kubectl apply -f milvus-external-s3.yaml 
+# 3) 应用最小化配置
+kubectl apply -f milvus-test-minimal.yaml
 
-# 查看状态，status.status 变为 Healthy 即就绪
-kubectl get milvus milvus-26 -o yaml -n milvus
-
-# 查看 Pod
-kubectl get pods -n milvus
+# 4) 验证：Pod 数量应明显减少、PVC 只剩 1+1
+kubectl get pods -n milvus-test
+kubectl get pvc -n milvus-test
+kubectl top pods -n milvus-test
 ```
 
 ### 7. 集群内连接 Milvus
@@ -246,7 +258,7 @@ kubectl get pods -n milvus
 from pymilvus import MilvusClient, connections
 
 # 地址：集群内 Service DNS
-uri = "http://127.0.0.1:19530"
+uri = "http://milvus-26-milvus.milvus.svc.cluster.local:19530"
 
 # 无认证：不要传 user/password/token
 client = MilvusClient(uri=uri)
@@ -268,7 +280,7 @@ kubectl run milvus-client-test -n milvus --rm -it \
 #### 方式二：从集群外连接（port-forward）
 
 ```bash
-kubectl port-forward --address 0.0.0.0 service/milvus-26-milvus 19530:19530 -n milvus
+kubectl port-forward --address 0.0.0.0 service/milvus-26-milvus 19530:19530 -n milvus-test
 ```
 
 然后本机 SDK 连 `localhost:19530`（同样无用户名密码）：
@@ -295,40 +307,7 @@ kubectl exec -it <任意pod> -n milvus -- sh -c 'curl -s http://milvus-26-milvus
 
 #### 测试环境资源最小化
 
-测试场景可用 `milvus-test-minimal.yaml`，核心手段（参考 Operator 官方 `milvus_minimum.yaml`）：
 
-| 调整项 | 生产默认 | 测试最小化 | 收益 |
-|---|---|---|---|
-| etcd 副本 | 3 | `replicaCount: 1` | 少 2 个 Pod + 2 块 PVC |
-| MinIO 模式 | distributed（4 实例） | `mode: standalone` | 少 3 个 Pod + 3 块 PVC |
-| Milvus 全局资源 | 500m/1Gi ~ 2核/4Gi | 100m/256Mi ~ 1核/2Gi | 大幅降低 requests/limits |
-| queryNode | 1核/4Gi ~ 4核/16Gi | 100m/512Mi ~ 1核/2Gi | 测试数据量小，够用 |
-| etcd 存储 | 10Gi × 3 | 10Gi × 1（**不能写更小**） | 少 2 块 PVC |
-
-> **坑：etcd `persistence.size` 不能小于 10Gi**（首次部署也会中招）。Operator 内嵌 etcd chart 默认 size 是 10Gi，若 CR 写成更小（如 2Gi），Operator 会误判为"缩容"，去找不存在的 `xxx-etcd-old-sts` ControllerRevision 而卡在 Pending（报 `ControllerRevision ... not found`）。**即使全新部署，etcd size 也必须写 10Gi**。实测 Pod 数可从 12 降到 7、PVC 从 7 块降到 2 块（etcd 10Gi + MinIO 5Gi），CR 正常转 Healthy。
-
-**从当前部署切换（会重建依赖，注意数据）**：
-
-```bash
-# 1) 删除现有 CR（会触发 etcd/MinIO StatefulSet 重建）
-kubectl delete milvus milvus-26 -n milvus
-# 若 finalizer 卡住：kubectl patch milvus milvus-26 -n milvus -p '{"metadata":{"finalizers":[]}}' --type=merge
-
-# 2) 清理旧 PVC（关键！否则旧 PVC 残留继续占存储）
-# 先看清楚再删——测试环境无重要数据才执行
-kubectl get pvc -n milvus
-kubectl delete pvc -n milvus \
-  data-milvus-26-etcd-0 data-milvus-26-etcd-1 data-milvus-26-etcd-2 \
-  export-milvus-26-minio-0 export-milvus-26-minio-1 export-milvus-26-minio-2 export-milvus-26-minio-3
-
-# 3) 应用最小化配置
-kubectl apply -f milvus-test-minimal.yaml
-
-# 4) 验证：Pod 数量应明显减少、PVC 只剩 1+1
-kubectl get pods -n milvus
-kubectl get pvc -n milvus
-kubectl top pods -n milvus
-```
 
 > 说明：若 Longhorn StorageClass 的 `reclaimPolicy` 是 `Retain`，删 PVC 后底层 PV 可能残留，需在 Longhorn UI 确认并清理；清单里 `pvcDeletion: true` + `deletionPolicy: Delete` 会让 Operator 删除 CR 时一并删其管理的 PVC，但已存在的历史 PVC 建议按上面步骤显式清理。
 >
