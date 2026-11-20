@@ -373,8 +373,14 @@ class Service:
         self.tools=ToolRegistry()
         self._workflow=None
         self.metrics=collections.Counter()
-        from contextlib import nullcontext
-        with (self.db.schema_lock() if config.database_url else nullcontext()):
+        if config.database_url:
+            from .schema import require_postgres_schema
+            try:
+                require_postgres_schema(self.db)
+            except Exception:
+                self.db.close()
+                raise
+        else:
             self.db.executescript('''PRAGMA journal_mode=WAL;
             PRAGMA foreign_keys=ON;
             CREATE TABLE IF NOT EXISTS sessions(
@@ -393,8 +399,6 @@ class Service:
             CREATE INDEX IF NOT EXISTS session_retention ON sessions(updated);
             CREATE TABLE IF NOT EXISTS workflow_runs(id TEXT PRIMARY KEY, session TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, request_id TEXT NOT NULL, status TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL);
             ''')
-            if config.database_url:
-                self.db.execute('ALTER TABLE messages ADD COLUMN IF NOT EXISTS seq BIGSERIAL UNIQUE')
 
     def contact(self):
         return {'phone': '4008841883', 'email': 'help@china-entercom.net',

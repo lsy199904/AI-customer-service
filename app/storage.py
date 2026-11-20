@@ -58,11 +58,6 @@ class PostgresDB:
         try:self.pool.wait(timeout=15)
         except Exception:
             self.pool.close();raise
-        with self.pool.connection() as c:
-            key=int.from_bytes(hashlib.sha256(('schema:'+schema).encode()).digest()[:8],'big',signed=True)
-            c.execute('SELECT pg_advisory_lock(%s)',(key,))
-            try:c.execute('CREATE SCHEMA IF NOT EXISTS '+schema)
-            finally:c.execute('SELECT pg_advisory_unlock(%s)',(key,))
         def configure(c):
             c.execute('SET search_path TO '+schema+', public')
             from .deadlines import remaining

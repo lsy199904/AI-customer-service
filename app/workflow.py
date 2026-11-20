@@ -82,12 +82,16 @@ class SupportWorkflow:
             from langgraph.checkpoint.postgres import PostgresSaver
             self._resource=ConnectionPool(service.config.database_url,min_size=1,max_size=8,
                 kwargs={'autocommit':True,'prepare_threshold':0,'connect_timeout':10,'options':'-c search_path=assistant,public'})
-            self._resource.wait(timeout=15)
-            self.saver=PostgresSaver(self._resource)
-            with self._resource.connection() as connection:
-                connection.execute('SELECT pg_advisory_lock(729630041)')
-                try:self.saver.setup()
-                finally:connection.execute('SELECT pg_advisory_unlock(729630041)')
+            from .schema import require_checkpoint_schema
+            try:
+                self._resource.wait(timeout=15)
+                self.saver=PostgresSaver(self._resource)
+                with self._resource.connection() as connection:
+                    require_checkpoint_schema(connection)
+            except Exception:
+                self._resource.close()
+                self._visual_pool.shutdown(wait=False, cancel_futures=True)
+                raise
         else:
             from langgraph.checkpoint.sqlite import SqliteSaver
             self._resource=sqlite3.connect(service.config.db+'.checkpoints.sqlite3',check_same_thread=False)
