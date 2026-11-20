@@ -16,6 +16,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: titu-milvus-init
+  namespace: app-zone
   labels:
     app.kubernetes.io/name: titu-assistant
     app.kubernetes.io/component: milvus-init
@@ -57,7 +58,7 @@ spec:
       containers:
         - name: knowledge-init
           # 与 60-deployment.yml 使用相同的 assistant 应用镜像；db-migrate Job 用独立的 db-migrate 镜像。
-          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-assistant:v1.0.0-20261119
+          image: harbor.rd.dsi/smarttitu/smarttitu-assistant:v1.0.0-20261120
           imagePullPolicy: IfNotPresent
           # 四步串行：算集合名 → 02_milvus.py 建/核对 → manage.py ingest → doctor --models
           # 脚本内已 cd 到 /srv/assistant，产物落在下面的 PVC 挂载点

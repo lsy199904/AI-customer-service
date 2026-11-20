@@ -9,6 +9,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: titu-db-migrate
+  namespace: app-zone
   labels:
     app.kubernetes.io/name: titu-assistant
     app.kubernetes.io/component: db-migrate
@@ -36,7 +37,7 @@ spec:
         - name: flyway
           # 使用独立的 db-migrate 镜像（Flyway 运行时 + flyway.conf + migrations），不是 app 镜像。
           # tag 与 60-deployment.yml 的 app 镜像保持一致；镜像名按 deploy/docker/db-migrate/build.sh 的实际推送值替换。
-          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-db-migrate:v1.0.0-20261119
+          image: harbor.rd.dsi/smarttitu/db-migrate:v1.0.0-20261120
           imagePullPolicy: IfNotPresent
           workingDir: /flyway
           command: ["/flyway/entrypoint.sh"]

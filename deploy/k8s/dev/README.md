@@ -34,6 +34,7 @@ SQL 侧的目录、命名、版本规范见 [`../../../database/postgres/README.
 | `40-job-db-migrate.yaml` | 独立 Job，使用独立的 db-migrate 镜像执行 `flyway migrate` | 每次发布前先删除旧 Job、apply 本清单并等待完成；先于 Deployment 执行 |
 | `50-job-milvus-init.yaml` | 独立 Job，复用 assistant 应用镜像执行 `database/milvus/knowledge-init.sh`：建/核对集合 → `manage.py ingest` → `doctor --models`；挂载与 App **相同的 PVC** `titu-assistant-var`（`/srv/assistant/var`） | 每次发布前先删除旧 Job、apply 本清单并等待完成；结束并删除 Job 后再启动 Deployment |
 | `60-deployment.yml` | App Pod | 每次 apply / Pod 重启；当前清单未启用 `db-verify` / `knowledge-ingest` Init 容器 |
+| `70-service.yml` | Service `titu-assistant`，`NodePort` 30201 → 容器 `8201`（端口名 `http`） | apply 一次即可；集群外访问 `http://<节点IP>:30201/smart-bot/`，前提见「对外访问」 |
 
 当前阶段使用 K8s 原生 YAML，不启用 Kustomize。`40-job-db-migrate.yaml` 与 `50-job-milvus-init.yaml` 保持独立清单，由发布流程显式按顺序先执行并等待完成；顺序不依赖目录批量 apply。
 
@@ -162,7 +163,7 @@ fi
 
 # 列表必须为空：Terminating / Completed 的 Pod 仍占着卷
 kubectl -n $NS get pod -l app.kubernetes.io/name=titu-assistant,smarttitu-role=app
-# 还有 Pod 就等它退出
+# 还有 Pod 就等它退出（列表已经为空时跳过这条，否则会报 no matching resources found）
 kubectl -n $NS wait --for=delete pod \
   -l app.kubernetes.io/name=titu-assistant,smarttitu-role=app --timeout=300s
 ```
@@ -175,6 +176,7 @@ kubectl -n $NS wait --for=delete pod \
 kubectl -n $NS delete job titu-db-migrate --ignore-not-found
 kubectl -n $NS apply -f k8s/dev/40-job-db-migrate.yaml
 kubectl -n $NS wait --for=condition=complete job/titu-db-migrate --timeout=600s
+kubectl -n $NS logs -l job-name=titu-db-migrate --all-containers=true --tail=200
 ```
 
 ### 3. 知识初始化 Job（同一镜像、同一 PVC）
@@ -232,13 +234,69 @@ print(r.status, r.read().decode("utf-8", "replace")[:200])
 
 当前 `60-deployment.yml` 没有 `db-verify` / `knowledge-ingest` Init 容器，顺序完全由人保证：不要跳过 Job 直接 apply Deployment。
 
+### 对外访问：NodePort 30201
+
+对外地址 **`http://<任一节点 IP>:30201/smart-bot/`**，由 `70-service.yml` 的 `type: NodePort` + `nodePort: 30201` 提供；`port` 仍是 8201，所以集群内 `titu-assistant.app-zone.svc:8201` 不受影响。
+
+**这个集群有两个前置条件，缺一条就「拒绝连接」**：
+
+| 条件 | 现状 | 怎么改 |
+|---|---|---|
+| 节点网络放通 30201/TCP | 由网络管理员负责 | 安全组 / 前置网关加 `30201/TCP` 入站 |
+| Cilium 的 NodePort datapath 覆盖外网网卡 | ⚠️ `devices: eth1`（只有内网 `192.168.100.x`） | 见下方 patch，改成 `eth0,eth1` |
+
+`kubeProxyReplacement: true` 时 kube-proxy 已被替代，NodePort 完全由 Cilium 的 BPF 实现，而 BPF 只挂在 `devices` 列出的网卡上。节点网卡布局：
+
+| 网卡 | 地址 | 用途 |
+|---|---|---|
+| `eth0` | `10.180.158.x` | 对外，默认路由 |
+| `eth1` | `192.168.100.x` | 对内，Node InternalIP |
+
+所以只放通防火墙、不改 `devices`，外网包从 eth0 进来仍然没有 BPF 处理、宿主机也没有监听 socket（`/proc/net/tcp` 查不到 `:75F9`）→ 内核直接 RST。
+
+**改 Cilium（滚动重启全部 cilium-agent，每节点秒级抖动）**：
+
+```bash
+kubectl -n kube-system patch helmchartconfig rke2-cilium --type merge \
+  -p '{"spec":{"valuesContent":"kubeProxyReplacement: true\nk8sServiceHost: 192.168.100.114\nk8sServicePort: 16443\ndevices: eth0,eth1\n"}}'
+kubectl -n kube-system rollout status ds/cilium --timeout=600s
+```
+
+`devices` 必须写**两块**：去掉 eth1 会让 Node InternalIP 上的健康检查与内部转发失效。改完确认：
+
+```bash
+C=$(kubectl -n kube-system get pod -l k8s-app=cilium --field-selector spec.nodeName=<某节点> -o jsonpath='{.items[0].metadata.name}')
+kubectl -n kube-system exec $C -c cilium-agent -- cilium-dbg status | grep -i 'KubeProxyReplacement'
+# 期望设备列表里同时出现 eth0 10.180.158.x 与 eth1 192.168.100.x
+```
+
+回滚就把 `devices` 改回 `eth1`，同样等 `rollout status ds/cilium`。
+
+**验证**：
+
+```bash
+curl -s http://<任一节点 10.180.158.x>:30201/smart-bot/ready     # 期望 {"status":"ready"}
+```
+
+排障要区分两层：
+
+| 现象 | 判断 |
+|---|---|
+| Pod 内访问 `http://<节点内网IP>:30201/...` 通、外网不通 | Cilium 已覆盖 eth1，但没覆盖 eth0 → 改 `devices`；或防火墙未放通 |
+| Pod 内访问节点 IP 也不通 | Service 层问题：查 Endpoints 是否为空、Pod 是否 Ready |
+| `cilium-dbg status` 里已有 eth0、外网仍不通 | 回到防火墙/前置网关 |
+
+`targetPort: http` 依赖容器端口名，改 Deployment 的端口名时这里要同步。NodePort 由 kube-proxy/Cilium 做 DNAT，客户端源 IP 会保留（`externalTrafficPolicy: Cluster` 下跨节点转发时会被 SNAT 成目标节点 IP；要保源 IP 可设 `Local`，代价是只有 Pod 所在节点能接流量）。
+
+**什么时候才需要 Ingress**：要 HTTPS、要域名（`https://titu-assistant.xxx/`）、要和多路径共用 443 时才引入。集群 80/443 由 `rke2-ingress-nginx`（DaemonSet + hostNetwork）占用，`grafana.k8s.ird`、`longhorn.k8s.ird` 都是这么对外提供的；那时加一个 `ingressClassName: nginx`、`cert-manager.io/cluster-issuer: internal-cluster-issuer` 的 Ingress 指向 `titu-assistant:8201` 即可，并记得关 `proxy-buffering` 以支持 SSE。
+
 ## 失败恢复与回退
 
 发布中断时先判断卡在哪一步，再按阶段选恢复方式——**两种阶段不能混用同一种恢复动作**。
 
 | 卡住的位置 | App 状态 | Pod 模板 | 恢复动作 |
 |---|---|---|---|
-| 第 1 步：旧 Pod 没退出 | 0 副本 | 旧版 | 查 `kubectl describe pod` 的 Terminating 原因；必要时 `kubectl delete pod --force --grace-period=0` 后重试，**不要**带着占用跑 Job |
+| 第 1 步：旧 Pod 没退出 | 0 副本 | 旧版 | 查 `kubectl describe pod` 的 Terminating 原因（多为节点卸载卷失败）。优先等或修节点，`--force --grace-period=0` 可能留下挂载残留，只作最后手段；**不要**带着占用跑 Job |
 | 第 2/3 步：Job 失败 | 0 副本 | 旧版 | `scale --replicas=1` 把旧版拉回来；修好 SQL/配置后重跑对应 Job |
 | 第 5 步：rollout 超时 | 有 Pod 但 `0/1 READY` | 新版 | `rollout undo` 回上一版 → 等就绪 → 冒烟 |
 | 第 6 步：冒烟失败 | Pod Running | 新版 | 同上，`rollout undo` |
@@ -278,7 +336,7 @@ kubectl -n $NS rollout status deployment/titu-assistant --timeout=900s
 
 ```bash
 kubectl -n $NS delete job titu-milvus-init --ignore-not-found
-sed "s#^\( *\)image: .*#\1image: <上一版镜像>#" deploy/k8s/dev/50-job-milvus-init.yaml \
+sed "s#^\( *\)image: .*#\1image: <上一版镜像>#" k8s/dev/50-job-milvus-init.yaml \
   | kubectl -n $NS apply -f -
 kubectl -n $NS logs -l job-name=titu-milvus-init -f
 ```
@@ -304,12 +362,30 @@ kubectl -n $NS logs -l job-name=titu-milvus-init -f
 |---|---|---|
 | SQL Job 失败 | `kubectl -n app-zone logs -l job-name=titu-db-migrate --all-containers=true --tail=200` | 修复 SQL/配置后重新执行；若 `flyway_schema_history` 留下 failed 行，先用同一 db-migrate 镜像执行 `repair`，再重跑 Job |
 | Milvus Job 失败 | `kubectl -n app-zone logs -l job-name=titu-milvus-init --all-containers=true --tail=200` | 日志里看 `==> N/4` 定位阶段：1 算集合名（检查 `MILVUS_*` / `EMBEDDING_*`）、2 建集合（集合结构与索引不符时只读报错，不要手工改集合）、3 入库（PG/Milvus 连通性、Embedding 额度）、4 自检（模型可达性） |
+| 第 3 步报 `retrieval_model_failed` + `模型接口返回HTTP 400` | `curl -s "${EMBEDDING_URL%/v1/embeddings}/health/readiness"`；再用 `{"model":"<EMBEDDING_MODEL>","input":["hello"]}` 打 `/v1/embeddings` | 最小输入也 400 就不是切片/文本问题。若 readiness 显示 `"db":"Not connected"`（LiteLLM 的 `no_db_connection`），说明网关自己的数据库断了，`/v1/models`、`/v1/chat/completions` 会一起 400：恢复网关的 Postgres 并重启，确认 `/v1/embeddings` 能返回向量后，`delete job` + 重新 apply 即可（第 2 步已建集合会 no-op）。Job 失败后 Pod 仍占 RWO 卷，起 App 前必须删 Job |
 | 知识为空 | `kubectl -n app-zone exec deploy/titu-assistant -- python manage.py doctor` | 说明第 3 步没成功或写入的不是同一块卷；先确认 Job 已完成且 App 挂载的是 `titu-assistant-var` |
 | Milvus Job 卡在 `ContainerCreating`，事件报 `Multi-Attach error for volume` | `kubectl -n app-zone describe pod -l job-name=titu-milvus-init` | `titu-assistant-var` 是 RWO 卷，仍被其它节点上的 App Pod 占用：先 `kubectl scale deployment/titu-assistant --replicas=0` 再重跑 Job，或临时用 `nodeSelector` 把 Job 固定到 App 所在节点 |
 | App 卡在 `ContainerCreating`，事件报 `Multi-Attach error for volume` | `kubectl -n app-zone describe pod -l app.kubernetes.io/name=titu-assistant,smarttitu-role=app` | 发布第 3 步没删 Job，或 Job Pod 还没退出：`kubectl delete job titu-milvus-init` 并等 Pod 消失后再起 App |
 | App 起不来 | `kubectl -n app-zone logs deploy/titu-assistant --tail=200` | 确认两个 Job 已成功完成；db-migrate Job 须用 db-migrate 镜像，App 与 milvus Job 用 assistant 镜像，两者 tag 一致 |
 | Pod `Running` 但 `0/1 READY`，rollout 一直不结束 | `kubectl -n app-zone describe pod -l app.kubernetes.io/name=titu-assistant` 的 Readiness 事件 | `readinessProbe` 打的是 `/smart-bot/ready`：`index_empty` = 知识未入库（先跑知识 Job）；`index_unavailable` = 当前 fingerprint 算出的 Milvus 集合不存在（核对 `EMBEDDING_*` / `MILVUS_COLLECTION` 是否与镜像内代码一致）。这类 Pod 不会重启，只被摘流量 |
 | db-migrate Job 里看不到 `callbacks/` 或领域目录 | 见下方“确认镜像内容” | 九成是用了旧镜像：同名 tag 未重新构建/推送，或节点缓存未刷新 |
+| 外网访问 `http://<节点IP>:30201` 连接被拒 | ① `curl http://<节点内网IP>:30201/smart-bot/ready`；② `cilium-dbg status` 看设备列表是否有 eth0 | ① 不通 → Service/Endpoints 问题；② 通了但外网不通 → `devices` 缺 eth0（改 `eth0,eth1`）或防火墙未放通 30201/TCP |
+
+**模型服务连通性自检**（第 3 步报 400 / 超时 / 连接失败时先跑这个）：
+
+```bash
+# 本机：直接读环境变量（MODEL_BASE_URL、*_API_KEY、EMBEDDING_MODEL、MODEL_NAME ...）
+python scripts/probe_models.py --expect-dim 1024
+
+# 不依赖 App 在跑：显式给网关和模型名
+python scripts/probe_models.py --base-url http://10.180.158.23:4001 \
+  --chat-model Qwen/Qwen3-32B --embedding-model bge-m3 --rerank-model Qwen3-Reranker-4B
+
+# 验证集群到网关的网络（App 已启动时；镜像自带 python，Pod 已注入同一套 env）
+kubectl -n app-zone exec -i deploy/titu-assistant -- python - < scripts/probe_models.py
+```
+
+逐项输出 `[OK]/[WARN]/[FAIL]`：readiness → models → embeddings → rerank → chat；失败时带 HTTP 状态码和响应体前 300 字符，能直接看到 `No connected db.` 这类原因。`--only embeddings` 只测一项，`--expect-dim 1024` 会核对向量维度与 Milvus 集合是否一致；退出码 0 全通过 / 1 有失败 / 2 参数错误。
 
 **确认 db-migrate 镜像内容**（不要用 `docker run 镜像 ls`，`ls` 会被当成 Flyway 子命令）：
 
@@ -337,3 +413,12 @@ kubectl -n app-zone run probe --rm -it --restart=Never --imagePullPolicy=Always 
 - **配置不在发布步骤里**：上面的步骤只 apply 两个 Job 和 Deployment，不碰 ConfigMap/Secret。改了 `10-configmap.yml` 或 `20-secret.yml` 要先单独 apply，否则 Job 和 App 读到的都是集群里的旧值，表现为「发布成功但行为没变」。配置改动不受 `rollout undo` 影响，回退时要手工改回并重新 apply。
 - **不要**把 `40-job-db-migrate.yaml` 或 `50-job-milvus-init.yaml` 与其它资源一次性批量 apply：当前使用原生 YAML，Job 与 Deployment 的顺序由发布命令显式保证。
 - **tag 必须唯一**：清单使用 `imagePullPolicy: IfNotPresent`，同名 tag 覆盖推送后节点不会重新拉取旧镜像。db-migrate 镜像与 assistant 镜像用同一 tag 配套构建；手工 `-t` 时保证每次构建 tag 与上次不同（两个镜像都要重推），或临时改为 `Always` 并重启 Pod。
+
+
+
+
+
+http://10.180.158.23:8200/smart-bot/iframe-anonymous.js
+
+
+http://10.180.158.25:30201/smart-bot/widget/anonymous-demo

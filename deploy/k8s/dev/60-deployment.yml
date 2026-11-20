@@ -37,7 +37,7 @@ spec:
       #   - name: harbor-secret
       containers:
         - name: assistant
-          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-assistant:v1.0.0-20261119   # 应用镜像（与 50-job-milvus-init.yaml 同镜像）；db-migrate Job 用独立的 db-migrate 镜像
+          image: harbor.rd.dsi/smarttitu/smarttitu-assistant:v1.0.0-20261120   # 应用镜像（与 50-job-milvus-init.yaml 同镜像）；db-migrate Job 用独立的 db-migrate 镜像
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

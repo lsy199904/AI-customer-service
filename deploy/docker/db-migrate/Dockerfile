@@ -1,11 +1,14 @@
 # 数据库 SQL 执行镜像（db-migrate）：只包含 Flyway 运行时、flyway.conf 与 migrations/。
 # 不包含 app/ 代码，避免应用与 SQL 执行耦合。
 # 构建上下文必须是仓库根目录，例如：
-#   deploy/docker/db-migrate/build.sh -t v1.2.0
+#   deploy/docker/db-migrate/build.sh -t v1.0.0
 # 或：
 #   docker build -f deploy/docker/db-migrate/Dockerfile \
 #     --build-arg FLYWAY_IMAGE=flyway/flyway:11.20.3-alpine \
-#     -t harbor.rd.dsi/smarttitu/db-migrate:v1.2.0 .
+#     -t harbor.rd.dsi/smarttitu/db-migrate:v1.0.0 .
+#
+# 国内网络无法直连 Docker Hub 时，把 FLYWAY_IMAGE 换成可达镜像源，例如
+# docker.m.daocloud.io/flyway/flyway:11.20.3-alpine；详细说明见同目录 README。
 
 ARG FLYWAY_IMAGE=flyway/flyway:11.20.3-alpine
 FROM ${FLYWAY_IMAGE}

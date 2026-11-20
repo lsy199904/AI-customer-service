@@ -1,5 +1,7 @@
 
-# syntax=docker/dockerfile:1.7
+# 参考模板，实际构建用 deploy/docker/app/Dockerfile。
+# 不声明 `# syntax=docker/dockerfile:1.7`：该指令需从 docker.io 拉 frontend 镜像，
+# 内网环境会超时；Docker 23+ 内置 frontend 已支持 RUN --mount=type=cache。
 
 # ==========================================
 # Stage 1: Builder

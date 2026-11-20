@@ -25,23 +25,23 @@ data:
 
   # ---- LLM（外部API）----
   ANSWER_MODE: "llm"
-  MODEL_BASE_URL: "http://10.180.158.23:4001/v1"                # 【必填】OpenAI兼容地址，不带 /chat/completions
+  MODEL_BASE_URL: "https://api.siliconflow.cn/v1"                # 【必填】OpenAI兼容地址，不带 /chat/completions
   MODEL_NAME: "Qwen/Qwen3-32B"
   MODEL_MAX_TOKENS: "2048"
   MODEL_DISABLE_THINKING: "true"
-  MODEL_THINKING_FORMAT: "vllm"     # 硅基流动用 enable_thinking
+  MODEL_THINKING_FORMAT: "enable_thinking"     # 硅基流动用 enable_thinking
 
   # ---- Embedding ----
   EMBEDDING_PROVIDER: "openai"
-  EMBEDDING_URL: "http://10.180.158.23:4001/v1/embeddings"                 # 【必填】完整接口地址，如 https://api.siliconflow.cn/v1/embeddings
-  EMBEDDING_MODEL: "bge-m3"
+  EMBEDDING_URL: "https://api.siliconflow.cn/v1/embeddings"                 # 【必填】完整接口地址，如 https://api.siliconflow.cn/v1/embeddings
+  EMBEDDING_MODEL: "BAAI/bge-m3"
   EMBEDDING_REVISION: "v1"
   EMBEDDING_TIMEOUT: "30"
 
   # ---- Rerank ----
   RERANK_ENABLED: "true"
-  RERANK_URL: "http://10.180.158.23:4001/v1/rerank"                    # 【必填】完整接口地址
-  RERANK_MODEL: "Qwen3-Reranker-4B"
+  RERANK_URL: "https://api.siliconflow.cn/v1/rerank"                    # 【必填】完整接口地址
+  RERANK_MODEL: "Qwen/Qwen3-Reranker-4B"
   RERANK_TIMEOUT: "60"
 
   # ---- 检索与模型网络 ----

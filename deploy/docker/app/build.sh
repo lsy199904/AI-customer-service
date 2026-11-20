@@ -14,7 +14,7 @@ TAG="${TAG:-}"
 IMAGE_REF="${IMAGE_REF:-}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim-bookworm}"
 UV_IMAGE="${UV_IMAGE:-ghcr.io/astral-sh/uv:0.9.5}"
-APT_MIRROR="${APT_MIRROR:-mirrors.aliyun.com}"
+APT_MIRROR="${APT_MIRROR:-mirrors.huaweicloud.com}"
 PLATFORM="${PLATFORM:-}"
 PUSH="${PUSH:-0}"
 NO_CACHE="${NO_CACHE:-0}"
@@ -28,13 +28,16 @@ usage() {
 tag 默认取自 pyproject.toml 的 version 加当天日期。
 
 选项：
-  -t, --tag <tag>           镜像标签，默认 v<app 版本>-<YYYYMMDD>-<git短sha>
+  -t, --tag <tag>           镜像标签，默认 v<app 版本>-<YYYYMMDD>-<git短sha>；
+                            若误传含 "/" 或 ":" 的完整镜像引用，会自动识别为 --image
   -r, --registry <addr>     镜像仓库前缀，默认 harbor.rd.dsi/smarttitu
   -n, --name <name>         镜像名，默认 assistant
       --image <ref>         直接指定完整镜像名，忽略 registry/name/tag
       --python-image <ref>  基础镜像，默认 python:3.12-slim-bookworm
       --uv-image <ref>      uv 工具镜像，默认 ghcr.io/astral-sh/uv:0.9.5
-      --apt-mirror <host>   Debian 源主机名，默认 mirrors.aliyun.com；传空串用官方源
+      --apt-mirror <host>   Debian 源主机名，默认 mirrors.huaweicloud.com
+                            （实测 aliyun 在部分网络下只有 0.04MB/s，不要用默认值不动）
+                            传空串则沿用基础镜像自带的官方源
       --platform <list>     目标平台，如 linux/amd64；多平台须配合 --push
       --push                构建完成后推送
       --no-cache            禁用构建缓存（依赖层也会重装）
@@ -55,7 +58,7 @@ USAGE
 
 die() {
     echo "ERROR: $*" >&2
-    exit 1
+    exit 1mirrors.aliyun.com
 }
 
 app_version() {
@@ -91,6 +94,13 @@ command -v docker >/dev/null 2>&1 || die "未找到 docker 命令"
 [[ -f "$ROOT/pyproject.toml" && -f "$ROOT/uv.lock" ]] || die "缺少 pyproject.toml 或 uv.lock，构建上下文必须是仓库根"
 [[ -f "$ROOT/.dockerignore" ]] || echo "WARN: 缺少 .dockerignore，构建上下文会明显变大" >&2
 [[ "$PLATFORM" == *,* && "$PUSH" != "1" ]] && die "多平台构建无法 --load 到本地，请加 --push"
+
+# 兼容把完整镜像引用误传给 -t 的情况：合法 Docker tag 不允许 "/" 与 ":"，
+# 一旦出现即视为完整引用（等价 --image），并从引用中拆出 tag 供 label 使用。
+if [[ -z "$IMAGE_REF" && "$TAG" == *[:/]* ]]; then
+    IMAGE_REF="$TAG"
+    TAG="${TAG##*:}"
+fi
 
 if [[ -z "$IMAGE_REF" ]]; then
     [[ -n "$TAG" ]] || TAG="v$(app_version)-$(date +%Y%m%d)-$(git_rev)"
@@ -134,10 +144,15 @@ if ! docker "${args[@]}"; then
     cat >&2 <<'HINT'
 
 构建失败。常见原因与处理：
-  1) 拉不到 ghcr.io 的 uv 镜像    → --uv-image ghcr.m.daocloud.io/astral-sh/uv:0.9.5
-  2) 拉不到 docker.io 的 frontend → 注释掉 Dockerfile 首行 # syntax=docker/dockerfile:1.7
-  3) Debian 源不可达              → --apt-mirror <内网源>，或 --apt-mirror "" 走官方源
-  4) uv.lock 与 pyproject 不同步  → 先执行 uv lock
+  1) 拉不到 docker.io 的 python    → --python-image docker.m.daocloud.io/library/python:3.12-slim-bookworm
+  2) 拉不到 ghcr.io 的 uv 镜像     → --uv-image ghcr.m.daocloud.io/astral-sh/uv:0.9.5
+  3) Debian 源太慢/卡住            → --apt-mirror mirrors.ustc.edu.cn（或 mirrors.huaweicloud.com /
+                                     mirrors.cloud.tencent.com）；aliyun 在部分网络仅 0.04MB/s
+  4) uv.lock 与 pyproject 不同步   → 先执行 uv lock
+  5) 完全离线（基础镜像本地已有）  → 直接给本地 tag，例如
+       docker tag <本地已有镜像> python:3.12-slim-bookworm
+     之后重跑本脚本即可，不会访问 docker.io
+  注意：Dockerfile 已不再声明 # syntax frontend，构建不会再拉 docker/dockerfile 镜像。
 HINT
     exit 1
 fi

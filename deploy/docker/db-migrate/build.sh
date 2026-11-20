@@ -27,7 +27,8 @@ usage() {
 tag 默认取自 pyproject.toml 的 version、当天日期与 git 短 sha，保证每次构建唯一，且与应用镜像保持一致。
 
 选项：
-  -t, --tag <tag>           镜像标签，默认 v<app 版本>-<YYYYMMDD>-<git短sha>
+  -t, --tag <tag>           镜像标签，默认 v<app 版本>-<YYYYMMDD>-<git短sha>；
+                            若误传含 "/" 或 ":" 的完整镜像引用，会自动识别为 --image
   -r, --registry <addr>     镜像仓库前缀，默认 harbor.rd.dsi/smarttitu
   -n, --name <name>         镜像名，默认 db-migrate
       --image <ref>         直接指定完整镜像名，忽略 registry/name/tag
@@ -44,10 +45,14 @@ tag 默认取自 pyproject.toml 的 version、当天日期与 git 短 sha，保�
   REGISTRY IMAGE_NAME TAG IMAGE_REF FLYWAY_IMAGE PLATFORM PUSH NO_CACHE DRY_RUN VERIFY
 
 示例：
-  deploy/docker/db-migrate/build.sh                            # 本地构建 v1.2.0-20261119-1b81457
-  deploy/docker/db-migrate/build.sh -t v1.2.0 --push           # 指定 tag 并推送
+  deploy/docker/db-migrate/build.sh                            # 本地构建，tag 自动生成
+  deploy/docker/db-migrate/build.sh -t v1.0.0 --push           # 指定 tag 并推送
   deploy/docker/db-migrate/build.sh \
     --flyway-image registry.example.com/flyway/flyway:11.20.3-alpine
+
+国内网络无法直连 Docker Hub，基底镜像换源（已实测可拉取）：
+  deploy/docker/db-migrate/build.sh \
+    --flyway-image docker.m.daocloud.io/flyway/flyway:11.20.3-alpine -t v1.0.0 --push
 USAGE
 }
 
@@ -91,6 +96,13 @@ command -v docker >/dev/null 2>&1 || die "未找到 docker 命令"
 [[ -f "$ROOT/.dockerignore" ]] || echo "WARN: 缺少 .dockerignore，构建上下文会明显变大" >&2
 [[ "$PLATFORM" == *,* && "$PUSH" != "1" ]] && die "多平台构建无法 --load 到本地，请加 --push"
 
+# 兼容把完整镜像引用误传给 -t 的情况：合法 Docker tag 不允许 "/" 与 ":"，
+# 一旦出现即视为完整引用（等价 --image），并从引用中拆出 tag 供 label 使用。
+if [[ -z "$IMAGE_REF" && "$TAG" == *[:/]* ]]; then
+    IMAGE_REF="$TAG"
+    TAG="${TAG##*:}"
+fi
+
 if [[ -z "$IMAGE_REF" ]]; then
     [[ -n "$TAG" ]] || TAG="v$(app_version)-$(date +%Y%m%d)-$(git_rev)"
     if [[ -n "$REGISTRY" ]]; then
@@ -126,7 +138,8 @@ if ! docker "${args[@]}"; then
     cat >&2 <<'HINT'
 
 构建失败。常见原因与处理：
-  1) 拉不到 flyway 镜像 → --flyway-image <内网镜像地址>，需固定 tag 或 digest
+  1) 拉不到 flyway 镜像 → 国内无法直连 Docker Hub，用 --flyway-image 换源，例如
+     docker.m.daocloud.io/flyway/flyway:11.20.3-alpine（固定 tag 或 digest）
   2) 上下文缺 SQL 资产   → 确认 database/postgres/{flyway.conf,migrations} 存在
   3) 内网无法访问 docker.io → 先 docker pull 到本地，再用 --flyway-image 指定本地 tag
 HINT

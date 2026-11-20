@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.7
-# 该 frontend 需从 docker.io 拉取；若内网不可达可删掉本行（Docker 23+ 内置 frontend
-# 同样支持 RUN --mount=type=cache），或改用内网镜像地址。
+# 刻意不写 `# syntax=docker/dockerfile:1.7`：该指令会让 BuildKit 先去 docker.io
+# 拉 dockerfile frontend 镜像，内网/离线环境直接超时构建失败。
+# Docker 23+ 内置 frontend 已支持本文件用到的 RUN --mount=type=cache，无需外部 frontend。
 # 应用镜像（assistant）：uv.lock 驱动的两阶段构建。
 # 构建上下文必须是仓库根目录，例如：
 #   deploy/docker/app/build.sh
@@ -66,15 +66,20 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8000
 
 # 运行期系统库：opencv-python 需要 libgl1 + libglib2.0-0，onnxruntime 需要 libgomp1。
-# APT_MIRROR 留空走官方源；build.sh 默认传 mirrors.aliyun.com
+# APT_MIRROR 只填主机名（如 mirrors.huaweicloud.com）；留空沿用基础镜像自带的官方源。
+# 同时兼容 deb822（Debian 12+ 的 debian.sources）与旧式 sources.list 两种格式：
+# 只替换仓库主机名，/debian 与 /debian-security 路径保持不变。
 ARG APT_MIRROR=
-RUN if [ -n "$APT_MIRROR" ]; then \
-        sed -i "s|deb.debian.org|$APT_MIRROR|g" \
-            /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null || true; \
-    fi && \
-    apt-get update && \
+RUN set -eux; \
+    if [ -n "$APT_MIRROR" ]; then \
+        for f in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list; do \
+            [ -f "$f" ] || continue; \
+            sed -i -E "s#https?://deb\.debian\.org#http://${APT_MIRROR}#g" "$f"; \
+        done; \
+    fi; \
+    apt-get -o Acquire::Retries=3 -o Acquire::Languages=none update; \
     apt-get install -y --no-install-recommends \
-        libgl1 libglib2.0-0 libgomp1 && \
+        libgl1 libglib2.0-0 libgomp1; \
     rm -rf /var/lib/apt/lists/*
 
 # 创建非 Root 用户；UID/GID 固定，便于与 PVC、securityContext 对齐
