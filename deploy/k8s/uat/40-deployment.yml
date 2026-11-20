@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: titu-assistant
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate                  # RWO 卷不能多节点同时挂载，更新时先停旧再起新
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: titu-assistant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: titu-assistant
+        smarttitu-role: app
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 190    # 等待在答回答与清理，勿调小
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001            # 镜像内 assistant 用户
+        runAsGroup: 10001
+        fsGroup: 10001
+      # imagePullSecrets:           # 私有仓库需要认证时启用
+      #   - name: harbor-secret
+      containers:
+        - name: assistant
+          image: ctt-repository-cn-guangzhou.cr.volces.com/smarttitu-assistant/smarttitu-assistant:v1.0.0-20261119   # 改为实际推送的镜像标签（与90-init-job.yml保持同一镜像）
+          imagePullPolicy: IfNotPresents
+          envFrom:
+            - configMapRef:
+                name: titu-assistant-config
+            - secretRef:
+                name: titu-assistant-secret
+          ports:
+            - name: http
+              containerPort: 8201
+#          startupProbe:             # 首次启动含知识加载，最长容忍10分钟
+#            httpGet: { path: /smart-bot/ready, port: http }
+#            timeoutSeconds: 10
+#            periodSeconds: 15
+#            failureThreshold: 40
+#          readinessProbe:
+#            httpGet: { path: /smart-bot/ready, port: http }
+#            timeoutSeconds: 10
+#            periodSeconds: 15
+#            failureThreshold: 3
+#          livenessProbe:
+#            httpGet: { path: /smart-bot/health, port: http }
+#            timeoutSeconds: 10
+#            periodSeconds: 15
+#            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: var
+              mountPath: /srv/assistant/var
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: var
+          persistentVolumeClaim:
+            claimName: titu-assistant-var

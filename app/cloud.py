@@ -33,9 +33,9 @@ def prepare_postgres():
                 admin.execute(sql.SQL('CREATE DATABASE {} OWNER {}').format(sql.Identifier(name), sql.Identifier(user)))
         # No ALTER ROLE, DROP or password reset on repeated runs.
     with psycopg.connect(**target, connect_timeout=10) as conn:
-        allowed = conn.execute("SELECT has_database_privilege(current_database(),'CREATE')").fetchone()[0]
+        allowed = conn.execute("SELECT has_database_privilege(current_database(),'CONNECT')").fetchone()[0]
         if not allowed:
-            raise ValueError('业务账号需要目标库CREATE权限以初始化两个schema')
+            raise ValueError('业务账号缺少目标库CONNECT权限')
     print('PG业务库及业务账号连接检查通过', flush=True)
 
 

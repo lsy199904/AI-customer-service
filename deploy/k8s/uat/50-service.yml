@@ -1,0 +1,16 @@
+# 平台Ingress将HTTPS /smart-bot 原样转发到本Service:80，并关闭SSE缓冲。
+apiVersion: v1
+kind: Service
+metadata:
+  name: titu-assistant
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: titu-assistant
+  ports:
+    - name: http
+      port: 8201
+      targetPort: http

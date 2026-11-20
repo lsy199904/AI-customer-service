@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: titu-assistant
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+spec:
+  replicas: 1
+  # 保留最近 5 个 ReplicaSet：自动回退依赖 rollout undo 找到上一版 Pod 模板
+  revisionHistoryLimit: 5
+  # 就绪后观察 10s 才算可用，能挡住「起来又崩」的坏版本被判成功
+  minReadySeconds: 10
+  # 超过 15 分钟未完成滚动即标记 ProgressDeadlineExceeded，发布脚本据此回退
+  progressDeadlineSeconds: 900
+  strategy:
+    # RWO 卷（titu-assistant-var）不允许新旧 Pod 并存，只能先停后起。
+    # 真正的零停机需要先把 media 从这块卷里拆出去，见 docs/不停机升级与自动回退方案.md
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: titu-assistant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: titu-assistant
+        smarttitu-role: app
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 190    # 等待在答回答与清理，勿调小
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001            # 镜像内 assistant 用户
+        runAsGroup: 10001
+        fsGroup: 10001
+      # imagePullSecrets:           # 私有仓库需要认证时启用
+      #   - name: harbor-secret
+      containers:
+        - name: assistant
+          image: harbor.rd.dsi/smarttitu/smarttitu-assistant:v1.0.0-20261120   # 应用镜像（与 50-job-milvus-init.yaml 同镜像）；db-migrate Job 用独立的 db-migrate 镜像
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: titu-assistant-config
+            - secretRef:
+                name: titu-assistant-secret
+          ports:
+            - name: http
+              containerPort: 8201
+          # 启动探针只看进程是否活着：知识未入库时 /ready 会 503，
+          # 若拿它当启动探针，会把一个健康但尚未入库的 Pod 反复重启。
+          startupProbe:               # 首次启动含知识加载，最长容忍10分钟
+            httpGet: { path: /smart-bot/health, port: http }
+            timeoutSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 40
+          # 就绪探针是真门禁：/ready 会查数据库、知识行数、Milvus 集合是否存在。
+          # 失败只摘流量不重启，Deployment 到 progressDeadlineSeconds 判失败 → 触发回退。
+          readinessProbe:
+            httpGet: { path: /smart-bot/ready, port: http }
+            timeoutSeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /smart-bot/health, port: http }
+            timeoutSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: var
+              mountPath: /srv/assistant/var
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: var
+          persistentVolumeClaim:
+            claimName: titu-assistant-var

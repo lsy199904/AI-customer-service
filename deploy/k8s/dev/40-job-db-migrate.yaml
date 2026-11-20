@@ -1,0 +1,86 @@
+# 数据库 SQL 执行任务（Flyway）：在 App 滚动前运行一次。
+# 使用独立的 db-migrate 镜像（内含 Flyway 运行时 + flyway.conf + migrations）；
+# app 镜像是纯 Python 应用镜像，不含 Flyway，两者不可混用。
+# 两个镜像用同一 tag 配套构建推送，但镜像名不同（app: smarttitu-assistant，db-migrate: smarttitu-db-migrate）。
+# 发布时先删除同名旧 Job（Job 的 Pod 模板不可变），再 apply 本清单并等待其完成，最后滚动 Deployment。
+# namespace 不写死，由 kubectl -n <namespace> 指定。
+# 幂等：Flyway migrate 在 schema 已是最新时为 no-op；重复执行不会重复建表。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: titu-db-migrate
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+    app.kubernetes.io/component: db-migrate
+    smarttitu-role: maintenance
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: titu-assistant
+        app.kubernetes.io/component: db-migrate
+        smarttitu-role: maintenance
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: flyway
+          # 使用独立的 db-migrate 镜像（Flyway 运行时 + flyway.conf + migrations），不是 app 镜像。
+          # tag 与 60-deployment.yml 的 app 镜像保持一致；镜像名按 deploy/docker/db-migrate/build.sh 的实际推送值替换。
+          image: harbor.rd.dsi/smarttitu/db-migrate:v1.0.0-20261120
+          imagePullPolicy: IfNotPresent
+          workingDir: /flyway
+          command: ["/flyway/entrypoint.sh"]
+          args:
+            - "-connectRetries=10"
+            - "migrate"
+          env:
+            # 全应用唯一的数据库连接配置；镜像入口脚本会转成 JDBC 三要素
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: titu-assistant-secret
+                  key: DATABASE_URL
+            # 归属凭证占位符：V1.0.0 凭证行与 beforeMigrate 回调引用；与 App 配置同源
+            - name: FLYWAY_PLACEHOLDERS_DEPLOYMENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: titu-assistant-config
+                  key: DEPLOYMENT_ID
+            - name: FLYWAY_PLACEHOLDERS_MILVUS_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: titu-assistant-config
+                  key: MILVUS_URI
+            - name: FLYWAY_PLACEHOLDERS_MILVUS_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: titu-assistant-config
+                  key: MILVUS_DATABASE
+            - name: FLYWAY_PLACEHOLDERS_MILVUS_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: titu-assistant-config
+                  key: MILVUS_COLLECTION
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"

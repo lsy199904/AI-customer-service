@@ -10,6 +10,7 @@
 /evaluation/private/
 /models/
 .venv/
+var/
 node_modules/
 __pycache__/
 *.py[cod]
@@ -31,3 +32,8 @@ __pycache__/
 *.iml
 out
 gen
+
+
+#
+.Trash-0
+.workbuddy

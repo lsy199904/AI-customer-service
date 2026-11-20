@@ -142,7 +142,7 @@ class RerankerClient:
         if len(seen)!=len(documents):raise RAGError('Reranker未返回全部候选,请核对接口')
         return sorted(ranked,key=lambda r:r[1],reverse=True)
 
-SCHEMA='''
+SQLITE_SCHEMA='''
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS rag_state(id INTEGER PRIMARY KEY CHECK(id=1),fingerprint TEXT,generation INTEGER NOT NULL);
@@ -160,8 +160,11 @@ class DocumentStore:
         self.path=str(path);self.database_url=os.getenv('DATABASE_URL','') if database_url is None else database_url
         Path(path).parent.mkdir(parents=True,exist_ok=True)
         with self.connect() as db:
-            if self.database_url:db.execute('SELECT pg_advisory_xact_lock(?)',(729630043,))
-            db.executescript(SCHEMA)
+            if self.database_url:
+                from .schema import require_postgres_schema
+                require_postgres_schema(db)
+            else:
+                db.executescript(SQLITE_SCHEMA)
     @contextmanager
     def connect(self):
         from .storage import document_connection

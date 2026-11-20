@@ -1,0 +1,48 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-14-cluster
+  namespace: postgres
+  labels:
+    cnpg.io/cluster: postgres-14-cluster
+spec:
+  instances: 3
+  imageName: harbor.rd.dsi/ghcr.io/cloudnative-pg/postgresql:14.25-standard-bookworm
+  bootstrap:
+    initdb:
+      database: smarttitu_assistant
+  postgresql:
+    parameters:
+      shared_buffers: 256MB
+      pg_stat_statements.max: '10000'
+      pg_stat_statements.track: all
+      auto_explain.log_min_duration: '10s'
+  managed:
+    roles:
+      - name: dbadmin
+        ensure: present
+        comment: General purpose database administrator
+        login: true
+        superuser: false
+        createdb: true
+        createrole: true
+        connectionLimit: 20
+        passwordSecret:
+          name: dbadmin-pg-14
+  storage:
+    storageClass: longhorn-postgres
+    size: 20Gi
+  walStorage:
+    storageClass: longhorn-postgres
+    size: 10Gi
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: preferred

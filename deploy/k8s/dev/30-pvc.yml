@@ -1,0 +1,14 @@
+# 应用运行时数据（日志、PDF图片等）；RWO 卷要求单副本，Deployment 用 Recreate 策略。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: titu-assistant-var
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn-postgres
+  resources:
+    requests:
+      storage: 10Gi

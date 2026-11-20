@@ -51,35 +51,25 @@ def namespace():
 
 
 def check_database(conn):
-    """Existing app data is accepted only when claimed by this exact deployment."""
+    """Read-only validation; return whether knowledge has already been ingested."""
+    from .schema import require_postgres_schema
+    require_postgres_schema(conn)
     marker = conn.execute("SELECT to_regclass('assistant.external_deployment')").fetchone()[0]
-    if marker:
-        row = conn.execute('SELECT metadata FROM assistant.external_deployment WHERE id=1').fetchone()
-        if not row or row[0] != namespace():
-            raise DeploymentError('数据库属于其他部署或Milvus配置已变更，拒绝继续；请使用独立空库')
-        return True
-    existing = conn.execute("""
-        SELECT count(*) FROM information_schema.tables
-        WHERE table_schema IN ('assistant','knowledge')
+    if not marker:
+        raise DeploymentError('缺少部署归属表，请先执行独立PG迁移任务')
+    row = conn.execute('SELECT metadata FROM assistant.external_deployment WHERE id=1').fetchone()
+    if not row or row[0] != namespace():
+        raise DeploymentError('数据库属于其他部署或Milvus配置已变更，拒绝继续')
+    allowed = conn.execute("""
+        SELECT has_schema_privilege('assistant','USAGE')
+        AND has_schema_privilege('knowledge','USAGE')
+        AND has_table_privilege('assistant.messages','SELECT')
+        AND has_table_privilege('assistant.messages','INSERT')
+        AND has_table_privilege('knowledge.rag_documents','SELECT')
     """).fetchone()[0]
-    if existing:
-        raise DeploymentError('目标库已有客服数据但不属于本部署，拒绝初始化；请新建独立空库')
-    permitted = conn.execute("SELECT has_database_privilege(current_database(),'CREATE')").fetchone()[0]
-    if not permitted:
-        raise DeploymentError('初始化账号需要目标数据库CREATE权限，用于创建assistant和knowledge schema')
-    return False
-
-
-def claim(conn):
-    # Serialize ownership checks before any runtime schema initialization.
-    with conn.transaction():
-        conn.execute('SELECT pg_advisory_xact_lock(729630042)')
-        owned = check_database(conn)
-        if not owned:
-            from psycopg.types.json import Jsonb
-            conn.execute('CREATE SCHEMA IF NOT EXISTS assistant')
-            conn.execute('CREATE TABLE assistant.external_deployment(id integer PRIMARY KEY CHECK(id=1), metadata jsonb NOT NULL)')
-            conn.execute('INSERT INTO assistant.external_deployment VALUES(1,%s)', (Jsonb(namespace()),))
+    if not allowed:
+        raise DeploymentError('业务账号缺少schema USAGE或业务表DML权限，请检查迁移任务授权')
+    return bool(conn.execute('SELECT EXISTS(SELECT 1 FROM knowledge.rag_documents)').fetchone()[0])
 
 
 def check_media_and_sources(config, rag):
@@ -140,22 +130,12 @@ def check_milvus(rag, owned, dimensions):
         index.close()
 
 
-def initialize_runtime(config):
-    from .core import Service
-    from .workflow import SupportWorkflow
-    service = Service(config)
-    try:
-        service._workflow = SupportWorkflow(service)
-        output('客服表、知识表及工作流检查点初始化完成')
-    finally:
-        service.close()
-
-
 def main():
     parser = argparse.ArgumentParser(description='连接已有服务，不启动数据库容器、不迁移旧数据')
     parser.add_argument('action', choices=['check', 'initialize'])
     parser.add_argument('--create-database', action='store_true')
     args = parser.parse_args()
+    from .schema import SchemaNotReady
     stage = '配置检查'
     try:
         from .core import Settings
@@ -167,7 +147,7 @@ def main():
         stage = 'PG连接与部署隔离检查'
         with database_connection(args.create_database) as conn:
             owned = check_database(conn)
-            output('PG连接及隔离检查通过', existing_deployment=owned)
+            output('PG连接及隔离检查通过', knowledge_initialized=owned)
             if args.action == 'check' and owned:
                 state = conn.execute('SELECT fingerprint FROM knowledge.rag_state WHERE id=1').fetchone()
                 if not state or state[0] != rag.fingerprint:
@@ -176,12 +156,11 @@ def main():
             stage = '模型接口检查'; dimensions = check_models(config, rag)
             stage = 'Milvus连接检查'; check_milvus(rag, owned, dimensions)
             if args.action == 'initialize':
-                stage = '登记部署归属'; claim(conn)
-                stage = '数据结构初始化'; initialize_runtime(config)
+                output('PG结构与版本校验通过', note='建表及升级由独立PG迁移任务完成')
         output('前置检查完成', note='未写入知识向量；下一步执行ingest')
     except Exception as error:
         # HTTP/DB exceptions can contain credentials or provider response bodies.
-        message = str(error) if isinstance(error, DeploymentError) else '请核对该阶段配置、权限、接口协议及网络；未输出可能含密钥的底层错误'
+        message = str(error) if isinstance(error, (DeploymentError, SchemaNotReady)) else '请核对该阶段配置、权限、接口协议及网络；未输出可能含密钥的底层错误'
         output('失败', failed_stage=stage, error_type=type(error).__name__, message=message)
         raise SystemExit(1)
 

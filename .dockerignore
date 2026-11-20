@@ -1,15 +1,42 @@
+# 构建上下文裁剪：只保留镜像真正需要的文件，减少每次构建的上下文传输
 .env
 .env.*
+!.env.example
+
+# 版本控制与 IDE（.git 可达数十 MB）
 .git
+.gitignore
+.gitattributes
+.idea
+*.iml
+.vscode
+.editorconfig
+
+# 本地环境与工具缓存
 .venv
-var
+.ruff_cache
+.pytest_cache
+.mypy_cache
 __pycache__
 **/__pycache__
-tests
+*.py[cod]
+
+# 运行时数据与备份（镜像内由 var 提供）
+var
 backups
 models
-deploy/generated
-evaluation
 migration-storage
+evaluation
+
+# 构建产物与归档
+deploy/generated
 *.zip
 *.tar.gz
+*.dump
+
+# 测试与文档不进运行时镜像
+tests
+docs
+README.md
+.pre-commit-config.yaml
+.sqlfluff
