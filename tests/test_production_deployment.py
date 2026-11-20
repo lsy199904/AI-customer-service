@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT/'scripts'))
+if not (ROOT/'scripts/kubernetes.py').is_file():
+    raise unittest.SkipTest('本部署分支已移除旧Kubernetes Python执行器；使用现有声明式K8s配置')
 import kubernetes as deployment
 from app import cloud
 

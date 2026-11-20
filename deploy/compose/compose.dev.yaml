@@ -2,7 +2,8 @@
 services:
   assistant:
     image: ${ASSISTANT_IMAGE:-smarttitu-assistant:external-20261116}
-    build: ../..
+    # dev.sh sets --project-directory to the repository root.
+    build: .
     env_file: .env
     network_mode: host
     user: "${ASSISTANT_UID:?use scripts/dev.sh}:${ASSISTANT_GID:?use scripts/dev.sh}"
