@@ -1,9 +1,6 @@
-# 对外入口：NodePort 30201 → 容器 8201（端口名 http）。
-#   http://<任一节点 IP>:30201/smart-bot/     （应用自带 PublicPrefix 中间件，不带 /smart-bot 前缀也可）
-# nodePort 显式写死，避免集群随机分配后防火墙规则/书签跟着变；换端口要同步改这里与放行规则。
-# 前提：节点网络需放通 30201/TCP。本集群 Cilium 开了 kubeProxyReplacement，NodePort 的 BPF 只挂在
-# devices 列出的网卡上；若 devices 只有 eth1，则外网网卡 eth0 进来的包会被 RST，
-# 需把 HelmChartConfig rke2-cilium 的 devices 改为 eth0,eth1（命令见 dev README「对外访问」）。
+# 集群内入口：Ingress（75-ingress.yml）与其它工作负载统一走 titu-assistant.app-zone.svc:8201。
+# 对外暴露不再使用 NodePort：本集群 Cilium 开了 kubeProxyReplacement 且 devices 只有 eth1，
+# nodePort 的 BPF 不覆盖对外网卡 eth0，外网访问会被 RST（详见 README「对外访问」）。
 apiVersion: v1
 kind: Service
 metadata:
@@ -12,11 +9,10 @@ metadata:
   labels:
     app.kubernetes.io/name: titu-assistant
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app.kubernetes.io/name: titu-assistant
   ports:
     - name: http
       port: 8201
       targetPort: http
-      nodePort: 30201

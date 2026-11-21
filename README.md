@@ -372,9 +372,9 @@ Job 阶段失败时只把旧版本 `scale` 回 1，不要 `rollout undo`（会�
 
 ### 对外访问
 
-`70-service.yml` 是 `NodePort 30201 → 容器 8201`，但节点安全组通常只放通 22/80/443，**对外入口必须走 Ingress，不要使用 NodePort**。
+`70-service.yml` 是 `ClusterIP 8201`，只做集群内入口；对外由 `75-ingress.yml` 走 443 提供，**不要使用 NodePort**（本集群 Cilium `devices: eth1`，nodePort 的 BPF 不覆盖对外网卡 eth0，外网访问会被 RST，详见 dev README）。
 
-Ingress 规格（host `titu-assistant.k8s.ird`、`ingressClassName: nginx`、TLS 由 `cert-manager.io/cluster-issuer: internal-cluster-issuer` 签发、关闭 `proxy-buffering` 以支持 SSE）记录在 [`deploy/k8s/dev/README.md`](deploy/k8s/dev/README.md) 的「对外访问」一节，仓库当前未提交对应清单，需按该规格在本环境落地。
+Ingress 规格：host `titu-assistant.k8s.ird`、`ingressClassName: nginx`、TLS 由 `cert-manager.io/cluster-issuer: internal-cluster-issuer` 自动签发（`titu-assistant-tls`）、关闭 `proxy-buffering` 并放大 `proxy-read/send-timeout` 以支持 SSE。
 
 验证（DNS 未接入时用节点 IP + `Host` 头）：
 
