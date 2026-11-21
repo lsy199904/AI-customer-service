@@ -1,7 +1,6 @@
-# 集群内服务：ClusterIP，仅供 Ingress（80-ingress.yml）和集群内排障访问。
-#   集群内：titu-assistant.app-zone.svc:8201（端口名 http）
-# 对外入口走 Ingress（IP + http），见 80-ingress.yml；不再用 NodePort，
-# 节点无需放通端口，Cilium devices 需覆盖外网网卡的问题也随之消失。
+# 集群内入口：Ingress（75-ingress.yml）与其它工作负载统一走 titu-assistant.app-zone.svc:8201。
+# 对外暴露不再使用 NodePort：本集群 Cilium 开了 kubeProxyReplacement 且 devices 只有 eth1，
+# nodePort 的 BPF 不覆盖对外网卡 eth0，外网访问会被 RST（详见 README「对外访问」）。
 apiVersion: v1
 kind: Service
 metadata:

@@ -34,7 +34,8 @@ SQL 侧的目录、命名、版本规范见 [`../../../database/postgres/README.
 | `40-job-db-migrate.yaml` | 独立 Job，使用独立的 db-migrate 镜像执行 `flyway migrate` | 每次发布前先删除旧 Job、apply 本清单并等待完成；先于 Deployment 执行 |
 | `50-job-milvus-init.yaml` | 独立 Job，复用 assistant 应用镜像执行 `database/milvus/knowledge-init.sh`：建/核对集合 → `manage.py ingest` → `doctor --models`；挂载与 App **相同的 PVC** `titu-assistant-var`（`/srv/assistant/var`） | 每次发布前先删除旧 Job、apply 本清单并等待完成；结束并删除 Job 后再启动 Deployment |
 | `60-deployment.yml` | App Pod | 每次 apply / Pod 重启；当前清单未启用 `db-verify` / `knowledge-ingest` Init 容器 |
-| `70-service.yml` | Service `titu-assistant`，`NodePort` 30201 → 容器 `8201`（端口名 `http`） | apply 一次即可；集群外访问 `http://<节点IP>:30201/smart-bot/`，前提见「对外访问」 |
+| `70-service.yml` | Service `titu-assistant`，`ClusterIP:8201` → 容器 `8201`（端口名 `http`） | apply 一次即可；集群内与 Ingress 都走它，**不要**改成 NodePort（原因见「对外访问」） |
+| `75-ingress.yml` | Ingress `titu-assistant`，host `titu-assistant.k8s.ird` → `svc:8201`，TLS 由 `internal-cluster-issuer` 自动签发 | apply 一次即可；对外地址 `https://titu-assistant.k8s.ird/smart-bot/` |
 
 当前阶段使用 K8s 原生 YAML，不启用 Kustomize。`40-job-db-migrate.yaml` 与 `50-job-milvus-init.yaml` 保持独立清单，由发布流程显式按顺序先执行并等待完成；顺序不依赖目录批量 apply。
 
@@ -219,6 +220,14 @@ kubectl -n $NS rollout status deployment/titu-assistant --timeout=900s
 
 `apply` 会把副本数恢复为 1。`readinessProbe` 通过并再观察 `minReadySeconds: 10` 才算可用；到 `progressDeadlineSeconds: 900` 仍未就绪即判定失败。
 
+Service 与 Ingress 属于**一次性资源**，不随每次发版变更；首次发布或改了这两个清单时才需要：
+
+```bash
+kubectl -n $NS apply -f k8s/dev/70-service.yml
+kubectl -n $NS apply -f k8s/dev/75-ingress.yml
+kubectl -n $NS get certificate titu-assistant-tls     # 首次约 10s 内 READY=True
+```
+
 ### 6. 冒烟
 
 ```bash
@@ -234,61 +243,65 @@ print(r.status, r.read().decode("utf-8", "replace")[:200])
 
 当前 `60-deployment.yml` 没有 `db-verify` / `knowledge-ingest` Init 容器，顺序完全由人保证：不要跳过 Job 直接 apply Deployment。
 
-### 对外访问：NodePort 30201
+### 对外访问：Ingress（443）
 
-对外地址 **`http://<任一节点 IP>:30201/smart-bot/`**，由 `70-service.yml` 的 `type: NodePort` + `nodePort: 30201` 提供；`port` 仍是 8201，所以集群内 `titu-assistant.app-zone.svc:8201` 不受影响。
+对外地址 **`https://titu-assistant.k8s.ird/smart-bot/`**，由 `75-ingress.yml` 提供；`70-service.yml` 保持 `ClusterIP:8201`，集群内部仍走 `titu-assistant.app-zone.svc:8201`。
 
-**这个集群有两个前置条件，缺一条就「拒绝连接」**：
+集群的 80/443 由 RKE2 内置的 `rke2-ingress-nginx`（DaemonSet + hostNetwork，每个节点都占着）提供，`grafana.k8s.ird`、`longhorn.k8s.ird`、`prometheus.k8s.ird`、`keycloak.k8s.ird` 都是这个模式，本 Ingress 沿用同一套命名与证书策略。
 
-| 条件 | 现状 | 怎么改 |
+```bash
+# 已实测通过（Pod 重建、Service/Ingress 就绪后）
+curl -k -H 'Host: titu-assistant.k8s.ird' https://10.180.158.31/smart-bot/ready   # 200 {"status":"ready"}
+curl -k -H 'Host: titu-assistant.k8s.ird' https://10.180.158.31/smart-bot/        # 401（要求登录，说明已到应用）
+curl -k -H 'Host: titu-assistant.k8s.ird' https://10.180.158.31/                  # 401（根路径同样可达）
+curl -H 'Host: titu-assistant.k8s.ird' http://10.180.158.31/                      # 308 → https
+```
+
+DNS 接入后直接用域名访问，不再需要 `-k` 与 `Host` 头。
+
+**三个必须保留的配置**：
+
+| 配置 | 作用 | 去掉会怎样 |
 |---|---|---|
-| 节点网络放通 30201/TCP | 由网络管理员负责 | 安全组 / 前置网关加 `30201/TCP` 入站 |
-| Cilium 的 NodePort datapath 覆盖外网网卡 | ⚠️ `devices: eth1`（只有内网 `192.168.100.x`） | 见下方 patch，改成 `eth0,eth1` |
+| `nginx.ingress.kubernetes.io/proxy-buffering: "off"` | 关闭 nginx 响应缓冲 | SSE 流式回答变成「卡很久后一次性吐出」 |
+| `proxy-read-timeout` / `proxy-send-timeout: "3600"` | 长连接不被 60s 默认值掐断 | 长回答/长轮询中途断开 |
+| `cert-manager.io/cluster-issuer: internal-cluster-issuer` | 自动签发 `titu-assistant-tls` | 只能用默认自签证书，浏览器告警 |
 
-`kubeProxyReplacement: true` 时 kube-proxy 已被替代，NodePort 完全由 Cilium 的 BPF 实现，而 BPF 只挂在 `devices` 列出的网卡上。节点网卡布局：
+证书状态与访问日志：
 
-| 网卡 | 地址 | 用途 |
+```bash
+kubectl -n app-zone get certificate titu-assistant-tls      # 期望 READY=True（本次 11s 签出）
+kubectl -n app-zone get secret titu-assistant-tls
+kubectl -n kube-system logs -l app.kubernetes.io/name=rke2-ingress-nginx --tail=50   # 4xx/5xx 与 upstream 错误
+```
+
+**为什么不用 NodePort**（结论留档，避免以后反复试）：本集群 Cilium 开了 `kubeProxyReplacement: true`，且 `HelmChartConfig rke2-cilium` 里写死 `devices: eth1`（只有内网 `192.168.100.x`），kube-proxy 已被替代。所以 Service 的 `nodePort` 在节点上确实监听、Pod 内访问节点 IP 也返回 200，但包从对外网卡 `eth0`（`10.180.158.x`）进来时既没有 BPF 程序处理也没有监听 socket（`/proc/net/tcp` 查不到 `:75F9`），内核直接 RST。要修只有把 `devices` 改成 `eth0,eth1` 并滚动重启全部节点的 cilium（共享集群变更，影响所有命名空间）。既然 443 已经可用，就不动 CNI。
+
+`targetPort: http` 依赖容器端口名，改 Deployment 的端口名时这里要同步。
+
+#### 能不能用 `http://<节点IP>/smart-bot/` 直接访问？
+
+**默认不能，返回 404**（实测：`http://10.180.158.31/smart-bot/ready` → 404，带 `Host: titu-assistant.k8s.ird` 才 200）。原因：Ingress 规则里写了 `host`，ingress-nginx 按 `Host` 头匹配 server，用 IP 访问时 `Host` 就是 IP，匹配不到任何 server，落到控制器的默认后端。
+
+三种做法，按推荐顺序：
+
+| 做法 | 效果 | 代价 |
 |---|---|---|
-| `eth0` | `10.180.158.x` | 对外，默认路由 |
-| `eth1` | `192.168.100.x` | 对内，Node InternalIP |
+| **客户端加 hosts**（推荐）：`<节点IP> titu-assistant.k8s.ird` | 浏览器/curl 直接用域名，证书校验正常、HTTP 正常跳 HTTPS | 每台访问端都要加；节点换 IP 要改 |
+| **`server-alias` 注解加节点 IP** | `http://<IP>/smart-bot/` 从 404 变 200（已实测） | 只影响本 Ingress，但见下方两个坑 |
+| **不加 host 的 catch-all 规则** | 任意 IP/域名都能到本应用 | ❌ 会成为共享 ingress-nginx 的**全局默认后端**，别的服务未匹配的域名也会打到本应用，共享集群不要用 |
 
-所以只放通防火墙、不改 `devices`，外网包从 eth0 进来仍然没有 BPF 处理、宿主机也没有监听 socket（`/proc/net/tcp` 查不到 `:75F9`）→ 内核直接 RST。
+`server-alias` 的两个坑：
 
-**改 Cilium（滚动重启全部 cilium-agent，每节点秒级抖动）**：
-
-```bash
-kubectl -n kube-system patch helmchartconfig rke2-cilium --type merge \
-  -p '{"spec":{"valuesContent":"kubeProxyReplacement: true\nk8sServiceHost: 192.168.100.114\nk8sServicePort: 16443\ndevices: eth0,eth1\n"}}'
-kubectl -n kube-system rollout status ds/cilium --timeout=600s
+```yaml
+annotations:
+  nginx.ingress.kubernetes.io/server-alias: "10.180.158.31,10.180.158.29"
 ```
 
-`devices` 必须写**两块**：去掉 eth1 会让 Node InternalIP 上的健康检查与内部转发失效。改完确认：
+1. 主 Ingress 带 `ssl-redirect: "true"`，`http://<IP>/...` 会被 308 到 `https://<IP>/...`，而证书 SAN 只有 `DNS:titu-assistant.k8s.ird` → 浏览器证书告警。要干净的**明文** IP 访问，得同时把该注解设为 `"false"`（域名侧也随之不再自动跳 HTTPS）；要 **HTTPS + IP**，则要给证书加 IP SAN —— cert-manager 的 Ingress 注解不支持 IP，得单独写 `Certificate` 的 `ipAddresses`。
+2. 节点 IP 有 9 个且会变，注解里要逐个列出并随环境维护。
 
-```bash
-C=$(kubectl -n kube-system get pod -l k8s-app=cilium --field-selector spec.nodeName=<某节点> -o jsonpath='{.items[0].metadata.name}')
-kubectl -n kube-system exec $C -c cilium-agent -- cilium-dbg status | grep -i 'KubeProxyReplacement'
-# 期望设备列表里同时出现 eth0 10.180.158.x 与 eth1 192.168.100.x
-```
-
-回滚就把 `devices` 改回 `eth1`，同样等 `rollout status ds/cilium`。
-
-**验证**：
-
-```bash
-curl -s http://<任一节点 10.180.158.x>:30201/smart-bot/ready     # 期望 {"status":"ready"}
-```
-
-排障要区分两层：
-
-| 现象 | 判断 |
-|---|---|
-| Pod 内访问 `http://<节点内网IP>:30201/...` 通、外网不通 | Cilium 已覆盖 eth1，但没覆盖 eth0 → 改 `devices`；或防火墙未放通 |
-| Pod 内访问节点 IP 也不通 | Service 层问题：查 Endpoints 是否为空、Pod 是否 Ready |
-| `cilium-dbg status` 里已有 eth0、外网仍不通 | 回到防火墙/前置网关 |
-
-`targetPort: http` 依赖容器端口名，改 Deployment 的端口名时这里要同步。NodePort 由 kube-proxy/Cilium 做 DNAT，客户端源 IP 会保留（`externalTrafficPolicy: Cluster` 下跨节点转发时会被 SNAT 成目标节点 IP；要保源 IP 可设 `Local`，代价是只有 Pod 所在节点能接流量）。
-
-**什么时候才需要 Ingress**：要 HTTPS、要域名（`https://titu-assistant.xxx/`）、要和多路径共用 443 时才引入。集群 80/443 由 `rke2-ingress-nginx`（DaemonSet + hostNetwork）占用，`grafana.k8s.ird`、`longhorn.k8s.ird` 都是这么对外提供的；那时加一个 `ingressClassName: nginx`、`cert-manager.io/cluster-issuer: internal-cluster-issuer` 的 Ingress 指向 `titu-assistant:8201` 即可，并记得关 `proxy-buffering` 以支持 SSE。
+所以除非有「必须用 IP、且访问端不能改 hosts」的硬需求，优先用 hosts 或内部 DNS。
 
 ## 失败恢复与回退
 
@@ -369,7 +382,9 @@ kubectl -n $NS logs -l job-name=titu-milvus-init -f
 | App 起不来 | `kubectl -n app-zone logs deploy/titu-assistant --tail=200` | 确认两个 Job 已成功完成；db-migrate Job 须用 db-migrate 镜像，App 与 milvus Job 用 assistant 镜像，两者 tag 一致 |
 | Pod `Running` 但 `0/1 READY`，rollout 一直不结束 | `kubectl -n app-zone describe pod -l app.kubernetes.io/name=titu-assistant` 的 Readiness 事件 | `readinessProbe` 打的是 `/smart-bot/ready`：`index_empty` = 知识未入库（先跑知识 Job）；`index_unavailable` = 当前 fingerprint 算出的 Milvus 集合不存在（核对 `EMBEDDING_*` / `MILVUS_COLLECTION` 是否与镜像内代码一致）。这类 Pod 不会重启，只被摘流量 |
 | db-migrate Job 里看不到 `callbacks/` 或领域目录 | 见下方“确认镜像内容” | 九成是用了旧镜像：同名 tag 未重新构建/推送，或节点缓存未刷新 |
-| 外网访问 `http://<节点IP>:30201` 连接被拒 | ① `curl http://<节点内网IP>:30201/smart-bot/ready`；② `cilium-dbg status` 看设备列表是否有 eth0 | ① 不通 → Service/Endpoints 问题；② 通了但外网不通 → `devices` 缺 eth0（改 `eth0,eth1`）或防火墙未放通 30201/TCP |
+| 外网访问 `https://titu-assistant.k8s.ird/...` 502/503/504 | `kubectl -n app-zone get endpoints titu-assistant`；`kubectl -n app-zone get pod -l app.kubernetes.io/name=titu-assistant` | Endpoints 为空 → Service 选不到 Pod（标签不符或 Pod 未 Ready，查 `/smart-bot/ready`）；Endpoints 有 IP 仍 5xx → 应用自身问题，看 Pod 日志。`404` 多为 Ingress host/path 不匹配 |
+| 外网访问 Ingress 域名超时/连接被拒 | `curl -k -H 'Host: <ingress host>' https://<节点IP>/smart-bot/ready` | 节点 IP 通、域名不通 → DNS 未指向节点或前置网关未转发 443；节点 IP 也不通 → 查 `rke2-ingress-nginx` DaemonSet 在该节点是否 Running |
+| 证书告警或 `titu-assistant-tls` 未生成 | `kubectl -n app-zone get certificate,order,challenge` | `READY=False` 看 `describe certificate` 的 message；`internal-cluster-issuer` 需为 `True`。签发失败不影响 HTTP，但会回落到自签证书 |
 
 **模型服务连通性自检**（第 3 步报 400 / 超时 / 连接失败时先跑这个）：
 
