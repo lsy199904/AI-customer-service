@@ -5,7 +5,6 @@
 #
 # 用法（在任意目录执行均可）：
 #   deploy/compose/scripts/run-compose-check.sh           # 用 .env 中的仓库镜像
-#   deploy/compose/scripts/run-compose-check.sh --build   # 源码构建镜像（compose.test.yaml）
 #   deploy/compose/scripts/run-compose-check.sh --keep    # 验证后保留现场供调试
 #
 # 前置：docker compose v2（--wait 需支持 service_completed_successfully 语义）；
@@ -16,12 +15,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 KEEP=0
-BUILD=0
 for arg in "$@"; do
     case "$arg" in
         --keep) KEEP=1 ;;
-        --build) BUILD=1 ;;
-        *) echo "未知参数：$arg（支持 --keep / --build）" >&2; exit 2 ;;
+        *) echo "未知参数：$arg（支持 --keep）" >&2; exit 2 ;;
     esac
 done
 
@@ -31,9 +28,6 @@ if [ ! -f .env ]; then
 fi
 
 COMPOSE=(docker compose --env-file .env -f compose.yaml)
-if [ "$BUILD" = 1 ]; then
-    COMPOSE+=(-f compose.test.yaml)
-fi
 
 cleanup() {
     local code=$?
@@ -54,9 +48,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> 1/4 启动全栈并等待（迁移/入库 Job 成功退出 -> 应用 healthy）"
-up_args=(-d --wait --wait-timeout 2400)
-[ "$BUILD" = 1 ] && up_args+=(--build)
-"${COMPOSE[@]}" up "${up_args[@]}"
+"${COMPOSE[@]}" up -d --wait --wait-timeout 2400
 
 echo "==> 2/4 校验一次性 Job 退出码"
 for svc in db-migrate milvus-init; do

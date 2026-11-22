@@ -9,7 +9,6 @@
 | 文件 | 作用 |
 | --- | --- |
 | `compose.yaml` | 全栈编排：postgres、etcd、minio、milvus、db-migrate、milvus-init、assistant |
-| `compose.test.yaml` | 本地构建覆盖层：用仓库源码构建 app / db-migrate 镜像（CI 或离线用） |
 | `.env.example` | 配置模板 = K8s ConfigMap + Secret + 编排参数的合并等价物（入库） |
 | `.env` | 实际配置（`cp .env.example .env` 生成；已被 .gitignore 忽略） |
 | `scripts/run-compose-check.sh` | 自动化部署检查：起栈 → 验证 Job 与健康接口 → 清理 |
@@ -41,13 +40,13 @@
 # 一键验证（默认用 .env 里的仓库镜像；.env 缺失时自动从模板生成）
 deploy/compose/scripts/run-compose-check.sh
 
-# 用仓库源码构建镜像再验证（离线/CI）
-deploy/compose/scripts/run-compose-check.sh --build
-
 # 验证通过后保留现场手动体验，之后清理
 deploy/compose/scripts/run-compose-check.sh --keep
 docker compose --env-file .env -f compose.yaml down -v
 ```
+
+本地构建镜像走 `deploy/docker/{app,db-migrate}/build.sh`，完成后把产物 tag 更新到
+`.env` 的 `ASSISTANT_IMAGE` / `DB_MIGRATE_IMAGE`。
 
 手动操作：
 
