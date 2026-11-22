@@ -1,0 +1,27 @@
+# 本地构建覆盖层：不拉仓库镜像，直接用仓库源码构建 app 与 db-migrate 镜像，
+# 并打上与 .env 相同的镜像引用（assistant 与 milvus-init 共用同一镜像引用）。
+# 等价于先跑 deploy/docker/{app,db-migrate}/build.sh 再 up 基础文件；离线/CI 二选一。
+#
+# 用法：
+#   docker compose --env-file .env -f compose.yaml -f compose.test.yaml up -d --build --wait
+#   scripts/run-compose-check.sh --build
+#
+# 覆盖 .env 中的镜像引用即可换 tag（与 build.sh 的 TAG 约定一致）。
+services:
+  assistant:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/app/Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.9.5}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.huaweicloud.com}
+    image: ${ASSISTANT_IMAGE:?请在 .env 设置 ASSISTANT_IMAGE}
+
+  db-migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/db-migrate/Dockerfile
+      args:
+        FLYWAY_IMAGE: ${FLYWAY_IMAGE:-flyway/flyway:11.20.3-alpine}
+    image: ${DB_MIGRATE_IMAGE:?请在 .env 设置 DB_MIGRATE_IMAGE}

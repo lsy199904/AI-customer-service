@@ -2,8 +2,9 @@
 import importlib.util
 import pathlib
 import sys
-import unittest
 from unittest.mock import patch
+
+import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -95,43 +96,43 @@ def vectors_for(client):
     return FakeVectors
 
 
-class VectorInitTests(unittest.TestCase):
-    def test_creates_collection_with_app_schema(self):
-        client = FakeClient(exists=False)
-        with patch('app.vectors.MilvusVectors', vectors_for(client)):
-            result = manage.vector_init(FakeRAG(), 1024)
-        self.assertEqual(result['status'], 'created')
-        self.assertFalse(result['data_written'])
-        self.assertEqual(result['collection'], 'smarttitu_knowledge_' + 'a' * 16)
-        self.assertEqual(client.schema.kwargs, {'auto_id': False, 'enable_dynamic_field': False})
-        self.assertEqual([f['name'] for f in client.schema.fields],
-                         ['id', 'document_id', 'revision', 'vector'])
-        self.assertEqual(client.index_params.indexes[0]['metric_type'], 'COSINE')
-        self.assertIsNotNone(client.created)
-        self.assertEqual(client.loaded, result['collection'])
-
-    def test_existing_collection_is_only_verified(self):
-        client = FakeClient(exists=True)
-        with patch('app.vectors.MilvusVectors', vectors_for(client)):
-            result = manage.vector_init(FakeRAG(), 1024)
-        self.assertEqual(result['status'], 'checked')
-        self.assertIsNone(client.created)
-
-    def test_dimension_mismatch_fails_without_changes(self):
-        client = FakeClient(exists=True, dim=768)
-        with patch('app.vectors.MilvusVectors', vectors_for(client)):
-            with self.assertRaisesRegex(ValueError, '维度不一致'):
-                manage.vector_init(FakeRAG(), 1024)
-        self.assertIsNone(client.created)
-        self.assertIsNone(client.loaded)
-
-    def test_check_only_fails_when_collection_missing(self):
-        client = FakeClient(exists=False)
-        with patch('app.vectors.MilvusVectors', vectors_for(client)):
-            with self.assertRaisesRegex(ValueError, '集合不存在'):
-                manage.vector_init(FakeRAG(), 1024, check_only=True)
-        self.assertIsNone(client.created)
+def init_with_client(client, **kwargs):
+    with patch('app.vectors.MilvusVectors', vectors_for(client)):
+        return manage.vector_init(FakeRAG(), 1024, **kwargs)
 
 
-if __name__ == '__main__':
-    unittest.main()
+def test_creates_collection_with_app_schema():
+    client = FakeClient(exists=False)
+    result = init_with_client(client)
+    assert result['status'] == 'created'
+    assert not result['data_written']
+    assert result['collection'] == 'smarttitu_knowledge_' + 'a' * 16
+    assert client.schema.kwargs == {'auto_id': False, 'enable_dynamic_field': False}
+    assert [f['name'] for f in client.schema.fields] == ['id', 'document_id', 'revision', 'vector']
+    assert client.index_params.indexes[0]['metric_type'] == 'COSINE'
+    assert client.created is not None
+    assert client.loaded == result['collection']
+
+
+def test_existing_collection_is_only_verified():
+    client = FakeClient(exists=True)
+    result = init_with_client(client)
+    assert result['status'] == 'checked'
+    assert client.created is None
+
+
+def test_dimension_mismatch_fails_without_changes():
+    client = FakeClient(exists=True, dim=768)
+    with patch('app.vectors.MilvusVectors', vectors_for(client)):
+        with pytest.raises(ValueError, match='维度不一致'):
+            manage.vector_init(FakeRAG(), 1024)
+    assert client.created is None
+    assert client.loaded is None
+
+
+def test_check_only_fails_when_collection_missing():
+    client = FakeClient(exists=False)
+    with patch('app.vectors.MilvusVectors', vectors_for(client)):
+        with pytest.raises(ValueError, match='集合不存在'):
+            manage.vector_init(FakeRAG(), 1024, check_only=True)
+    assert client.created is None

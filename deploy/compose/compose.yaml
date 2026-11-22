@@ -1,0 +1,197 @@
+# ============================================================================
+# titu-assistant 全栈 Docker Compose —— deploy/k8s/dev 的等价翻译（单机自包含）。
+#
+# 资源映射（k8s/dev -> compose）：
+#   00-namespace.yml                 -> 顶层 name:（项目名，等价命名空间）
+#   10-configmap.yml + 20-secret.yml -> .env（模板 .env.example），env_file 注入
+#   30-pvc.yml（titu-assistant-var） -> 卷 var -> /srv/assistant/var
+#   infra/postgres（CNPG 3 副本）    -> postgres 单实例（14-bookworm）
+#   infra/milvus（operator cluster） -> milvus standalone + etcd + minio
+#   40-job-db-migrate.yaml           -> db-migrate（restart: "no"，postgres 健康后执行）
+#   50-job-milvus-init.yaml          -> milvus-init（restart: "no"，milvus 健康后执行）
+#   60-deployment.yml（Recreate）    -> assistant（depends_on 两个 Job 成功退出）
+#   70-service.yml（NodePort 30201） -> 端口映射 ${APP_NODE_PORT:-30201}:8201
+#
+# 一次性 Job 用 restart: "no" 的短生命周期容器模拟，发布顺序由
+# depends_on 的 service_healthy / service_completed_successfully 严格还原。
+# 镜像引用全部走 .env（ASSISTANT_IMAGE / DB_MIGRATE_IMAGE），换版本只改 .env。
+# ============================================================================
+
+name: titu-assistant
+
+# DATABASE_URL 默认由 POSTGRES_* 三元组拼出（与 k8s/dev Secret 的 libpq URI 同格式，
+# 密码中的保留字符与 K8s Secret 一样保持原样）；指向外部库时在 .env 显式设置
+# DATABASE_URL 覆盖（此时密码需按 URL 编码）。
+x-database-url: &database-url
+  DATABASE_URL: "${DATABASE_URL:-postgresql://${POSTGRES_USER:?请在 .env 设置 POSTGRES_USER}:${POSTGRES_PASSWORD:?请在 .env 设置 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?请在 .env 设置 POSTGRES_DB}?sslmode=disable}"
+
+services:
+  # ---- infra/postgres/02-postgres-14.yaml（CNPG postgres-14-cluster）的单实例等价 ----
+  # 与 K8s 的差异：单副本、app 用户即容器超级用户（CNPG 由 managed roles 精细授权）。
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:14-bookworm}
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:?请在 .env 设置 POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER:?请在 .env 设置 POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?请在 .env 设置 POSTGRES_PASSWORD}"
+      TZ: "${TZ:-Asia/Shanghai}"
+    volumes:
+      - pg_data:/var/lib/postgresql/data      # CNPG storage 20Gi 的本地卷等价
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    logging: &default-logging
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    # 从宿主机直连调试时放开（NodePort 之外；K8s 中该库只有 ClusterIP）：
+    # ports: ["${POSTGRES_NODE_PORT:-15432}:5432"]
+
+  # ---- infra/milvus/milvus-test-minimal.yaml 的 etcd 依赖 ----
+  etcd:
+    image: ${ETCD_IMAGE:-harbor.rd.dsi/docker.io/milvusdb/etcd:3.5.25-r1}
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command:
+      - etcd
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --data-dir=/etcd
+    volumes:
+      - etcd_data:/etcd
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *default-logging
+
+  # ---- infra/milvus/milvus-test-minimal.yaml 的 MinIO（standalone）----
+  # 凭证固定 minioadmin/minioadmin，与 Milvus 内置默认一致；若修改需同步给
+  # Milvus 提供用户级配置（compose 里没有 operator 的 values 注入通道）。
+  minio:
+    image: ${MINIO_IMAGE:-harbor.rd.dsi/docker.io/minio/minio:RELEASE.2024-12-18T13-15-44Z}
+    command: server /minio_data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/minio_data
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *default-logging
+
+  # ---- infra/milvus milvus-26 cluster -> standalone 单进程 ----
+  # 2.6 standalone 自带 9091 健康口；元数据走 etcd，对象走 minio，消息流用内置 rocksmq
+  # （operator 环境是 woodpecker，对应用层 API 透明）。首次拉起较慢，healthcheck 从宽。
+  milvus:
+    image: ${MILVUS_IMAGE:-harbor.rd.dsi/docker.io/milvusdb/milvus:v2.6.4}
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus_data:/var/lib/milvus
+    networks: [backend]
+    restart: unless-stopped
+    depends_on:
+      etcd: {condition: service_healthy}
+      minio: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+    logging: *default-logging
+    # 宿主机直连 gRPC/SDK 调试时放开（K8s 中该服务只有 ClusterIP）：
+    # ports: ["${MILVUS_NODE_PORT:-19530}:19530"]
+
+  # ---- 40-job-db-migrate.yaml：Flyway 迁移 Job，成功退出（exit 0）后才放行 App ----
+  # 直接使用镜像自带 ENTRYPOINT（/flyway/entrypoint.sh 把 DATABASE_URL 转 JDBC 三要素），
+  # args 与 Job 完全一致；占位符与 Job 的 FLYWAY_PLACEHOLDERS_* 同源（.env 应用配置）。
+  # 幂等：Flyway migrate 已是最新时为 no-op，重复执行安全。
+  db-migrate:
+    image: ${DB_MIGRATE_IMAGE:?请在 .env 设置 DB_MIGRATE_IMAGE}
+    restart: "no"
+    command: ["-connectRetries=10", "migrate"]
+    environment:
+      <<: *database-url
+      FLYWAY_PLACEHOLDERS_DEPLOYMENT_ID: "${DEPLOYMENT_ID:?请在 .env 设置 DEPLOYMENT_ID}"
+      FLYWAY_PLACEHOLDERS_MILVUS_URI: "${MILVUS_URI:?请在 .env 设置 MILVUS_URI}"
+      FLYWAY_PLACEHOLDERS_MILVUS_DATABASE: "${MILVUS_DATABASE:?请在 .env 设置 MILVUS_DATABASE}"
+      FLYWAY_PLACEHOLDERS_MILVUS_PREFIX: "${MILVUS_COLLECTION:?请在 .env 设置 MILVUS_COLLECTION}"
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [backend]
+    logging: *default-logging
+
+  # ---- 50-job-milvus-init.yaml：知识入库 Job（与 App 同镜像、同 var 卷）----
+  # 执行镜像内 database/milvus/knowledge-init.sh（建集合 -> ingest -> doctor 四步串行），
+  # 幂等：集合已存在只读核对、ingest 指纹未变时 no-op（重跑不产生 Embedding 费用）。
+  # K8s 中 RWO 卷要求 Job 与 App 错峰；compose 本地卷可并行挂载，且 App 等本 Job 退出后才启动。
+  milvus-init:
+    image: ${ASSISTANT_IMAGE:?请在 .env 设置 ASSISTANT_IMAGE}
+    restart: "no"
+    command: ["sh", "/srv/assistant/database/milvus/knowledge-init.sh"]
+    env_file: .env
+    environment:
+      <<: *database-url
+    volumes:
+      - var:/srv/assistant/var                # 与 assistant 完全相同的数据卷
+    depends_on:
+      milvus: {condition: service_healthy}
+    networks: [backend]
+    logging: *default-logging
+
+  # ---- 60-deployment.yml + 70-service.yml：主服务 ----
+  # env_file 对应 ConfigMap+Secret 的 envFrom；healthcheck 用 /smart-bot/ready
+  # （K8s 的就绪门禁语义：查数据库/知识行数/Milvus 集合），知识在 milvus-init 已入库。
+  assistant:
+    image: ${ASSISTANT_IMAGE:?请在 .env 设置 ASSISTANT_IMAGE}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *database-url
+    ports:
+      - "${APP_NODE_PORT:-30201}:8201"        # NodePort 30201 -> 容器 8201
+    volumes:
+      - var:/srv/assistant/var                # 30-pvc.yml titu-assistant-var
+    networks: [backend]
+    stop_grace_period: 190s                   # terminationGracePeriodSeconds: 190，勿调小
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:'+os.environ['PORT']+'/smart-bot/ready',timeout=10)"]
+      interval: 15s
+      timeout: 12s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      db-migrate: {condition: service_completed_successfully}
+      milvus-init: {condition: service_completed_successfully}
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "5"}
+
+networks:
+  backend: {}
+
+volumes:
+  pg_data: {}
+  etcd_data: {}
+  minio_data: {}
+  milvus_data: {}
+  var: {}      # 10Gi longhorn PVC 的本地卷等价（容量随宿主机磁盘）

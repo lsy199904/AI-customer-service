@@ -103,7 +103,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-cov", "ruff", "mypy", "httpx"]   # 原 requirements-dev.txt 内容并入
+dev = ["pytest>=8", "pytest-cov", "ruff", "mypy", "httpx", "playwright>=1.49"]   # 原 requirements-dev.txt 内容并入
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ui: 浏览器浮窗 UI 用例（playwright chromium，未安装时自动跳过）；-m 'not ui' 可排除",
+]
 
 #[project.scripts]                      # P2 拆 CLI 时启用
 #titu = "titu.cli.main:main"

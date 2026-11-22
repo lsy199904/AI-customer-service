@@ -120,15 +120,6 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 浏览器演示页：`http://127.0.0.1:8000/widget/anonymous-demo`（页面可直出，但要完成匿名提问需 `ANONYMOUS_WIDGET_ENABLED=true`）。
 
-### 可选：用 Docker Compose 启动单个应用容器
-
-```bash
-export ASSISTANT_UID=$(id -u) ASSISTANT_GID=$(id -g)
-docker compose --project-directory . -f deploy/compose/compose.dev.yaml up -d --wait
-```
-
-compose 只启动应用容器，挂载当前仓库并读取根目录 `.env`；数据库与模型服务仍需由外部提供。
-
 ## 目录结构
 
 ```text
@@ -163,7 +154,7 @@ titu-assistant/
 │   └── k8s/dev|uat|prod/       # 原生 YAML 清单与发布说明
 ├── docs/                       # 部署说明、SQL 规范、技术方案、配置模板
 ├── knowledge_sources/          # 正式知识文档（随镜像交付）
-├── scripts/                    # 配置生成、模型探针、日志查询、SQL 门禁
+├── scripts/                    # 模型探针、日志查询、SQL 门禁
 ├── tests/                      # pytest 与 Node 前端脚本测试
 ├── var/                        # 运行时产物：日志、SQLite、PDF 图片（不入库）
 ├── pyproject.toml
@@ -420,16 +411,19 @@ python scripts/query_logs.py var/logs --report <request_id>
 ## 测试与代码质量
 
 ```bash
-uv sync                                   # 含 dev 依赖（pytest、ruff、mypy）
-.venv/bin/python -m pytest tests -q       # Python 测试
-node tests/test_widget_ui.js              # 浮窗 UI 交互测试（可选，需 playwright）
+uv sync                                   # 含 dev 依赖（pytest、ruff、mypy、playwright）
+uv run playwright install chromium        # 仅首次：安装 UI 用例的浏览器（缺失时 UI 用例自动跳过）
+.venv/bin/python -m pytest tests -q       # 全量测试：服务端 + 浮窗 UI（一条命令）
 python3 scripts/ci/check_sql.py           # SQL 命名/版本/文件头/镜像 COPY 一致性
 
 uv pip install pre-commit sqlfluff        # 以下两项不在 dev 依赖中
 pre-commit install && pre-commit run --all-files
 ```
 
-测试默认不访问真实数据库与付费接口；模型探针单独提供：
+测试默认不访问真实数据库与付费接口。UI 用例（`-m ui`）跑真实 chromium，全流程 mock 后端接口；
+`pytest -m "not ui"` 可只跑服务端，`UI_SCREENSHOT` / `V2_SCREENSHOT` 保存过程截图，
+`CHROME_PATH` 指定浏览器可执行文件。内网拉取浏览器失败时设置
+`PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright` 后重试。模型探针单独提供：
 
 ```bash
 python scripts/probe_models.py --expect-dim 1024
@@ -477,16 +471,13 @@ Ingress 开了响应缓冲。需关闭 `proxy-buffering`（规格见 `deploy/k8s
 **`docker build` 拉不到基础镜像**
 国内网络无法直连 Docker Hub，按提示换源，例如 `--python-image docker.m.daocloud.io/library/python:3.12-slim-bookworm`、`--flyway-image docker.m.daocloud.io/flyway/flyway:11.20.3-alpine`。
 
-**`pytest` 收集阶段报 `No module named 'kubernetes'` 或缺少 `.env.example`**
-`tests/test_production_deployment.py`、`tests/test_external_deployment.py` 仍引用已随目录重构删除的部署脚本与配置模板，属于历史遗留，可用 `--ignore` 跳过；其余用例与本次发布代码保持一致。
-
 ## 已知限制
 
 - 单副本 + `strategy: Recreate`：`var/` 使用 ReadWriteOnce 卷，发布存在维护窗口，暂不支持零停机（方案见 [`docs/不停机升级与自动回退方案.md`](docs/不停机升级与自动回退方案.md)）。
 - 数据库迁移无 undo：SQL 必须保持 N-1 兼容，破坏性变更拆两次发布。
 - 业务工具默认全部禁用：`ToolRegistry` 只允许注册只读工具，写入型工具需先接入人工确认与幂等适配器。
 - 文档下载接口未开放（`/v1/documents/.../download` 返回 404），正文通过 `/v1/sources/{key}` 提供。
-- `manage.py init` 与 `scripts/configure_external.py` 仍从仓库根读取 `.env.example`，该文件已随目录重构移除；请以 `docs/app.env.example` 为模板手工创建 `.env`。
+- `manage.py init` 仍从仓库根读取 `.env.example`，该文件已随目录重构移除；请以 `docs/app.env.example` 为模板手工创建 `.env`。
 
 ## 贡献指南
 
