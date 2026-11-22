@@ -1,0 +1,125 @@
+# titu-assistant CI/CD：GitLab CI → Harbor → K8s dev（app-zone）
+#
+# 流水线：test → sql-check → build（双镜像同 tag 推 Harbor）→ deploy-dev（自动）
+#         另有手动 rollback-dev。feature 分支只跑 test / sql-check；v* tag 只构建不发布。
+#
+# 一次性前置配置：
+#   1. Shell executor 的 GitLab Runner，主机需具备 docker（23+，BuildKit）、kubectl、uv、git，
+#      能访问 Harbor（harbor.rd.dsi）与 K8s API（16443）。
+#   2. 项目 Settings → CI/CD → Variables：
+#      - HARBOR_USER / HARBOR_PASSWORD   Harbor 推送凭证；Password 勾选 Masked
+#      - KUBE_CONFIG_DEV（file 型）      受限 ServiceAccount 的 kubeconfig，
+#                                        授权 namespace app-zone 内：
+#                                        deployments(pods/log/scale)、jobs、pods、pods/log、
+#                                        pods/exec、namespaces(get)、events(get/list)
+#   3. 内网拉不到基础镜像时，在 Variables 覆盖 PYTHON_IMAGE / UV_IMAGE / FLYWAY_IMAGE，
+#      两个 build.sh 均支持同名环境变量，无需改本文件。
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+stages:
+  - test
+  - sql-check
+  - build
+  - deploy
+
+variables:
+  REGISTRY: "harbor.rd.dsi/smarttitu"
+  APP_IMAGE: "harbor.rd.dsi/smarttitu/smarttitu-assistant"
+  MIGRATE_IMAGE: "harbor.rd.dsi/smarttitu/db-migrate"
+  K8S_NS: "app-zone"
+  DOCKER_BUILDKIT: "1" # Dockerfile 用了 RUN --mount=type=cache，需 BuildKit
+  GIT_DEPTH: "50"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+
+default:
+  interruptible: true
+
+test:
+  stage: test
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .uv-cache
+  script:
+    - uv lock --check
+    - uv sync --locked
+    - uv run ruff check .
+    - uv run pytest -m "not ui" --junitxml=pytest-report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: pytest-report.xml
+    expire_in: 1 week
+
+sql-check:
+  stage: sql-check
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .uv-cache
+    policy: pull
+  script:
+    # CI=true 会让 check_sql.py 强制要求 sqlfluff；--no-project 只装 sqlfluff，不装项目依赖
+    - CI=true uv run --no-project --with 'sqlfluff<4' python scripts/ci/check_sql.py
+
+build-images:
+  stage: build
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+  variables:
+    # build.sh 默认镜像名是 assistant，但 k8s 清单引用的是 smarttitu-assistant，这里对齐
+    IMAGE_NAME: "smarttitu-assistant"
+  script:
+    - printf '%s' "$HARBOR_PASSWORD" | docker login "$REGISTRY" -u "$HARBOR_USER" --password-stdin
+    - ver="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -n1)"
+    - export IMAGE_TAG="v${ver}-$(date +%Y%m%d)-${CI_COMMIT_SHORT_SHA}"
+    - echo "IMAGE_TAG=$IMAGE_TAG" > build.env
+    - deploy/docker/app/build.sh -t "$IMAGE_TAG" --push
+    - deploy/docker/db-migrate/build.sh -t "$IMAGE_TAG" --push
+  artifacts:
+    reports:
+      dotenv: build.env
+    expire_in: 3 days
+
+deploy-dev:
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+  needs:
+    - build-images
+  resource_group: deploy-dev
+  timeout: 90m
+  interruptible: false
+  environment:
+    name: dev
+    url: http://10.180.158.25:30201/smart-bot/ # 按实际对外节点 IP 调整
+  script:
+    - export KUBECONFIG="$KUBE_CONFIG_DEV"
+    - bash deploy/ci/k8s-dev.sh deploy
+
+rollback-dev:
+  stage: deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  needs: []
+  resource_group: deploy-dev
+  interruptible: false
+  environment:
+    name: dev
+  script:
+    - export KUBECONFIG="$KUBE_CONFIG_DEV"
+    - bash deploy/ci/k8s-dev.sh rollback
