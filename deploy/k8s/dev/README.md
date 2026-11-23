@@ -421,4 +421,7 @@ kubectl -n app-zone run probe --rm -it --restart=Never --imagePullPolicy=Always 
 http://10.180.158.23:8200/smart-bot/iframe-anonymous.js
 
 
-http://10.180.158.25:30201/smart-bot/widget/anonymous-demo
+http://10.180.158.25:8201/smart-bot/widget/anonymous-demo
+
+
+http://10.180.158.25:8201/smart-bot/iframe-anonymous.js

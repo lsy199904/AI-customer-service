@@ -105,7 +105,7 @@ deploy-dev:
   interruptible: false
   environment:
     name: dev
-    url: http://10.180.158.25:30201/smart-bot/ # 按实际对外节点 IP 调整
+    url: http://10.180.158.25/smart-bot/ # 按实际 ingress 节点 IP 调整（rke2-ingress-nginx hostNetwork 占 80）
   script:
     - export KUBECONFIG="$KUBE_CONFIG_DEV"
     - bash deploy/ci/k8s-dev.sh deploy

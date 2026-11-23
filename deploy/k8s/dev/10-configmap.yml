@@ -56,7 +56,7 @@ data:
   # ---- 匿名身份与前端接入 ----
   ANONYMOUS_WIDGET_ENABLED: "true"
   ANONYMOUS_COOKIE_NAME: "smarttitu_ext_40e7b3eaf736"   # 所有Pod同名，上线后不变
-  ANONYMOUS_COOKIE_SECURE: "true"   # 走HTTPS Ingress填true；纯HTTP验证才填false
+  ANONYMOUS_COOKIE_SECURE: "false"  # 纯HTTP（IP直连Ingress）必须为false；浏览器在http下不带Secure cookie，上HTTPS时改回true
 #  FRAME_ORIGINS: ""                 # 【必填】允许嵌入iframe的业务来源，逗号分隔
 #  CORS_ORIGINS: ""                  # 前端跨域直调API时才需要
 

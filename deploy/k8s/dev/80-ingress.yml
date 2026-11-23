@@ -1,0 +1,31 @@
+# 对外入口：Ingress → ClusterIP Service → 容器 8201。
+#   http://<ingress 节点 IP>/smart-bot/     （rke2-ingress-nginx，hostNetwork 占节点 80 端口）
+# dev 阶段用 IP + HTTP，不走域名/TLS（cert-manager 签证书那套等上 HTTPS 时再加 tls 段）。
+# 不写 host：IP 直连时 Host 头没有域名可匹配，hostless 规则按路径全匹配；
+# grafana/longhorn 等 Ingress 带 host，优先级更高不受影响。
+# SSE：chat 接口是 LLM 流式（text/event-stream）。应用层空闲时每 10s 发 heartbeat 注释、
+# 响应带 X-Accel-Buffering: no；Ingress 侧再关 proxy-buffering 并放宽读写超时（nginx 默认 60s，
+# 兜底非流式的慢请求，如 PDF 处理），双保险避免流被掐断或攒成一坨。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: titu-assistant
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: titu-assistant
+                port:
+                  number: 8201
