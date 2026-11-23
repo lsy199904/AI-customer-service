@@ -8,6 +8,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DOCKERFILE="$SCRIPT_DIR/Dockerfile"
 
+# Dockerfile 用了 RUN --mount=type=cache，必须 BuildKit：Docker 23+ 默认启用，
+# 老版本（18.09-22）靠这里兜底；显式设了 DOCKER_BUILDKIT=0 则尊重用户选择
+export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
+
 REGISTRY="${REGISTRY:-harbor.rd.dsi/smarttitu}"
 IMAGE_NAME="${IMAGE_NAME:-assistant}"
 TAG="${TAG:-}"
@@ -58,7 +62,7 @@ USAGE
 
 die() {
     echo "ERROR: $*" >&2
-    exit 1mirrors.aliyun.com
+    exit 1
 }
 
 app_version() {

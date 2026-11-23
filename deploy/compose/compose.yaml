@@ -10,7 +10,7 @@
 #   40-job-db-migrate.yaml           -> db-migrate（restart: "no"，postgres 健康后执行）
 #   50-job-milvus-init.yaml          -> milvus-init（restart: "no"，milvus 健康后执行）
 #   60-deployment.yml（Recreate）    -> assistant（depends_on 两个 Job 成功退出）
-#   70-service.yml（NodePort 30201） -> 端口映射 ${APP_NODE_PORT:-30201}:8201
+#   70-service.yml（ClusterIP）      -> 宿主机端口映射 ${APP_NODE_PORT:-30201}:8201（compose 无 Ingress）
 #
 # 一次性 Job 用 restart: "no" 的短生命周期容器模拟，发布顺序由
 # depends_on 的 service_healthy / service_completed_successfully 严格还原。
@@ -52,18 +52,24 @@ services:
     # ports: ["${POSTGRES_NODE_PORT:-15432}:5432"]
 
   # ---- infra/milvus/milvus-test-minimal.yaml 的 etcd 依赖 ----
+  # 注意：milvusdb/etcd:3.5.25 实为 Bitnami 打包，镜像内置整套 ETCD_* ENV
+  # （DATA_DIR/NAME/VOLUME_DIR/...），而 etcd 对「同一配置同时有 ENV 和 command
+  # flag」会直接 fatal（shadowed）。因此所有配置一律走 environment（覆盖镜像内置
+  # 值），command 只留裸 etcd 二进制，不得加任何 --flag。
   etcd:
     image: ${ETCD_IMAGE:-harbor.rd.dsi/docker.io/milvusdb/etcd:3.5.25-r1}
+    # Bitnami 镜像默认非 root，而 /etcd 挂载点是 docker 创建的 root 目录；官方 etcd
+    # 镜像同样以 root 运行，这里保持一致避免数据卷权限问题。
+    user: "0"
     environment:
       ETCD_AUTO_COMPACTION_MODE: revision
       ETCD_AUTO_COMPACTION_RETENTION: "1000"
       ETCD_QUOTA_BACKEND_BYTES: "4294967296"
       ETCD_SNAPSHOT_COUNT: "50000"
-    command:
-      - etcd
-      - --advertise-client-urls=http://etcd:2379
-      - --listen-client-urls=http://0.0.0.0:2379
-      - --data-dir=/etcd
+      ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"   # 覆盖容器 IP（etcd 主机名）与 127.0.0.1（healthcheck 默认端点）
+      ETCD_ADVERTISE_CLIENT_URLS: "http://etcd:2379"   # milvus 的集群内访问地址
+      ETCD_DATA_DIR: "/etcd"                            # 与 etcd_data 卷挂载点对齐
+    command: ["etcd"]
     volumes:
       - etcd_data:/etcd
     networks: [backend]
