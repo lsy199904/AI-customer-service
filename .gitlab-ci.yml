@@ -3,7 +3,8 @@
 # 流水线：test → sql-check → build（双镜像同 tag 推 Harbor）→ deploy-dev（自动）
 #         另有手动 rollback-dev。feature 分支只跑 test / sql-check；v* tag 只构建不发布。
 #
-# 一次性前置配置：
+# 一次性前置配置：完整步骤与首次跑通清单见 deploy/ci/README.md
+#   （CI 账号 RBAC：deploy/ci/rbac-ci-dev.yaml）
 #   1. Shell executor 的 GitLab Runner，主机需具备 docker（23+，BuildKit）、kubectl、uv、git，
 #      能访问 Harbor（harbor.rd.dsi）与 K8s API（16443）。
 #   2. 项目 Settings → CI/CD → Variables：

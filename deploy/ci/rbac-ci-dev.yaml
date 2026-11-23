@@ -1,0 +1,87 @@
+# GitLab CI 发布账号的最小权限（对应 CI 变量 KUBE_CONFIG_DEV 用的 ServiceAccount）。
+# 权限逐条对应 deploy/ci/k8s-dev.sh 里的 kubectl 调用，只覆盖 app-zone 命名空间：
+#   停/起 App（deployments + scale）、Job 发布（batch/jobs）、等 Pod/打日志（pods、pods/log）、
+#   冒烟 exec（pods/exec）、rollout status/undo（replicasets）、排障（events）。
+# namespaces:get 是集群级只读，Role 授不了，单独走 ClusterRole，供发布前连通性预检。
+# 应用与生成 kubeconfig 的步骤见 deploy/ci/README.md「第 3 步」。
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: titu-ci
+  namespace: app-zone
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: titu-ci-namespace-reader
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: titu-ci-namespace-reader
+subjects:
+  - kind: ServiceAccount
+    name: titu-ci
+    namespace: app-zone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: titu-ci-namespace-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: titu-ci-deployer
+  namespace: app-zone
+rules:
+  # wait_pods_gone 轮询（get pod -l）、logs 的 Pod 解析、rollout status 的 watch
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # job_logs / rollout 失败时打 App 日志
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # smoke：kubectl exec deploy/titu-assistant -- python -c ...
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+  # 排障时 describe 看事件（只读）
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+  # apply 60-deployment、rollout status/undo、have_deployment 预检
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "patch"]
+  # scale --replicas=0/1：GET scale 子资源后 PUT
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["update"]
+  # rollout status / rollout undo 读取历史 ReplicaSet
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  # run_job：delete 旧 Job → apply 新 Job → get 轮询终态
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: titu-ci-deployer
+  namespace: app-zone
+subjects:
+  - kind: ServiceAccount
+    name: titu-ci
+    namespace: app-zone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: titu-ci-deployer
