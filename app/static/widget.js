@@ -62,9 +62,9 @@
     const relative=path.startsWith(prefix+'/')?path:prefix+path;
     return base.origin + relative;
   }
-  async function token() {
+  async function token(forceRefresh = false) {
     if (config.getToken) {
-      const value = await config.getToken();
+      const value = await config.getToken({forceRefresh});
       if (typeof value !== 'string' || !value) throw new Error('请先登录企业控制台');
       return value;
     }
@@ -77,21 +77,31 @@
     return value;
   }
   async function request(path, method = 'GET', body, correlationId) {
+    // Retry only reads and FAQ writes, whose request_id is persisted for deduplication.
+    const safe=method==='GET'||(method==='POST'&&/\/faq$/.test(path)&&body?.request_id);
+    for(let attempt=0;;attempt++){
+      try{return await requestOnce(path,method,body,correlationId,attempt>0);}
+      catch(error){
+        if(controller?.signal.aborted||attempt>=1||(!safe&&!error.authExpired)||!error.recoverable)throw error;
+      }
+    }
+  }
+  async function requestOnce(path, method, body, correlationId, forceRefresh) {
     const parent=controller?.signal,scope=new AbortController();
     const limit=method==='POST' && /\/messages$/.test(path) ? 180000 : 15000;
     let timedOut=false,timer;
     const onAbort=()=>scope.abort();
     const stopped=new Promise((resolve,reject)=>{
-      scope.signal.addEventListener('abort',()=>reject(new Error(timedOut
+      scope.signal.addEventListener('abort',()=>reject(Object.assign(new Error(timedOut
         ? '连接超时，请检查网络后点击重试。'
-        : '请求已取消。')),{once:true});
+        : '请求已取消。'),{recoverable:timedOut})),{once:true});
     });
     parent?.addEventListener('abort',onAbort,{once:true});
     if(parent?.aborted)scope.abort();
     timer=setTimeout(()=>{timedOut=true;scope.abort();},limit);
     try {
       return await Promise.race([stopped,(async()=>{
-        const auth=await token();
+        const auth=await token(forceRefresh);
         if(scope.signal.aborted)throw new Error('请求已取消。');
         let response;
         try {
@@ -101,12 +111,12 @@
           });
         } catch(error) {
           if(scope.signal.aborted)throw error;
-          throw new Error('无法连接客服，请检查网络后点击重试。');
+          throw Object.assign(new Error('无法连接客服，请检查网络后点击重试。'),{recoverable:true});
         }
         let data;
         try {data=await response.json();}
         catch {throw new Error('客服服务返回异常，请稍后重试。');}
-        if(!response.ok)throw new Error(data.error?.message || '连接暂时不可用，请稍后重试');
+        if(!response.ok)throw Object.assign(new Error(data.error?.message || '连接暂时不可用，请稍后重试'),{authExpired:response.status===401,recoverable:response.status===401||[502,503,504].includes(response.status)});
         return data;
       })()]);
     } finally {
@@ -121,9 +131,16 @@
     try {
       const stopped=new Promise((resolve,reject)=>scope.signal.addEventListener('abort',()=>reject(new Error('请求已取消或超时，请稍后重试')),{once:true}));
       if(scope.signal.aborted)throw new Error('请求已取消');
-      const auth=await Promise.race([token(),stopped]);
+      let auth=await Promise.race([token(),stopped]);
       if(scope.signal.aborted)throw new Error('请求已取消');
-      const response=await fetch(apiURL(path+'/stream'),{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':'application/json','X-Widget-ID':windowId,'X-Request-ID':body.request_id},body:JSON.stringify(body),signal:scope.signal,credentials:'omit',cache:'no-store'});
+      const sendStream=()=>fetch(apiURL(path+'/stream'),{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':'application/json','X-Widget-ID':windowId,'X-Request-ID':body.request_id},body:JSON.stringify(body),signal:scope.signal,credentials:'omit',cache:'no-store'});
+      let response=await sendStream();
+      if(response.status===401){
+        await response.body?.cancel();
+        auth=await Promise.race([token(true),stopped]);
+        if(scope.signal.aborted)throw new Error('请求已取消');
+        response=await sendStream();
+      }
       if(!response.ok){const data=await response.json();throw new Error(data.error?.message || '客服连接失败');}
       if(!response.body)throw new Error('浏览器不支持流式响应');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',result=null;

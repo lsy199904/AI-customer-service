@@ -24,6 +24,8 @@ async function setup({enabled=true,parent='https://portal.example',blocked=false
  const x=await setup();assert.equal(x.opened,1);assert(x.configured);
  assert(!x.messages.some(([m])=>m.type==='smarttitu:token-request'));
  assert.equal(await x.configured.getToken(),'signed-token');assert.equal(x.calls.length,2);
+ await x.configured.getToken({forceRefresh:true});assert.equal(x.calls.length,3);
+ x.calls.pop();
  x.expire();await Promise.all([x.configured.getToken(),x.configured.getToken()]);
  assert.equal(x.calls.length,3);assert.equal(x.calls[2][1].headers.Authorization,'Bearer signed-token');
  const account=await setup({userId:'user-001',userName:'测试账号+邮箱@example.com'});assert(account.configured);account.expire();await account.configured.getToken();assert.equal(account.calls[2][1].body,JSON.stringify({userId:'user-001',userName:'测试账号+邮箱@example.com'}));

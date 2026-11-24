@@ -6,8 +6,8 @@
   const userId=identityParams.get('userId')||'',userName=identityParams.get('userName')||'';
   let parentOrigin=null,token='',expires=0,pending=null;
   function tell(type,data={}){if(parentOrigin)window.parent.postMessage({type,...data},parentOrigin);}
-  async function getToken(){
-    if(token&&Date.now()<expires-60000)return token;
+  async function getToken({forceRefresh=false}={}){
+    if(!forceRefresh&&token&&Date.now()<expires-60000)return token;
     if(!pending)pending=(async()=>{
       const response=await fetch(userId?'/smart-bot/widget/account-auth':'/smart-bot/widget/anonymous-auth',{
         method:'POST',credentials:'same-origin',cache:'no-store',

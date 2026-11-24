@@ -68,7 +68,7 @@ class RequestBoundary:
             await send(message)
         window_id=Headers(scope=scope).get('x-widget-id','')
         window_id=window_id if re.fullmatch(r'[A-Za-z0-9_-]{8,80}',window_id) else None
-        is_chat=scope['method']=='POST' and bool(re.fullmatch(r'/v1/sessions/[^/]+/messages(?:/stream)?',scope['path']))
+        is_chat=scope['method']=='POST' and bool(re.fullmatch(r'/v1/sessions/[^/]+/(?:messages(?:/stream)?|faq)',scope['path']))
         with bind(http_request_id=request_id,window_id=window_id),capture_request(is_chat):
             try:
                 await self._call(scope,receive,track)
