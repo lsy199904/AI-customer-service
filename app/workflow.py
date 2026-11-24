@@ -126,7 +126,10 @@ class SupportWorkflow:
             except RequestCancelled:raise
             except Exception as error:
                 event('question_resolution_unavailable',level='WARNING',**error_fields(error))
-                interpretation={'kind':'independent','question':state['question'],'clarification':''}
+                from .query_context import interpretation_fallback
+                interpretation=interpretation_fallback(error,state['question'],state['history'])
+                if interpretation['kind']=='clarify':intent='knowledge'
+                event('question_resolution_fallback',resolution_kind=interpretation['kind'],retrieval_skipped=interpretation['kind']=='clarify')
         values={'interpretation':interpretation,'intent':intent,'answer':FALLBACK,'reason':'no_knowledge','success':False,
                 'selected':[],'images':[],'evidence':[],'candidates':[],'retrieval_failed':False,
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
