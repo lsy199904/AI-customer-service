@@ -8,7 +8,7 @@ import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 from app.core import Settings,Model
-from app.query_context import interpret,resolution_error_code
+from app.query_context import interpret,resolution_error_code,safe_provider_error
 
 COMPLAINT=[{'role':'user','content':'我要投诉，客服一直没解决问题'},
            {'role':'assistant','content':'请通过人工渠道反馈'}]
@@ -46,7 +46,7 @@ class TracedModel:
             row['model_output']=redact(raw,getattr(self.model.config,'model_key',''))
             return raw
         except Exception as error:
-            row.update(error_type=type(error).__name__,reason=resolution_error_code(error))
+            row.update(error_type=type(error).__name__,reason=resolution_error_code(error),**safe_provider_error(error))
             raise
 
 
