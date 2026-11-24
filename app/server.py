@@ -177,6 +177,7 @@ def actor(request:Request,credentials:HTTPAuthorizationCredentials=Depends(beare
     fields={'tenant_ref':reference(service.config.secret,claims['tenant_id']),
             'user_ref':reference(service.config.secret,claims['tenant_id']+'\0'+claims['sub'])}
     sid=request.path_params.get('sid')
+    if isinstance(claims.get('account'),str):fields['account']=claims['account']
     if sid:fields['session_ref']=reference(service.config.secret,sid)
     request.scope.setdefault('state',{})['actor_log_fields']=fields
     return claims
@@ -263,6 +264,27 @@ def create_app(config=None,model=None,service=None):
 
     @app.get('/widget/config',include_in_schema=False)
     def frame_config():return JSONResponse({'frame_origins':list(config.frame_origins),'anonymous_widget_enabled':config.anonymous_widget_enabled},headers={'Cache-Control':'no-store'})
+
+    class AccountIdentity(BaseModel):
+        model_config=ConfigDict(extra='forbid')
+        userId: str=Field(min_length=1,max_length=128)
+        userName: str=Field(default='',max_length=128)
+
+    @app.post('/widget/account-auth',include_in_schema=False)
+    def account_auth(body:AccountIdentity):
+        # Explicitly opt in to identities asserted by the embedding portal.
+        # This is NOT cryptographic verification of the supplied account ID.
+        if os.getenv('WIDGET_TRUST_ACCOUNT_PARAMS','false').lower()!='true':
+            raise APIError(403,'account_identity_disabled','账号参数接入尚未开启')
+        if body.userId!=body.userId.strip() or any(ord(c)<32 or ord(c)==127 for c in body.userId+body.userName):
+            raise APIError(400,'invalid_identity','账号参数格式无效')
+        tenant=os.getenv('WIDGET_ACCOUNT_TENANT','__smarttitu_accounts__')
+        if not 1<=len(tenant)<=128 or tenant in ('__smarttitu_anonymous__',DEMO_TENANT):
+            raise APIError(503,'invalid_configuration','账号接入配置无效')
+        response=JSONResponse({'token':issue_token(config.secret,tenant,body.userId,3600,account=body.userName),
+            'expires_in':3600},headers={'Cache-Control':'no-store','Pragma':'no-cache'})
+        event('account_token_issued',account=body.userName)
+        return response
 
     @app.post('/widget/anonymous-auth',include_in_schema=False)
     def anonymous_auth(request:Request):

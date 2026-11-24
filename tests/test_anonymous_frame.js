@@ -1,18 +1,18 @@
 'use strict';
 const vm=require('vm'),fs=require('fs'),assert=require('assert');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-async function setup({enabled=true,parent='https://portal.example',blocked=false}={}){
+async function setup({enabled=true,parent='https://portal.example',blocked=false,userId='',userName=''}={}){
  let calls=[],messages=[],configured,opened=0,listener,clock=1000;
  const winParent={postMessage:(...x)=>messages.push(x)};
  const window={parent:winParent,addEventListener:(_,fn)=>listener=fn,
    SmartTITUAssistant:{configure:c=>configured=c,open:()=>opened++,reset:()=>{}}};
  const status={},panel={};
  const context={window,document:{getElementById:id=>id==='connection'?panel:status},URL,URLSearchParams,
-   location:{origin:'https://assistant.example',search:parent?'?parent_origin='+encodeURIComponent(parent):''},
+   location:{origin:'https://assistant.example',search:'?'+new URLSearchParams({...(parent?{parent_origin:parent}:{}),...(userId?{userId,userName}:{})}).toString()},
    Date:{now:()=>clock},AbortSignal:{timeout:()=>({})},
    fetch:async(url,options)=>{calls.push([url,options]);
      if(url==='/smart-bot/widget/config')return {ok:true,json:async()=>({anonymous_widget_enabled:enabled,frame_origins:['https://portal.example']})};
-     assert.equal(url,'/smart-bot/widget/anonymous-auth');assert.equal(options.method,'POST');assert.equal(options.body,'{}');
+     assert.equal(url,userId?'/smart-bot/widget/account-auth':'/smart-bot/widget/anonymous-auth');assert.equal(options.method,'POST');assert.equal(options.body,JSON.stringify(userId?{userId,userName}:{}));
      assert.equal(options.headers['Content-Type'],'application/json');
      return {ok:!blocked,json:async()=>blocked?{error:{message:'blocked'}}:{token:'signed-token',expires_in:3600}};
    }};
@@ -26,6 +26,7 @@ async function setup({enabled=true,parent='https://portal.example',blocked=false
  assert.equal(await x.configured.getToken(),'signed-token');assert.equal(x.calls.length,2);
  x.expire();await Promise.all([x.configured.getToken(),x.configured.getToken()]);
  assert.equal(x.calls.length,3);assert.equal(x.calls[2][1].headers.Authorization,'Bearer signed-token');
+ const account=await setup({userId:'user-001',userName:'测试账号+邮箱@example.com'});assert(account.configured);account.expire();await account.configured.getToken();assert.equal(account.calls[2][1].body,JSON.stringify({userId:'user-001',userName:'测试账号+邮箱@example.com'}));
  const plain=await setup({parent:null});assert.equal(plain.opened,1);assert.equal(plain.messages.length,0);
  const disabled=await setup({enabled:false});assert.equal(disabled.opened,0);assert.equal(disabled.calls.length,1);
  const evil=await setup({parent:'https://evil.example'});assert.equal(evil.opened,0);assert.equal(evil.calls.length,1);
@@ -42,6 +43,10 @@ async function setup({enabled=true,parent='https://portal.example',blocked=false
  assert.equal(mascot.width,88);assert.equal(mascot.height,80);
  window.SmartTITUAnonymousEmbed.open();assert.equal(frame.hidden,false);assert.equal(button['aria-expanded'],'true');
  window.SmartTITUAnonymousEmbed.close();assert.equal(frame.hidden,true);assert.equal(button['aria-expanded'],'false');
+ window.SmartTITUAnonymousEmbed.setIdentity({userId:'user-001',userName:'中文+账号@example.com'});
+ assert.equal(new URL(frame.src).searchParams.get('userId'),'user-001');assert.equal(new URL(frame.src).searchParams.get('userName'),'中文+账号@example.com');
+ window.SmartTITUAnonymousEmbed.setIdentity({userId:'user-002',userName:'另一个账号'});assert.equal(new URL(frame.src).searchParams.get('userId'),'user-002');
+ window.SmartTITUAnonymousEmbed.setIdentity({});assert.equal(new URL(frame.src).searchParams.has('userId'),false);
  assert(window.SmartTITUAnonymousEmbed);assert.equal(typeof listener,'function');
  console.log('Anonymous frame: plain iframe, trusted optional bridge, own credentials, renewal dedup and failure isolation passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

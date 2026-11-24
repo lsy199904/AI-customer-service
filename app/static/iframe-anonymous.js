@@ -2,6 +2,12 @@
   'use strict';
   if(window.SmartTITUAnonymousEmbed)return;
   const script=document.currentScript,base=new URL(script.src).origin;
+  const params=new URL(script.src).searchParams;
+  let identity={userId:params.get('userId')||'',userName:params.get('userName')||''};
+  function frameURL(){const url=new URL(base+'/smart-bot/chatbot/anonymous');url.searchParams.set('parent_origin',location.origin);
+    if(identity.userId){url.searchParams.set('userId',identity.userId);url.searchParams.set('userName',identity.userName);}return url.href;}
+  function setIdentity(value={}){identity={userId:String(value.userId||''),userName:String(value.userName||'')};
+    if(frame){ready=false;frame.src=frameURL();}}
   let host,frame,button,opened=false,ready=false,generation=0;
   function post(type){if(ready)frame.contentWindow.postMessage({type},base);}
   function open(){opened=true;frame.hidden=false;button.setAttribute('aria-expanded','true');if(ready)post('smarttitu:open');}
@@ -38,10 +44,10 @@
     mascot.onerror=()=>{const fallback=document.createElement('span');fallback.className='launch-fallback';fallback.textContent='✦';button.replaceChildren(fallback);};button.append(mascot);
     frame=document.createElement('iframe');frame.id='smarttitu-anonymous-panel';frame.title='SmartTITU 智能客服';frame.hidden=true;frame.referrerPolicy='no-referrer';
     frame.style.cssText='position:fixed;right:16px;bottom:84px;z-index:2147483002;width:min(414px,calc(100vw - 32px));height:min(680px,calc(100dvh - 100px));border:1px solid #dfe7f0;border-radius:18px;background:white;box-shadow:0 18px 60px #203c6530';
-    frame.src=base+'/smart-bot/chatbot/anonymous?parent_origin='+encodeURIComponent(location.origin);
+    frame.src=frameURL();
     button.onclick=()=>opened?close():open();window.addEventListener('message',message);
     root.append(css,button,frame);document.body.append(host);
   }
-  window.SmartTITUAnonymousEmbed={open:()=>open(),close:()=>close(),reset:()=>reset(),destroy(){reset();window.removeEventListener('message',message);host.remove();delete window.SmartTITUAnonymousEmbed;}};
+  window.SmartTITUAnonymousEmbed={setIdentity,open:()=>open(),close:()=>close(),reset:()=>reset(),destroy(){reset();window.removeEventListener('message',message);host.remove();delete window.SmartTITUAnonymousEmbed;}};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
 })();

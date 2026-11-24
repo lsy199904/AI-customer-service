@@ -113,13 +113,14 @@ def b64(data):
     return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
 
 
-def issue_token(secret, tenant, user, lifetime=3600):
+def issue_token(secret, tenant, user, lifetime=3600, *, account=None):
     """Only call from trusted server-side SSO integration, never from browser."""
     if not tenant or not user or not 1 <= lifetime <= 86400:
         raise ValueError('invalid token claims')
     claims = {'iss': 'smarttitu-console', 'aud': 'smarttitu-assistant',
               'tenant_id': tenant, 'sub': user, 'iat': int(time.time()),
               'exp': int(time.time()) + lifetime}
+    if account is not None:claims['account']=account
     value = b64(json.dumps(claims, separators=(',', ':')).encode())
     return value + '.' + b64(hmac.new(secret.encode(), value.encode(), hashlib.sha256).digest())
 

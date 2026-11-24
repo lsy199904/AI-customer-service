@@ -2,14 +2,16 @@
   'use strict';
   const embedded=window.parent!==window;
   const panel=document.getElementById('connection'),status=document.getElementById('status');
+  const identityParams=new URLSearchParams(location.search);
+  const userId=identityParams.get('userId')||'',userName=identityParams.get('userName')||'';
   let parentOrigin=null,token='',expires=0,pending=null;
   function tell(type,data={}){if(parentOrigin)window.parent.postMessage({type,...data},parentOrigin);}
   async function getToken(){
     if(token&&Date.now()<expires-60000)return token;
     if(!pending)pending=(async()=>{
-      const response=await fetch('/smart-bot/widget/anonymous-auth',{
+      const response=await fetch(userId?'/smart-bot/widget/account-auth':'/smart-bot/widget/anonymous-auth',{
         method:'POST',credentials:'same-origin',cache:'no-store',
-        headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:'{}',signal:AbortSignal.timeout(10000)});
+        headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(userId?{userId,userName}:{}),signal:AbortSignal.timeout(10000)});
       const data=await response.json();
       if(!response.ok)throw new Error(data.error?.message||'客服暂时不可用，请稍后重试');
       if(typeof data.token!=='string'||!data.token)throw new Error('客服连接失败，请稍后重试');

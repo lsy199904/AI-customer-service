@@ -303,7 +303,7 @@ class RequestTrace:
                         save_request(self.time,self.metadata,self.output,summarize(self.cost_calls))
                     except Exception:pass
             if self.closed:return
-            for key in ('http_request_id','request_id','session_ref','window_id','tenant_ref','user_ref','question_category'):
+            for key in ('http_request_id','request_id','session_ref','window_id','tenant_ref','user_ref','question_category','account'):
                 if fields.get(key) is not None:self.metadata[key]=fields[key]
             details={_DETAIL_NAMES.get(key,key):value for key,value in fields.items() if key not in self.metadata}
             if len(self.steps)<80:
@@ -335,7 +335,7 @@ class RequestTrace:
                             '接口请求编号':self.metadata.get('http_request_id'),
                             '会话编号':self.metadata.get('session_ref'),'窗口编号':self.metadata.get('window_id'),
                             '企业标识':self.metadata.get('tenant_ref'),'用户标识':self.metadata.get('user_ref'),
-                            '问题分类':self.metadata.get('question_category')}
+                            '问题分类':self.metadata.get('question_category'),'账号':self.metadata.get('account')}
             safe_output={key:value for key,value in self.output.items() if key!='最终响应'}
             from .cost_metrics import summarize,save_request
             summary=summarize(self.cost_calls)
