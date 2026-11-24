@@ -100,7 +100,7 @@ class SupportWorkflow:
         for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),
                         ('generate',self.generate),('clarify',self.clarify),('guide_ack',self.guide_ack),('guide_end',self.guide_end),('validate',self.validate)]:graph.add_node(name,fn)
         graph.add_edge(START,'route')
-        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in REPLIES else 'retrieve')
+        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
         graph.add_conditional_edges('retrieve',lambda s:'generate' if s['evidence'] or s['candidates'] else 'validate')
         graph.add_edge('guide_ack','validate');graph.add_edge('clarify','validate');graph.add_edge('guide_end','validate')
         graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
@@ -241,14 +241,16 @@ class SupportWorkflow:
             return {'answer':'业务查询暂时不可用，请稍后再试或联系人工客服。','reason':'business_tool_unavailable'}
 
     def generate(self,state:State,runtime:Runtime[Context]):
-        runtime.context.emit('generating');s=self.service;intent=state['intent'];conversation=intent in REPLIES
+        runtime.context.emit('generating');s=self.service;intent=state['intent'];conversation=intent in REPLIES or intent=='history'
         from .pdf_media import reserved_qr,generation_evidence
         qr=reserved_qr(state.get('resolved_question') or state['question'],state['candidates'])
         self.start_visual(state)
         # The product identity is owned by the service, independent of the model vendor.
+        if intent=='history' and not state['history']:
+            return {'answer':'当前可用的会话上下文里还没有之前的问答记录。您可以告诉我想回顾的话题。','reason':'history','success':True}
         if intent=='identity':return {'answer':REPLIES[intent],'reason':intent,'success':True}
         if s.config.mode!='llm':
-            if conversation:return {'answer':REPLIES[intent],'reason':intent,'success':True}
+            if conversation:return {'answer':REPLIES.get(intent,'暂时无法整理聊天记录，请稍后重试。'),'reason':intent,'success':True}
             if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'selected':state['evidence']}
             if state['evidence']:
                 cleaned=generation_evidence(state['evidence'],bool(qr))
@@ -302,7 +304,7 @@ class SupportWorkflow:
             event('generation_failed',level='ERROR',evidence_count=len(state['evidence']),
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             s.observe('generation_failed',0)
-            if conversation:return {'answer':REPLIES[intent],'success':True,'reason':'conversation_fallback'}
+            if conversation:return {'answer':REPLIES.get(intent,'暂时无法整理聊天记录，请稍后重试。'),'success':True,'reason':'conversation_fallback'}
             return {'reason':'model_unavailable','answer':'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。'}
         finally:s.observe('generation',time.monotonic()-started)
 

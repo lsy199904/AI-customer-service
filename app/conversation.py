@@ -78,6 +78,11 @@ def recommended_questions(knowledge,question,evidence=(),sensitive=False,related
 
 def intent_of(question):
     compact=re.sub(r'[\s\W_]+','',question.lower())
+    # Recall asks about the conversation itself, not the business topic mentioned in it.
+    if (re.search(r'(?:刚才|刚刚|之前|前面|上面|此前|上次|最近|这次|本次|我们|我).*(?:问了什么|问过什么|问的什么|的问题是什么|问了哪些|问过哪些|聊了什么|聊过什么|说了什么|说过什么|回答了什么|怎么回答的)',compact)
+            or re.search(r'(?:总结|回顾|概括|整理|复述|重复).*(?:聊天|对话|问答|聊的|谈的|刚才的回答|之前的回答|上一个回答|上次的回答|刚才说的|之前说的|我们刚才)',compact)
+            or re.fullmatch(r'(?:我|我们)?(?:刚才|之前|前面)?(?:的)?(?:上一个|上一条|前一个|第[一二三四五六七八九十0-9]+个)(?:问题|回答)(?:是|说的)?(?:什么|啥)[吗呢]?',compact)):
+        return 'history'
     if re.fullmatch(r'(你好|您好|哈喽|嗨|hello|hi|早上好|早安|下午好|晚上好|在吗|有人吗|你在吗)+(呀|啊|呢|哦|哇|哟)?',compact):return 'greeting'
     if compact in {'你是谁','你叫什么','你是什么助手','你是什么','介绍一下你自己','介绍一下自己','介绍你自己','自我介绍','请介绍一下你自己','请介绍一下自己','介绍一下你','你是机器人吗','你是人工吗'}:return 'identity'
     if compact in {'你能做什么','你有什么功能','你可以做什么','你能帮我什么','你会什么','怎么使用你'}:return 'capabilities'
