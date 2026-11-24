@@ -59,16 +59,19 @@ class RecallTests(unittest.TestCase):
             with self.subTest(q=q):self.assertEqual(intent_of(q),'knowledge')
 
     def test_recall_prompt_uses_available_history_without_business_evidence(self):
-        from app.core import Model, HISTORY_SYSTEM
+        from app.core import Model
+        from app.history_recall import PROMPT
         model=Model(SimpleNamespace(context_rounds=20))
         calls=[]
-        model.complete=lambda messages,on_delta=None: calls.append(messages) or '你刚才问了是否能多次申请。'
+        model.complete=lambda messages,on_delta=None: calls.append(messages) or json.dumps({'answer':'你刚才问了是否能多次申请。','source_indexes':[10]})
         history=[{'role':'user','content':'是否能多次申请'},
                  {'role':'assistant','content':'提前开票仅支持一次。'}]*6
-        model.answer('刚才我问了什么',history,[],{'_intent':'history'})
-        self.assertEqual(calls[0][0]['content'],HISTORY_SYSTEM)
-        self.assertEqual(len(calls[0]),14)
-        self.assertEqual(json.loads(calls[0][-1]['content'])['evidence'],[])
+        result=model.answer('刚才我问了什么',history,[],{'_intent':'history'})
+        self.assertEqual(calls[0][0]['content'],PROMPT)
+        payload=json.loads(calls[0][-1]['content'])
+        self.assertEqual(len(payload['previous_messages']),12)
+        self.assertEqual(payload['current_request'],'刚才我问了什么')
+        self.assertEqual(result['answer'],'你刚才问了是否能多次申请。')
 
 class RecallWorkflowTests(unittest.TestCase):
     def test_recall_bypasses_retrieval_and_does_not_consume_rag_quota(self):

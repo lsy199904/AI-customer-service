@@ -112,13 +112,15 @@ class SupportWorkflow:
         if rejected_recommendations(state['question'],state['history']):intent='handoff'
         if intent!='handoff' and sensitive_topic(state['question']):intent='sensitive'
         interpretation={}
+        complaint=False
         if self.service.config.mode=='llm' and hasattr(self.service.model,'complete') and intent not in ('handoff','sensitive'):
             try:
                 from .query_context import interpret
                 interpretation=interpret(self.service.model,state['question'],state['history'])
                 runtime.context.check()
                 # Existing authenticated business tools remain the only execution path.
-                intent='business' if intent=='business' and interpretation['intent']=='action' else interpretation['intent']
+                complaint=interpretation['intent']=='complaint'
+                intent='handoff' if complaint else 'business' if intent=='business' and interpretation['intent']=='action' else interpretation['intent']
                 event('question_resolved',resolution_kind=interpretation['kind'],used_context=interpretation['question']!=state['question'])
                 debug_event('resolved_question',original_question=state['question'],**interpretation)
             except RequestCancelled:raise
@@ -130,6 +132,7 @@ class SupportWorkflow:
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
         if intent=='sensitive':values['reason']='sensitive_topic'
         if intent=='handoff':values.update(answer='好的，您可以通过以下方式联系人工客服。',reason='requested_handoff')
+        if complaint:values.update(answer='很抱歉，之前的服务没有解决您的问题。您可以通过下方人工渠道反馈，并说明未解决的问题及相关时间，便于进一步跟进。当前我无法直接登记投诉或确认处理进度。',reason='complaint_handoff')
         values.update(assistance={},guidance=None,guide_context=None)
         if intent in ('knowledge','thanks'):
             from .assistance import plan
