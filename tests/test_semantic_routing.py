@@ -6,7 +6,7 @@ from app.query_context import interpret
 
 class SemanticRoutingTests(unittest.TestCase):
     def model(self,intent='knowledge',kind='independent',question='错误的旧问题',clarification=''):
-        return Mock(complete=Mock(return_value=json.dumps(dict(intent=intent,kind=kind,question=question,clarification=clarification),ensure_ascii=False)))
+        return Mock(complete=Mock(return_value=json.dumps(dict(intent=intent,kind=kind,question=question,clarification=clarification,evidence='帮我' if intent=='action' else ''),ensure_ascii=False)))
 
     def test_current_independent_question_cannot_be_replaced(self):
         q='帮我创建一个API Key，并替我把账单付掉。'

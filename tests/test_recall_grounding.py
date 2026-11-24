@@ -30,7 +30,7 @@ class RecallGroundingTests(unittest.TestCase):
     def test_complaint_routes_to_contact_not_action(self):
         from app.workflow import SupportWorkflow,Context
         workflow=object.__new__(SupportWorkflow)
-        answer={'intent':'complaint','kind':'independent','question':'我要投诉','clarification':''}
+        answer={'intent':'complaint','kind':'independent','question':'我要投诉','clarification':'','evidence':'我要投诉'}
         workflow.service=SimpleNamespace(config=SimpleNamespace(mode='llm',min_similarity=.6),model=Mock(complete=Mock(return_value=json.dumps(answer))))
         result=workflow.route({'question':'我要投诉，客服没有解决问题','history':[]},SimpleNamespace(context=Context()))
         self.assertEqual(result['intent'],'handoff')

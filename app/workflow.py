@@ -121,7 +121,7 @@ class SupportWorkflow:
                 # Existing authenticated business tools remain the only execution path.
                 complaint=interpretation['intent']=='complaint'
                 intent='handoff' if complaint else 'business' if intent=='business' and interpretation['intent']=='action' else interpretation['intent']
-                event('question_resolved',resolution_kind=interpretation['kind'],used_context=interpretation['question']!=state['question'])
+                event('question_resolved',interpreted_intent=interpretation['intent'],resolution_kind=interpretation['kind'],used_context=interpretation['question']!=state['question'])
                 debug_event('resolved_question',original_question=state['question'],**interpretation)
             except RequestCancelled:raise
             except Exception as error:
