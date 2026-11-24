@@ -274,7 +274,7 @@ class Model:
             'evidence':[{'title':r.get('title',''),'content':r['content'],'image_evidence':r.get('image_evidence','')} for r in evidence],'qr_delivery':'available' if context.get('_reserved_qr') else 'unavailable','media_titles':[r.get('title','') for r in media],'guidance':guidance},ensure_ascii=False)
         chain=prompt | RunnableLambda(lambda value:self.complete(convert_to_openai_messages(value.to_messages()),on_delta),name='model_completion')
         with tracing_context(enabled=False):
-            text=chain.invoke({'history':([] if intent in ('knowledge','image') else [(h['role'],h['content']) for h in history[-2*self.config.context_rounds:]]),'payload':payload})
+            text=chain.invoke({'history':[(h['role'],h['content']) for h in history[-2*min(self.config.context_rounds,5):]],'payload':payload})
         from .grounding import citation_ids
         return {'answerable':True,'answer':text,'citation_ids':citation_ids(text,evidence),
                 'image_ids':[r['id'] for r in media]}

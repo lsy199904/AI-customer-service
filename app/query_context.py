@@ -7,7 +7,8 @@ PROMPT='''仅解析客服问题，输出JSON，不回答业务问题。输入是
 追问补全为可独立检索的问题，保留本轮改变的条件、金额、时间、主体，不混用上一轮旧条件。不增加业务结论。
 独立新问题必须保持原问题，不带入旧主题。例如聊星级后问支付流程，是新话题；“那支付呢”若无法判断充值还是账单，先澄清。
 上轮用户问提交星级权益调整后服务何时生效，本轮改变提交日期时，应补全同一业务主题并以新日期为准。这适用于任意日期、金额和主体，不是日期专用规则。
-历史助手正文未提供且不能作为事实来源。必要时结合来源标题理解指代。
+近期问答仅用于理解主题、指代和省略，历史助手正文不能作为业务事实依据。
+本轮主体明确时优先保持独立问题，不因历史而改写主题；主体省略时优先关联最近相关问答。例如上轮问提前开票额度，本轮问“是否能多次申请”，应解析为提前开票是否能多次申请。
 格式：{"kind":"independent|followup|clarify","question":"独立检索问题","clarification":"有歧义时向用户确认的简短问题，否则空字符串"}。
 '''
 
@@ -17,6 +18,7 @@ def dependent(question):
     return len(q)<100 and bool(re.search(r'这个|那个|它|上述|刚才|这一步|然后|接下来|还有呢|对应的|上述的|该模型|这些模型',q)
         or re.match(r'^(?:那|那么|如果是|假如是|换成|改成|改为|除此之外)',q)
         or re.fullmatch(r'(?:为什么|为啥|谁来处理|谁负责|要多久|多久|然后呢|第二种呢|下一步|上一步|需要什么材料|怎么填写|怎么操作|如何办理)[？?。]*',q)
+        or re.fullmatch(r'(?:是否|还|也|那)?(?:能|可以|可否|能否)(?:再|重复|多次)?(?:申请|办理|提交|使用|操作)(?:吗|么)?[？?。]*',q)
         or re.match(r'^(?:what about|what if|and if|then\b)',q,re.I)
         or (len(q)<30 and re.search(r'呢[？?。\s]*$',q)))
 
@@ -46,18 +48,20 @@ def catalogue_followup(question,history):
 
 
 def resolve(model,question,history):
+    history=history[-10:]
     catalogue=catalogue_followup(question,history)
     if catalogue:return {'kind':'followup','question':catalogue,'clarification':''}
     users=[h['content'] for h in history if h['role']=='user'][-20:]
     fallback={'kind':'followup' if dependent(question) and users else 'independent',
               'question':local_query(question,history),'clarification':''}
-    if not users or not dependent(question) or model is None:return fallback
+    if not users or model is None:return fallback
     previous=next((h.get('response') or {} for h in reversed(history) if h['role']=='assistant'),{})
     titles=[c.get('section_title') or c.get('title','') for c in previous.get('citations',[])]
     from .cost_metrics import purpose
     with purpose('query_context'):
         raw=model.complete([{'role':'system','content':PROMPT},{'role':'user','content':json.dumps({
-            'question':question,'recent_user_questions':users,'previous_source_titles':titles},ensure_ascii=False)}])
+            'question':question,'recent_messages':[{'role':h['role'],'content':h['content']} for h in history],
+            'recent_user_questions':users,'previous_source_titles':titles},ensure_ascii=False)}])
     data=json.loads(re.sub(r'^```(?:json)?\s*|\s*```$','',raw.strip()))
     if not isinstance(data,dict) or data.get('kind') not in ('independent','followup','clarify'):raise ValueError('invalid question resolution')
     if data['kind']=='clarify':data['question']=question
