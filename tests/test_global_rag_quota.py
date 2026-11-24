@@ -73,6 +73,6 @@ def test_chat_quota_is_global_cached_and_handoff_still_works(config,service):
     assert blocked['reason']=='global_daily_limit'
     handoff=service.chat(b,sb,{'message':'转人工客服','request_id':'daily-handoff-request'})
     assert handoff['intent']=='handoff'
-    assert 'faq' not in service.bootstrap()
+    assert len(service.bootstrap()['faq']['items'])==6
     assert service.db.execute('SELECT SUM(used) FROM global_rag_daily_limits').fetchone()[0]==1
     service.model.answer.assert_not_called()

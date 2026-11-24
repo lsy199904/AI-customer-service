@@ -10,7 +10,7 @@
     onResize: null,
     getToken: null
   };
-  let host, root, panel, launcher, transcript, input, sendButton, quick, status, sourcePane;
+  let host, root, panel, launcher, transcript, input, sendButton, quick, status, sourcePane, faqBox, faqList, faqSwap;
   const windowId='window-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2));
   let sessionId = null, initialized = false, busy = false, opened = false, expanded = false;
   let idleTimer, controller, generation = 0, retry = null, lastFocus;
@@ -23,6 +23,7 @@
     .panel.expanded{right:16px;bottom:84px;width:min(860px,calc(100vw - 32px));height:calc(100dvh - 100px);min-height:0}header>div:not(.head-actions):not(.avatar){min-width:0}h2,.subtitle{white-space:nowrap}.head-actions{flex-shrink:0}
     header{padding:19px 20px;display:flex;align-items:center;gap:11px;background:linear-gradient(115deg,#edf5ff,#f9fcff);border-bottom:1px solid #e8eef6}.avatar{height:42px;width:42px;border-radius:14px;background:#155de6;display:grid;place-items:center;color:#fff;font-size:22px}h2{font-size:16px;line-height:1.4;margin:0;font-weight:650}.subtitle{font-size:11px;color:#6b809a}.head-actions{margin-left:auto;display:flex;gap:4px}.ghost{border:0;background:transparent;color:#62778f;border-radius:8px;padding:7px 9px}.ghost:hover{background:#e1edff;color:#135de4}
     .body{flex:1;overflow:auto;padding:20px;background:#f7f9fc;overscroll-behavior:contain}.welcome-label{font-size:11px;letter-spacing:.12em;color:#547491;margin-bottom:10px}.message{margin-bottom:17px;display:flex;flex-direction:column;align-items:flex-start}.message.user{align-items:flex-end}.message-role{display:flex;align-items:center;gap:7px;margin:0 2px 7px;color:#61758f;font-size:11px;font-weight:500}.user .message-role{flex-direction:row-reverse}.message-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:9px;background:#e6efff;color:#155de6;flex-shrink:0}.message-avatar svg{width:18px;height:18px}.user .message-avatar{background:#edf0f5;color:#65748a}.message .bubble{margin-left:2px}.message.user .bubble{margin-left:0;margin-right:2px}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:94%;border-radius:3px 15px 15px 15px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px #192c4a05;border:1px solid #e6ecf4;font-size:13px}.bubble a{color:#155de6;text-decoration:underline;text-underline-offset:2px}.user .bubble a{color:inherit}.bubble a:focus-visible{outline:2px solid currentColor;outline-offset:3px}.bubble pre{white-space:pre;overflow:auto;max-width:100%;background:#f1f5fa;border-radius:7px;padding:10px;font:11px/1.7 monospace}.reply-images{max-width:94%;display:flex;flex-direction:column;gap:8px;margin-top:9px}.image-button{border:1px solid #e0e8f4;border-radius:11px;background:#fff;padding:8px;text-align:left}.image-button img{display:block;max-width:100%;max-height:220px;object-fit:contain;border-radius:7px}.image-caption{color:#6380a0;font-size:11px;padding-top:5px}.preview-image{display:block;max-width:100%;max-height:75vh;object-fit:contain}.user .bubble{background:#155de6;color:#fff;border-color:#155de6;border-radius:15px 3px 15px 15px}.meta{font-size:10px;color:#73879d;margin:5px 3px}.sources{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-width:100%}.source{background:#eff5ff;color:#245ba4;border:1px solid #dae7fb;border-radius:7px;font-size:11px;padding:5px 8px;text-align:left;max-width:100%}
+    .faq-panel{margin:0;padding:0;background:transparent}.faq-panel[hidden]{display:none}.faq-header{display:flex;align-items:center;gap:8px;color:#315c96;font-size:11px;margin-bottom:7px}.faq-title{font-weight:600}.faq-swap{margin-left:auto;border:0;background:transparent;color:#155de6;font-size:11px;cursor:pointer;padding:3px 0 3px 8px}.faq-question:disabled,.faq-swap:disabled{opacity:.55;cursor:wait}.faq-answer-tag{font-size:10px;color:#738ba6;margin:5px 3px}.faq-question:focus-visible,.faq-swap:focus-visible{outline:2px solid #5c91e9;outline-offset:2px}
     .quick{display:flex;flex-wrap:wrap;gap:7px;padding-top:2px;margin-bottom:18px}.quick button{border:1px solid #dce6f4;border-radius:999px;background:white;color:#34577f;font-size:12px;padding:7px 10px}.quick button:hover{border-color:#7ba6ef;background:#f0f6ff}.notice{font-size:12px;color:#9a611c;white-space:pre-wrap;margin:12px 0}.composer{padding:12px 16px 10px;border-top:1px solid #e7edf5;background:#fff}.entry{display:flex;gap:8px;align-items:flex-end;border:1px solid #d7e1ed;border-radius:13px;padding:8px}.entry:focus-within{border-color:#6797ee;box-shadow:0 0 0 2px #eaf1ff}textarea{resize:none;border:0;outline:0!important;background:transparent;flex:1;min-width:0;width:auto;height:44px;max-height:100px;font-size:13px;padding:3px 5px;color:#17283b}.send{flex-shrink:0;white-space:nowrap;border:0;border-radius:9px;color:#fff;background:#155de6;padding:9px 12px;font-size:12px}.foot{display:flex;align-items:center;justify-content:space-between;margin-top:7px;font-size:10px;color:#8a99ab}.human{border:0;padding:0;background:transparent;color:#5d789c;font-size:11px}.contact{background:#f1f6ff;border-radius:10px;padding:11px 12px;margin-top:9px;font-size:12px;max-width:100%}.contact a{display:block;color:#235cac}.contact img{display:block;width:128px;height:128px;object-fit:contain;margin-top:9px}.contact .hint{font-size:11px;color:#6b809a}
     .suggestions{margin:10px 0 0;max-width:100%}.suggestions .handoff-choice{border-color:#9cb8e6;color:#155de6;font-weight:600}
     .source-pane{position:absolute;inset:0;background:#fff;z-index:2;padding:20px;overflow:auto}.source-pane h3{font-size:15px;margin:10px 0}.source-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}.source-back{border:1px solid #dce6f4;background:#f5f8fc;color:#34577f;padding:6px 10px;border-radius:8px}.loading{color:#73879d;font-size:12px;padding:10px 0}.retry{border:1px solid #ddd;background:#fff;color:#9a611c;border-radius:7px;padding:5px 10px}
@@ -38,7 +39,7 @@
     .image-button{position:relative;display:block;width:100%;border:0;border-radius:0;padding:10px;background:linear-gradient(135deg,#f7faff,#eff4fb);cursor:zoom-in;overflow:hidden}.image-button img{width:100%;max-height:220px;transition:transform .25s ease}.image-button:hover img{transform:scale(1.025)}.image-zoom{position:absolute;right:16px;bottom:15px;font-size:10px;color:#375582;background:#fffffff2;padding:3px 8px;border:1px solid #e5ecf5;border-radius:6px;box-shadow:0 2px 7px #203c650c}
     .media-footer{display:flex;align-items:center;gap:10px;padding:10px 12px}.media-footer .image-caption{flex:1;min-width:0;padding:0;font-size:11px;font-weight:500;color:#526681;overflow-wrap:anywhere}.original-link{font-size:10px;white-space:nowrap;color:#5274ac;text-decoration:none;padding:3px 0}.original-link:hover{color:#155de6;text-decoration:underline}
     .sources{gap:7px;margin-top:10px}.sources .source{display:flex;align-items:center;gap:7px;border:1px solid #e2e9f4;border-radius:9px;padding:8px 10px;background:linear-gradient(120deg,#fff,#f5f8ff);box-shadow:0 2px 6px #203c6503;color:#536c94;transition:border-color .18s,box-shadow .18s}.sources .source:hover{border-color:#aac3ef;box-shadow:0 3px 9px #155de610}.source-title{min-width:0;overflow-wrap:anywhere}.source-symbol{color:#7495c6;width:14px;height:16px;flex-shrink:0}.source-arrow{color:#9bb0cf;margin-left:3px}
-    .composer{padding-top:13px;background:linear-gradient(180deg,#fff,#fbfcff)}.composer .quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:10px}.composer .quick button{position:relative;border-radius:9px;border-color:#e4ebf6;background:linear-gradient(130deg,#f8faff,#f1f5fd);font-size:11px;padding:8px 4px;color:#506b94;transition:background .18s,border-color .18s,transform .18s;min-width:0;white-space:nowrap}.composer .quick button:hover{background:#eaf1ff;border-color:#aac4f2;color:#155de6;transform:translateY(-1px)}
+    .composer{padding-top:13px;background:linear-gradient(180deg,#fff,#fbfcff)}.composer .quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:10px}.composer .quick button{position:relative;border-radius:9px;border-color:#e4ebf6;background:linear-gradient(130deg,#f8faff,#f1f5fd);font-size:11px;padding:8px 4px;color:#506b94;transition:background .18s,border-color .18s,transform .18s;min-width:0;white-space:normal;line-height:1.45}.composer .quick button:hover{background:#eaf1ff;border-color:#aac4f2;color:#155de6;transform:translateY(-1px)}
     .suggestions{gap:6px}.suggestions button{border-radius:8px;background:#fff;border-color:#e0e8f5;color:#5b7296;font-size:11px;padding:6px 9px;transition:border-color .18s,background .18s}.suggestions button:hover{border-color:#aac4f2;background:#f0f5ff}.suggestions .handoff-choice{background:#f3f7ff;border-style:dashed}
     .entry{background:#fff;border-radius:12px;box-shadow:0 2px 8px #203c6503}.send{background:linear-gradient(135deg,#3478f4,#155de6);box-shadow:0 3px 7px #155de620}.ghost:focus-visible,.quick button:focus-visible,.source:focus-visible,.image-button:focus-visible,.original-link:focus-visible{outline:2px solid #5c91e9;outline-offset:3px}.ghost,.send{transition:background .18s,box-shadow .18s}.loading{display:flex;gap:8px;align-items:center}.loading:before{content:'';width:7px;height:7px;background:#6393eb;border-radius:50%;animation:status-glow 1.2s ease-in-out infinite}
     .assistant-actions{display:flex;flex-wrap:wrap;gap:7px;max-width:94%;margin-top:10px}.assistant-actions button{border:1px solid #d6e4fb;border-radius:9px;padding:8px 11px;background:linear-gradient(125deg,#f4f8ff,#eaf2ff);color:#3566b4;font-size:12px;transition:background .18s,border-color .18s}.assistant-actions button:hover{background:#e4efff;border-color:#98b9ef}.assistant-actions button:first-child{background:#eaf2ff;color:#155de6;font-weight:600}.assistant-actions button:disabled{background:#f6f8fb;color:#9da9bc;border-color:#e9edf4;cursor:default}.assistant-actions button:focus-visible{outline:2px solid #5c91e9;outline-offset:3px}
@@ -141,6 +142,62 @@
       if(!result)throw new Error('回答传输中断，请重试');return result;
     } catch(error){if(scope.signal.aborted)throw new Error('请求已取消或超时，请稍后重试');if(error instanceof TypeError)throw new Error('无法连接客服，请检查网络后点击重试。');throw error;}
     finally{clearTimeout(timer);parent?.removeEventListener('abort',abort);}
+  }
+  let syncController=null,syncTimer=null,localRequestId=null,remoteRequestId=null,remoteBubble=null,explicitNew=false;
+  function stopSync(){clearTimeout(syncTimer);syncController?.abort();syncController=null;remoteRequestId=null;remoteBubble?.remove();remoteBubble=null;}
+  async function reconcileSync(v){
+    if(!sessionId||v!==generation)return;
+    const current=sessionId;
+    const history=await request(`/smart-bot/v1/sessions/${current}/messages`);
+    if(v!==generation||sessionId!==current||(busy&&!remoteRequestId))return;
+    transcript.replaceChildren();renderHistory(history);scroll();
+  }
+  async function syncItem(item,v){
+    if(v!==generation||!initialized||item.request_id===localRequestId)return;
+    if(!sessionId && !explicitNew && (item.type==='start'||item.type==='delta'))sessionId=item.session_id;
+    if(item.session_id!==sessionId)return;
+    if(item.type==='start'){
+      if(busy)return;
+      remoteRequestId=item.request_id;setBusy(true);message('user',item.question);
+      remoteBubble=message('assistant','');remoteBubble.classList.add('streaming');scroll();
+    }else if(item.type==='delta'){
+      if(!remoteRequestId&&!busy){remoteRequestId=item.request_id;setBusy(true);remoteBubble=message('assistant','');remoteBubble.classList.add('streaming');}
+      if(remoteRequestId!==item.request_id)return;
+      remoteBubble.querySelector('.bubble').textContent+=item.text;scroll();
+    }else if(item.type==='finish'||item.type==='failed'){
+      if(busy && remoteRequestId!==item.request_id)return;
+      try{await reconcileSync(v);}finally{
+        if(v===generation){remoteBubble=null;remoteRequestId=null;setBusy(false);}
+      }
+    }
+  }
+  async function watchSync(v){
+    if(!config.liveSync||v!==generation)return;
+    const scope=new AbortController();syncController=scope;
+    try{
+      const auth=await token();if(scope.signal.aborted)return;
+      const response=await fetch(apiURL('/v1/events'),{headers:{Authorization:'Bearer '+auth,'X-Widget-ID':windowId},signal:scope.signal,cache:'no-store',credentials:'omit'});
+      if(!response.ok||!response.body)throw new Error('sync unavailable');
+      const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
+      while(!scope.signal.aborted){
+        const part=await reader.read();buffer+=decoder.decode(part.value||new Uint8Array(),{stream:!part.done});let end;
+        while((end=buffer.indexOf('\n\n'))>=0){
+          const frame=buffer.slice(0,end);buffer=buffer.slice(end+2);
+          const kind=frame.split('\n').find(line=>line.startsWith('event: '))?.slice(7);
+          const raw=frame.split('\n').filter(line=>line.startsWith('data: ')).map(line=>line.slice(6)).join('\n');
+          if(kind==='ready'&&!busy)await reconcileSync(v);
+          if(kind==='sync'&&raw)await syncItem(JSON.parse(raw),v);
+        }
+        if(buffer.length>1000000)throw new Error('sync overflow');
+        if(part.done)break;
+      }
+    }catch(error){/* History is authoritative; reconnect restores committed messages. */}
+    finally{
+      if(!scope.signal.aborted&&v===generation){
+        if(remoteRequestId){remoteBubble?.remove();remoteBubble=null;remoteRequestId=null;setBusy(false);try{await reconcileSync(v);}catch{}}
+        syncTimer=setTimeout(()=>watchSync(v),1500);
+      }
+    }
   }
   function scroll() { transcript.scrollTop = transcript.scrollHeight; }
   function activity() {
@@ -371,16 +428,36 @@
     scroll();
   }
   function clearStatus() { status.textContent='';status.hidden=true; }
-  function setBusy(value) { busy=value;sendButton.disabled=value;input.disabled=value; }
+  function setBusy(value) { busy=value;sendButton.disabled=value;input.disabled=value;faqList?.querySelectorAll('button').forEach(b=>{b.disabled=value;});if(faqSwap)faqSwap.disabled=value; }
+  let faqItems=[];
+  function renderFAQ(batch) {
+    faqItems=Array.isArray(batch?.items)?batch.items:[];
+    faqList.replaceChildren();faqBox.hidden=!faqItems.length;faqBox.querySelector('.faq-header').hidden=!faqItems.length;
+    for(const item of faqItems.slice(0,6)) {
+      const button=element('button','faq-question',item.question);button.type='button';button.disabled=busy;
+      button.onclick=()=>send(item.question,false,item.id);faqList.append(button);
+    }
+  }
+  async function nextFAQ() {
+    if(busy||!initialized)return;
+    const version=generation;faqSwap.disabled=true;
+    try {
+      const exclude=faqItems.map(item=>item.id).join(',');
+      const batch=await request('/smart-bot/v1/faq?exclude='+encodeURIComponent(exclude));
+      if(version===generation)renderFAQ(batch);
+    } catch(error) {if(version===generation)notice('常见问题暂时无法换一批，请稍后重试。',nextFAQ);}
+    finally {if(version===generation)faqSwap.disabled=busy;}
+  }
   let linkPolicy={hosts:[]};
   async function initialize(version) {
     setBusy(true); transcript.replaceChildren();quick.replaceChildren();clearStatus();
     transcript.append(element('div','loading','正在连接客服…'));
     try {
       const boot=await request('/smart-bot/v1/bootstrap');
-      config.streaming=boot.capabilities?.streaming===true;
+      config.streaming=boot.capabilities?.streaming===true;config.liveSync=boot.capabilities?.live_sync===true;
       linkPolicy={hosts:Array.isArray(boot.link_policy?.hosts)?boot.link_policy.hosts:[]};
       if (version !== generation) return;
+      renderFAQ(boot.faq);
       idleSeconds=boot.idle_timeout_seconds || 1800;
       // Restore only the most recent session belonging to the authenticated user, as verified by the backend.
       transcript.firstChild.textContent='正在加载您的会话…';
@@ -394,28 +471,32 @@
       transcript.append(element('div','welcome-label','SMARTTITU · 企业智能服务'));
       message('assistant',boot.welcome);
       renderHistory(history);
+      if(!faqItems.length){faqBox.hidden=false;
       (boot.quick_questions || []).forEach(q => {
         const b=element('button','',q);b.type='button';b.onclick=()=>send(q);quick.append(b);
       });
-      initialized=true;activity();return true;
+      }
+      initialized=true;activity();watchSync(version);return true;
     } catch (err) {
       if (version !== generation) return;
       transcript.replaceChildren();notice(err.message,()=>refresh());return false;
     } finally { if(version === generation) { setBusy(false);input.focus(); } }
   }
   async function refresh() {
+    stopSync();
     controller?.abort();controller=new AbortController();const v=++generation;
     return initialize(v);
   }
-  async function send(value, retrying=false) {
+  async function send(value, retrying=false, faqId=null) {
     const text=(value ?? input.value).trim();
     if (!text || busy) return;
     if (!initialized) { notice('请先完成客服连接。',()=>refresh());return; }
     if (text.length>2000) { notice('问题不能超过2000字');return; }
     const v=generation;setBusy(true);clearStatus();activity();
-    const rid=retrying && retry?.text===text ? retry.id : ('msg-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2)));
+    const rid=retrying && retry?.text===text && (retry?.faqId||null)===faqId ? retry.id : ('msg-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2)));
+    localRequestId=rid;explicitNew=false;
     if (!retrying) message('user',text);
-    input.value='';retry={text,id:rid};
+    input.value='';retry={text,id:rid,faqId};
     let live=null,liveText='';
     const loading=element('div','loading','正在为您解答…');transcript.append(loading);scroll();
     try {
@@ -424,7 +505,7 @@
         if (v!==generation) return;sessionId=created.session_id;
       }
       const path=`/smart-bot/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
-      const r=config.streaming ? await streamReply(path,payload,stage=>{
+      const r=faqId ? await request(`/smart-bot/v1/sessions/${sessionId}/faq`,'POST',{faq_id:faqId,request_id:rid}) : config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
         const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
         loading.textContent=stage==='assembling'&&!loading.hidden?'正在加载相关图示…':(labels[stage] || '正在为您解答…');
@@ -443,7 +524,7 @@
       if (v!==generation) return;
       const finished=message('assistant',r.answer,r);if(live){live.remove();live=null;finished.style.animation='none';}retry=null;activity();
     } catch(err) {
-      if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true));
+      if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true,faqId));
     } finally {
       live?.remove();loading.remove();if(v===generation) {setBusy(false);input.focus();scroll();}
     }
@@ -493,7 +574,7 @@
           if(busy)return;setBusy(true);
           try {
             const history=await request(`/smart-bot/v1/sessions/${item.session_id}/messages`);if(v!==generation)return;
-            sessionId=item.session_id;transcript.replaceChildren();renderHistory(history);sourcePane.hidden=true;retry=null;clearStatus();scroll();
+            sessionId=item.session_id;explicitNew=false;transcript.replaceChildren();renderHistory(history);sourcePane.hidden=true;retry=null;clearStatus();scroll();
           } catch(err){if(v===generation)notice(err.message);}
           finally{if(v===generation)setBusy(false);}
         };
@@ -521,8 +602,10 @@
     initialized=false;sessionId=null;return refresh();
   }
   function reset() {
+    stopSync();explicitNew=false;
     generation++;controller?.abort();controller=new AbortController();sessionId=null;initialized=false;retry=null;busy=false;
     if(transcript) transcript.replaceChildren();if(quick) quick.replaceChildren();if(sourcePane) {sourcePane.replaceChildren();sourcePane.hidden=true;}
+    if(faqBox)faqBox.hidden=true;faqItems=[];
     if(input) input.value='';if(status) clearStatus();close(false);
   }
   function brandLogo(className) {
@@ -552,7 +635,7 @@
     const header=element('header');const title=element('div');title.className='brand-heading';title.append(brandLogo('header-logo'),element('div','subtitle','智能客服 · 产品答疑与接入指引'));
     const actions=element('div','head-actions');
     const fresh=element('button','ghost','＋');fresh.title='新建会话';fresh.setAttribute('aria-label','新建会话');fresh.onclick=()=>{
-      if(busy) return;sessionId=null;retry=null;transcript.replaceChildren();message('assistant','新对话已开始。请问有什么可以帮您？');input.focus();
+      if(busy) return;explicitNew=true;sessionId=null;retry=null;transcript.replaceChildren();message('assistant','新对话已开始。请问有什么可以帮您？');input.focus();
     };
     const historyButton=element('button','ghost','≡');historyButton.title='历史会话';historyButton.setAttribute('aria-label','历史会话');historyButton.onclick=historyPanel;
     const minimize=element('button','ghost','—');minimize.title='收起';minimize.setAttribute('aria-label','收起客服');minimize.onclick=()=>close();if(config.layout==='iframe'&&!config.onClose)minimize.hidden=true;const resize=element('button','ghost','⛶');resize.type='button';
@@ -562,13 +645,17 @@
     actions.append(fresh,historyButton,resize,minimize);
     header.append(title,actions);panel.append(header);
     transcript=element('div','body');transcript.setAttribute('role','log');transcript.setAttribute('aria-live','polite');panel.append(transcript);
-    const composer=element('div','composer');quick=element('div','quick');status=element('div','notice');status.setAttribute('role','status');status.hidden=true;
+    faqBox=element('div','faq-panel');faqBox.hidden=true;
+    const faqHeader=element('div','faq-header');faqHeader.append(element('span','faq-title','常见问题'));
+    faqSwap=element('button','faq-swap','换一批');faqSwap.type='button';faqSwap.onclick=e=>{e.preventDefault();e.stopPropagation();nextFAQ();};faqHeader.append(faqSwap);
+    faqList=element('div','quick faq-list');faqList.setAttribute('aria-label','常见问题直接解答');faqBox.append(faqHeader,faqList);
+    const composer=element('div','composer');quick=faqList;status=element('div','notice');status.setAttribute('role','status');status.hidden=true;
     const entry=element('div','entry');input=element('textarea');input.placeholder='输入您的问题…';input.maxLength=2000;input.setAttribute('aria-label','客服问题');
     input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();}});
     sendButton=element('button','send','发送');sendButton.type='button';sendButton.onclick=()=>send();entry.append(input,sendButton);
     const foot=element('div','foot');foot.append(element('span','','内容由AI生成，请仔细甄别'));
     const human=element('button','human','联系人工');human.type='button';human.onclick=()=>send('转人工客服');foot.append(human);
-    composer.append(quick,status,entry,foot);panel.append(composer);
+    composer.append(faqBox,status,entry,foot);panel.append(composer);
     sourcePane=element('div','source-pane');sourcePane.hidden=true;panel.append(sourcePane);root.append(panel);
     panel.addEventListener('pointerdown',activity);panel.addEventListener('keydown',e=>{
       activity();if(e.key==='Escape'){e.preventDefault();if(!sourcePane.hidden)sourcePane.hidden=true;else close();}
