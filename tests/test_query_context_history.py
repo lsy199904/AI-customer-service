@@ -49,4 +49,50 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(calls[0][1]['content'],self.history[0]['content'])
         self.assertEqual(calls[0][-2]['content'],self.history[1]['content'])
 
+class RecallTests(unittest.TestCase):
+    def test_recall_routes_separately_from_business_followup(self):
+        from app.conversation import intent_of
+        for q in ('刚才我问了什么','我之前问过哪些问题','总结一下我们的对话',
+                  '上一个问题是什么','我刚才的问题是什么','重复一下刚才的回答'):
+            with self.subTest(q=q):self.assertEqual(intent_of(q),'history')
+        for q in ('是否能多次申请','刚才说的提前开票怎么申请','开发票流程是什么'):
+            with self.subTest(q=q):self.assertEqual(intent_of(q),'knowledge')
+
+    def test_recall_prompt_uses_available_history_without_business_evidence(self):
+        from app.core import Model, HISTORY_SYSTEM
+        model=Model(SimpleNamespace(context_rounds=20))
+        calls=[]
+        model.complete=lambda messages,on_delta=None: calls.append(messages) or '你刚才问了是否能多次申请。'
+        history=[{'role':'user','content':'是否能多次申请'},
+                 {'role':'assistant','content':'提前开票仅支持一次。'}]*6
+        model.answer('刚才我问了什么',history,[],{'_intent':'history'})
+        self.assertEqual(calls[0][0]['content'],HISTORY_SYSTEM)
+        self.assertEqual(len(calls[0]),14)
+        self.assertEqual(json.loads(calls[0][-1]['content'])['evidence'],[])
+
+class RecallWorkflowTests(unittest.TestCase):
+    def test_recall_bypasses_retrieval_and_does_not_consume_rag_quota(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import Mock,patch
+        from app.core import Settings,Service
+        from app.workflow import SupportWorkflow
+        with tempfile.TemporaryDirectory() as directory:
+            service=Service(Settings(secret='x'*40,db=str(Path(directory)/'chat.db'),retrieval_backend='lexical'))
+            try:
+                actor={'tenant_id':'test','sub':'visitor'}
+                sid=service.create(actor,{})['session_id']
+                service.chat(actor,sid,{'message':'你好','request_id':'recall-greeting-request'})
+                service.config.mode='llm'
+                service.model=Mock()
+                service.model.answer.return_value={'answerable':True,'answer':'你刚才说了“你好”。','citation_ids':[],'image_ids':[]}
+                with patch.object(service,'reserve_rag_quota',side_effect=AssertionError('recall must not retrieve')):
+                    response=service.chat(actor,sid,{'message':'刚才我问了什么','request_id':'recall-history-request'})
+                self.assertEqual(response['reason'],'history')
+                self.assertEqual(response['status'],'answered')
+                self.assertEqual(response['citations'],[])
+                self.assertEqual(service.model.answer.call_args.args[1][0]['content'],'你好')
+                self.assertEqual(service.db.execute('SELECT COALESCE(SUM(used),0) FROM global_rag_daily_limits').fetchone()[0],0)
+            finally:service.close()
+
 if __name__=='__main__':unittest.main()
