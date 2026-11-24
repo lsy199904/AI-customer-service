@@ -99,7 +99,7 @@ action或complaint必须提供evidence，逐字摘录当前输入中直接表达
 '''
 
 
-def interpret(model, question, history):
+def interpret(model, question, history, diagnostics=None):
     """Classify the current speech act in isolation; resolve referents separately."""
     from .cost_metrics import purpose
     from .evidence_selection import _options
@@ -129,7 +129,19 @@ def interpret(model, question, history):
                 data.update(kind=resolved['kind'],question=resolved['question'],clarification=resolved.get('clarification',''))
                 if data['kind']=='followup' and question not in data['question']:
                     data['question']+='；本轮原话：'+question
-            except Exception:
+            except Exception as error:
+                if diagnostics is not None:diagnostics.append({'stage':'followup_resolution','error_type':type(error).__name__,'reason':resolution_error_code(error)})
                 data.update(kind='clarify',question=question,clarification='您指的是前面哪一项业务？请补充一下具体对象，我再继续为您说明。')
         return data
     finally:_options.reset(token)
+
+
+def resolution_error_code(error):
+    """Only expose known validation reasons, never raw provider exceptions or credentials."""
+    if isinstance(error,json.JSONDecodeError):return 'invalid_json'
+    known={'invalid conversation interpretation','invalid clarification','intent has no current-question evidence',
+           'invalid question resolution','invalid standalone question','invented numeric condition',
+           'lost current numeric condition','conflicting old date'}
+    if isinstance(error,ValueError) and str(error) in known:return str(error)
+    if 'timeout' in type(error).__name__.lower():return 'provider_timeout'
+    return 'unexpected_error'
