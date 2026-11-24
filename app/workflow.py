@@ -49,6 +49,7 @@ class State(TypedDict,total=False):
     assistance:dict
     guidance:dict
     guide_context:dict
+    interpretation:dict
     resolved_question:str
 
 @dataclass
@@ -97,20 +98,34 @@ class SupportWorkflow:
             self._resource=sqlite3.connect(service.config.db+'.checkpoints.sqlite3',check_same_thread=False)
             self.saver=SqliteSaver(self._resource);self.saver.setup()
         graph=StateGraph(State,context_schema=Context)
-        for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),
+        for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),('action',self.action),
                         ('generate',self.generate),('clarify',self.clarify),('guide_ack',self.guide_ack),('guide_end',self.guide_end),('validate',self.validate)]:graph.add_node(name,fn)
         graph.add_edge(START,'route')
-        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
+        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive') else 'action' if s['intent']=='action' else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
         graph.add_conditional_edges('retrieve',lambda s:'generate' if s['evidence'] or s['candidates'] else 'validate')
         graph.add_edge('guide_ack','validate');graph.add_edge('clarify','validate');graph.add_edge('guide_end','validate')
-        graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
+        graph.add_edge('action','validate');graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
         self.graph=graph.compile(checkpointer=self.saver,name='smarttitu_support')
 
     def route(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('routing');intent=intent_of(state['question'])
         if rejected_recommendations(state['question'],state['history']):intent='handoff'
         if intent!='handoff' and sensitive_topic(state['question']):intent='sensitive'
-        values={'intent':intent,'answer':FALLBACK,'reason':'no_knowledge','success':False,
+        interpretation={}
+        if self.service.config.mode=='llm' and hasattr(self.service.model,'complete') and intent not in ('handoff','sensitive'):
+            try:
+                from .query_context import interpret
+                interpretation=interpret(self.service.model,state['question'],state['history'])
+                runtime.context.check()
+                # Existing authenticated business tools remain the only execution path.
+                intent='business' if intent=='business' and interpretation['intent']=='action' else interpretation['intent']
+                event('question_resolved',resolution_kind=interpretation['kind'],used_context=interpretation['question']!=state['question'])
+                debug_event('resolved_question',original_question=state['question'],**interpretation)
+            except RequestCancelled:raise
+            except Exception as error:
+                event('question_resolution_unavailable',level='WARNING',**error_fields(error))
+                interpretation={'kind':'independent','question':state['question'],'clarification':''}
+        values={'interpretation':interpretation,'intent':intent,'answer':FALLBACK,'reason':'no_knowledge','success':False,
                 'selected':[],'images':[],'evidence':[],'candidates':[],'retrieval_failed':False,
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
         if intent=='sensitive':values['reason']='sensitive_topic'
@@ -122,6 +137,8 @@ class SupportWorkflow:
                 from .query_context import guidance_history
                 values['assistance']=plan(state['question'],guidance_history(state['question'],state['history']),list(self.service.knowledge.rows.values()))
             except Exception as error:event('assistance_unavailable',level='WARNING',**error_fields(error))
+        if interpretation.get('kind')=='clarify' and intent in ('knowledge','image','action'):
+            values['assistance']={'kind':'clarify','answer':interpretation['clarification'],'choices':[]}
         if values['assistance']:
             event('assistance_planned',mode=values.get('assistance',{}).get('kind'),flow_id=(values.get('assistance',{}).get('guidance') or {}).get('flow_id') or values.get('assistance',{}).get('flow_id'))
         event('question_classified',intent=intent,history_messages=len(state['history']))
@@ -163,6 +180,8 @@ class SupportWorkflow:
                     # Generic pronoun resolution must not discard its current stage.
                     if assistance.get('kind') in ('guide','choice') and assistance.get('query'):
                         resolution={'kind':'followup','question':assistance['query'],'clarification':''}
+                    elif state.get('interpretation'):
+                        resolution=state['interpretation']
                     else:
                         resolution=resolve(self.service.model if self.service.config.mode=='llm' and hasattr(self.service.model,'complete') else None,
                             state['question'],state['history'])
@@ -226,6 +245,11 @@ class SupportWorkflow:
             return {'reason':'retrieval_unavailable','answer':'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。',
                 'retrieval_failed':True,'retrieval':{'matched':False,'method':self.service.config.retrieval_backend,'reason':'retrieval_unavailable','similarity':None}}
         finally:self.service.observe('retrieval',time.monotonic()-started)
+
+    def action(self,state:State,runtime:Runtime[Context]):
+        # A semantic label never grants tool permissions or invents an execution adapter.
+        return {'answer':'我目前不能直接替您执行这项操作。您可以在平台上自行办理，我可以提供操作指引。您希望先了解哪一项的操作步骤？',
+                'reason':'action_unavailable','success':True}
 
     def business(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('business');q=state['question']

@@ -27,7 +27,7 @@ def purpose(value):
 
 def model_purpose(streaming=False):
     from .evidence_selection import model_options
-    return 'evidence_selection' if model_options() else 'answer' if streaming else _purpose.get()
+    return (model_options() or {}).get('purpose','evidence_selection') if model_options() else 'answer' if streaming else _purpose.get()
 
 
 def usage_counts(response):

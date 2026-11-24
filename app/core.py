@@ -290,14 +290,14 @@ class Model:
         started=time.monotonic()
         debug_event('model_input',messages=messages)
         from .evidence_selection import model_options
-        event('model_request_started',model_purpose='evidence_selection' if model_options() else 'generation_or_planning',history_and_prompt_messages=len(messages),max_tokens=(model_options() or {}).get('max_tokens',int(os.getenv('MODEL_MAX_TOKENS','2048'))),streaming=on_delta is not None)
+        event('model_request_started',model_purpose=(model_options() or {}).get('purpose','evidence_selection' if model_options() else 'generation_or_planning'),history_and_prompt_messages=len(messages),max_tokens=(model_options() or {}).get('max_tokens',int(os.getenv('MODEL_MAX_TOKENS','2048'))),streaming=on_delta is not None)
         try:
             result=self._complete_request(messages,on_delta) if on_delta is not None else self._complete_request(messages)
             debug_event('model_output',text=result)
-            event('model_request_completed',model_purpose='evidence_selection' if model_options() else 'generation_or_planning',elapsed_ms=round((time.monotonic()-started)*1000,2),response_chars=len(result))
+            event('model_request_completed',model_purpose=(model_options() or {}).get('purpose','evidence_selection' if model_options() else 'generation_or_planning'),elapsed_ms=round((time.monotonic()-started)*1000,2),response_chars=len(result))
             return result
         except Exception as error:
-            event('model_request_failed',level='ERROR',model_purpose='evidence_selection' if model_options() else 'generation_or_planning',elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
+            event('model_request_failed',level='ERROR',model_purpose=(model_options() or {}).get('purpose','evidence_selection' if model_options() else 'generation_or_planning'),elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             raise
 
     def _complete_request(self,messages,on_delta=None):
