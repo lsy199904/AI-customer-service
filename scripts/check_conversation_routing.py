@@ -1,13 +1,14 @@
 """Paid live regression of the configured chat endpoint; no PG/Milvus writes."""
 import argparse
 import json
+import re
 from pathlib import Path
 import sys
 import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 from app.core import Settings,Model
-from app.query_context import interpret
+from app.query_context import interpret,resolution_error_code
 
 COMPLAINT=[{'role':'user','content':'我要投诉，客服一直没解决问题'},
            {'role':'assistant','content':'请通过人工渠道反馈'}]
@@ -28,27 +29,54 @@ CASES=[
  ('创建方法','如何创建API Key',COMPLAINT,'knowledge',None),
 ]
 
+def redact(value, key=''):
+    value=str(value)
+    if key:value=value.replace(key,'[REDACTED]')
+    return re.sub(r'\bsk-[A-Za-z0-9_\-]{6,}', '[REDACTED]',value)[:6000]
+
+
+class TracedModel:
+    def __init__(self,model):
+        self.model=model;self.calls=[]
+    def complete(self,messages):
+        row={'stage':'classification' if not self.calls else 'followup_resolution'}
+        self.calls.append(row)
+        try:
+            raw=self.model.complete(messages)
+            row['model_output']=redact(raw,getattr(self.model.config,'model_key',''))
+            return raw
+        except Exception as error:
+            row.update(error_type=type(error).__name__,reason=resolution_error_code(error))
+            raise
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rounds',type=int,default=2)
+    parser.add_argument('--case',choices=[case[0] for case in CASES],help='只运行指定场景')
     args=parser.parse_args()
     if not 1<=args.rounds<=10:parser.error('--rounds must be 1..10')
     model=Model(Settings());failed=0
+    cases=[case for case in CASES if not args.case or case[0]==args.case]
     for round_no in range(1,args.rounds+1):
-        for name,question,history,expected,subject in CASES:
-            started=time.monotonic()
+        for name,question,history,expected,subject in cases:
+            started=time.monotonic();trace=TracedModel(model);diagnostics=[];result=None
             try:
-                result=interpret(model,question,history)
+                result=interpret(trace,question,history,diagnostics=diagnostics)
                 ok=result['intent']==expected and result['kind']!='clarify'
                 if subject:ok=ok and subject in result['question']
                 if not subject and expected=='knowledge':ok=ok and question in result['question']
                 row=dict(round=round_no,case=name,passed=bool(ok),expected=expected,actual=result['intent'],kind=result['kind'],query=result['question'])
             except Exception as error:
-                ok=False;row=dict(round=round_no,case=name,passed=False,error_type=type(error).__name__)
+                ok=False;row=dict(round=round_no,case=name,passed=False,error_type=type(error).__name__,reason=resolution_error_code(error))
+            if not ok:
+                row['calls']=trace.calls
+                row['diagnostics']=diagnostics
+                if result is not None and diagnostics:row['clarification']=result.get('clarification','')
             failed+=not ok
             row['elapsed_ms']=round((time.monotonic()-started)*1000)
             print(json.dumps(row,ensure_ascii=False),flush=True)
-    print(json.dumps({'total':len(CASES)*args.rounds,'failed':failed},ensure_ascii=False))
+    print(json.dumps({'total':len(cases)*args.rounds,'failed':failed},ensure_ascii=False))
     return 1 if failed else 0
 
 if __name__=='__main__':sys.exit(main())
