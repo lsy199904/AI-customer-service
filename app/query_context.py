@@ -95,6 +95,7 @@ intent可选：knowledge（产品能力、适用范围、版本、操作方法�
 引用或询问“投诉流程是什么、如何投诉”属于knowledge；“我要投诉，客服一直没解决问题”属于complaint。讨论如何实现某功能与要求你立即执行操作不同。
 kind可选：independent（本轮已完整明确）；followup（省略主体、使用指代、需要历史才能明确所指；如“是否能多次申请”“第二种呢”）；clarify（仅当本轮本身无法判断用户需要什么）。不要因为问题短就当作追问。
 action或complaint必须提供evidence，逐字摘录当前输入中直接表达代执行或投诉诉求的片段，不能自己改写或只摘产品名。其他意图evidence为空字符串。
+clarify只能放在kind字段，不能作为intent；缺少业务主体但可能由历史补齐时输出knowledge+followup，不要预先要求用户澄清。
 输出：{"intent":"knowledge","kind":"independent","question":"本轮原话","clarification":"仅clarify填写澄清问题","evidence":"本轮意图依据原文"}。
 '''
 
@@ -109,6 +110,13 @@ def interpret(model, question, history, diagnostics=None):
             raw=model.complete([{'role':'system','content':INTERPRET_PROMPT},
                 {'role':'user','content':json.dumps({'current_question':question},ensure_ascii=False)}])
         data=json.loads(re.sub(r'^```(?:json)?\s*|\s*```$','',raw.strip()))
+        if isinstance(data,dict) and data.get('intent')=='clarify' and data.get('kind') in {'followup','clarify'}:
+            # Some compatible APIs place the clarification label in the intent field.
+            # Clarification is a resolution state, never permission to execute a tool.
+            data.update(intent='knowledge',kind='followup' if history else 'clarify')
+            if not history and (not isinstance(data.get('clarification'),str) or not data['clarification'].strip()):
+                data['clarification']='您指的是哪项业务？请补充具体对象。'
+            if diagnostics is not None:diagnostics.append({'stage':'classification','normalization':'clarify_intent_to_resolution'})
         intents={'complaint','knowledge','image','history','action','greeting','thanks','farewell','identity','capabilities','handoff'}
         if not isinstance(data,dict) or data.get('intent') not in intents or data.get('kind') not in {'independent','followup','clarify'}:
             raise ValueError('invalid conversation interpretation')
@@ -122,7 +130,7 @@ def interpret(model, question, history, diagnostics=None):
             # Defensive boundary: a question about instructions is never executed or rejected as execution.
             if re.search(r'流程|步骤|教程|操作说明|如何|怎么|怎样|是不是|是否.*支持',question):
                 data.update(intent='knowledge',kind='independent',evidence='')
-        if data['intent'] in {'knowledge','image'} and data['kind']=='followup' and history:
+        if data['intent'] in {'knowledge','image'} and data['kind'] in {'followup','clarify'} and history:
             try:
                 # A referent resolver may refine a query, but cannot change the current speech act.
                 resolved=resolve(model,question,history)
@@ -145,3 +153,20 @@ def resolution_error_code(error):
     if isinstance(error,ValueError) and str(error) in known:return str(error)
     if 'timeout' in type(error).__name__.lower():return 'provider_timeout'
     return 'unexpected_error'
+
+
+def safe_provider_error(error):
+    """Inspect numeric status through wrapped exceptions; exclude messages, bodies and headers."""
+    seen=set();current=error
+    for _ in range(4):
+        if current is None or id(current) in seen:break
+        seen.add(id(current))
+        status=getattr(current,'status_code',None)
+        if status is None:status=getattr(getattr(current,'response',None),'status_code',None)
+        if type(status) is int and 100<=status<=599:
+            category=('rate_limited' if status==429 else 'authentication_failed' if status in (401,403)
+                      else 'provider_server_error' if status>=500 else 'provider_request_error')
+            return {'http_status':status,'provider_category':category}
+        current=current.__cause__ or current.__context__
+    name=type(error).__name__.lower()
+    return {'provider_category':'timeout' if 'timeout' in name else 'connection_error' if 'connection' in name else 'api_error' if 'api' in name else 'unknown'}
