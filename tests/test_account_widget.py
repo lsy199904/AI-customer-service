@@ -44,4 +44,13 @@ class AccountWidgetTests(unittest.TestCase):
         for uid in ('','x'*129,' a','a\n'):
             self.assertGreaterEqual(self.client.post('/widget/account-auth',json={'userId':uid}).status_code,400)
 
+    def test_event_subscription_requires_auth_and_closes_at_expiry(self):
+        from app.core import issue_token
+        self.assertEqual(self.client.get('/v1/events').status_code,401)
+        token=issue_token(self.secret,'portal-test','user-001',1)
+        response=self.client.get('/v1/events',headers={'Authorization':'Bearer '+token})
+        self.assertEqual(response.status_code,200)
+        self.assertIn('event: ready',response.text)
+        self.assertEqual(response.headers['x-accel-buffering'],'no')
+
 if __name__=='__main__':unittest.main()

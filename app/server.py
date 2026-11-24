@@ -52,7 +52,7 @@ class RequestBoundary:
     """Bound bodies before FastAPI parsing; add safe correlation/CORS headers to every response."""
     def __init__(self,app,config):
         self.app,self.config=app,config
-        self.active=0
+        self.active=0;self.active_sync=0
 
     async def __call__(self,scope,receive,send):
         if scope['type']!='http':return await self.app(scope,receive,send)
@@ -111,8 +111,10 @@ class RequestBoundary:
             return await Response(status_code=204,headers={
                 'Access-Control-Allow-Methods':'GET, HEAD, POST, DELETE, OPTIONS',
                 'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Request-ID, X-Widget-ID'})(scope,receive,respond)
-        if self.active>=32:return await error(503,'service_busy','客服繁忙，请稍后重试')
-        self.active+=1
+        sync_request=scope['method']=='GET' and scope.get('path','').endswith('/v1/events')
+        counter='active_sync' if sync_request else 'active'
+        if getattr(self,counter)>=32:return await error(503,'service_busy','客服繁忙，请稍后重试')
+        setattr(self,counter,getattr(self,counter)+1)
         started=False
         async def tracked_send(message):
             nonlocal started
@@ -150,7 +152,7 @@ class RequestBoundary:
             from .observability import event,error_fields
             event('http_failed',level='ERROR',**error_fields(exc))
             if not started:await error(500,'internal_error','服务暂时不可用')
-        finally:self.active-=1
+        finally:setattr(self,counter,getattr(self,counter)-1)
 
 class SessionBody(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
@@ -160,6 +162,11 @@ class ChatBody(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
     message: str=Field(min_length=1,max_length=2000)
     request_id: str=Field(min_length=8,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
+
+class FAQBody(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    faq_id:str=Field(pattern=r'^faq-[a-z0-9-]{1,40}$')
+    request_id:str=Field(min_length=8,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
 
 bearer=HTTPBearer(auto_error=False)
 
@@ -337,6 +344,30 @@ def create_app(config=None,model=None,service=None):
 
     @app.get('/v1/bootstrap',tags=['assistant'])
     def bootstrap(user=Depends(actor),service=Depends(current_service)):return public_payload(service.bootstrap())
+
+    @app.get('/v1/events',include_in_schema=False)
+    def live_events(user=Depends(actor),service=Depends(current_service)):
+        from .live_sync import broker
+        def events():
+            with broker(service).subscribe(user) as receive:
+                yield 'event: ready\ndata: {}\n\n'
+                # Reconnect periodically so every window renews its authentication.
+                end=min(time.time()+240,user['exp'])
+                while time.time()<end:
+                    item=receive()
+                    if item is None:yield ': heartbeat\n\n'
+                    else:yield 'event: sync\ndata: '+json.dumps(public_payload(item),ensure_ascii=False)+'\n\n'
+        return StreamingResponse(events(),media_type='text/event-stream',headers={'Cache-Control':'no-store','X-Accel-Buffering':'no'})
+
+    @app.get('/v1/faq',tags=['assistant'])
+    def faq_batch(exclude:str='',user=Depends(actor),service=Depends(current_service)):
+        return service.faq.batch(exclude.split(',')[:24])
+
+    @app.post('/v1/sessions/{sid}/faq',tags=['assistant'])
+    def faq_answer(sid:str,body:FAQBody,user=Depends(actor),service=Depends(current_service)):
+        row=service.faq.rows.get(body.faq_id)
+        if row is None:raise APIError(404,'faq_not_found','该常见问题已更新，请换一批后重试')
+        return public_payload(service.chat(user,sid,{'message':row['question'],'request_id':body.request_id,'faq_id':body.faq_id}))
 
     @app.get('/v1/sessions',tags=['sessions'])
     def sessions(user=Depends(actor),service=Depends(current_service)):return public_payload(service.sessions(user))

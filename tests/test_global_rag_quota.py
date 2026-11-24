@@ -69,7 +69,7 @@ class GlobalRAGQuotaTests(unittest.TestCase):
         self.assertEqual(blocked['reason'],'global_daily_limit')
         handoff=self.service.chat(b,sb,{'message':'转人工客服','request_id':'daily-handoff-request'})
         self.assertEqual(handoff['intent'],'handoff')
-        self.assertNotIn('faq',self.service.bootstrap())
+        self.assertEqual(len(self.service.bootstrap()['faq']['items']),6)
         self.assertEqual(self.service.db.execute('SELECT SUM(used) FROM global_rag_daily_limits').fetchone()[0],1)
         self.service.model.answer.assert_not_called()
 
