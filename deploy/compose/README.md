@@ -32,3 +32,43 @@ tag 写回 `.env`（`.env` 配一次密钥即可，镜像引用无需再手动�
   （预算 ~30 分钟，真实消耗 Embedding 额度）；镜像层有缓存时①通常只需几十秒。
 - 前置：Docker 23+（app 镜像构建需 BuildKit）与 Docker Compose v2.22+；
   `.env` 引用的镜像可拉取（内网 Harbor 或 `docker load`）。
+
+## 2026-11-25 功能整合测试
+
+`integrate-main-features-20261125` 以 GitLab main 镜像分支的 `381706e` 为基础，迁入
+门户账号绑定、匿名/登录历史隔离、跨窗口实时同步、固定常见问题、多轮意图与追问、
+历史回顾、知识内容修正、Token 自动续期、服务重启自动恢复、历史可见期与数据库清理分离。
+保留 main 的镜像构建、Compose、K8s、CI、PG 迁移和知识初始化流程。
+
+仅在可信门户接入测试中，在 `deploy/compose/.env` 设置：
+
+```dotenv
+WIDGET_TRUST_ACCOUNT_PARAMS=true
+WIDGET_ACCOUNT_TENANT=smarttitu_portal
+QUERY_CONTEXT_TIMEOUT_SECONDS=30
+SESSION_RETENTION_DAYS=7
+SESSION_PURGE_AFTER_DAYS=0
+```
+
+门户须传递稳定 `userId` 和用于日志的 `userName`。账号参数模式沿用已约定的可信门户
+前提，不会验证门户登录 Token。匿名历史与登录历史不合并；同账号不同会话仍各自独立。
+实时同步使用应用 `/smart-bot/v1/events`，代理须允许长连接并关闭该路径响应缓冲。
+
+`SESSION_PURGE_AFTER_DAYS=0` 不自动删除数据库历史，用户仍只可读7天内消息；日志独立保留。
+此设置不能恢复已被清理的数据，也不能阻止开发环境 `down -v` 删除全部测试卷。
+
+开发测试仍使用本文的 `dev-rebuild.sh`；它会清空 **titu-assistant Compose 项目**的数据卷。
+建议从原服务仓库建立独立 worktree，把 `APP_NODE_PORT` 设置为8205先验证，避免占用原8200。
+默认会创建一套独立 PG/Milvus，不会复制原测试库的聊天历史。需要测试Milvus2.5.24时，
+只在本地 `.env` 设置 `MILVUS_IMAGE=milvusdb/milvus:v2.5.24`，不修改编排文件。
+测试完成再停旧8200服务、将本栈 `APP_NODE_PORT` 改为8200并重建应用容器。
+K8s 不调用这些开发清卷脚本。
+
+知识重建仍保持原语义：`ingest` 增量处理，`ingest --rebuild` 全量处理但保留旧修订；
+本次未新增清空知识表、集合或PDF生成目录的逻辑。
+
+回归记录：Python非浏览器测试82项通过、9个子测试通过；两个来源校验测试在原始main上
+同样失败（main把来源拒绝代码注释掉），本次不修改该策略。一个原有UI测试因环境跳过。
+Milvus SDK建集合测试在本机缺少可安装的grpcio依赖，未执行；Docker/K8s实部署需要服务器验证。
+JS连接、身份桥接和双浏览器模拟后端测试通过，覆盖HTML 502重试、Token续期、回答中断恢复、
+原请求ID复用、实时增量同步及最终历史对齐。SQL门禁通过（本机未安装sqlfluff，未执行格式检查）。

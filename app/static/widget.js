@@ -99,7 +99,7 @@
       try{return await requestOnce(path,method,body,correlationId,force);}
       catch(error){
         if(error?.name==='TypeError'||error?.name==='TimeoutError')error.recoverable=true;
-        if(signal?.aborted||attempt>=11||Date.now()-started>=180000||(!safe&&!error.authExpired)||!error.recoverable)throw error;
+        if(signal?.aborted||attempt>=19||Date.now()-started>=240000||(!safe&&!error.authExpired)||!error.recoverable)throw error;
         // A second 401 means renewal did not fix authentication; do not loop.
         if(error.authExpired&&force)throw error;
         force=!!error.authExpired;
