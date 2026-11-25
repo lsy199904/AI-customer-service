@@ -55,6 +55,7 @@ class Settings:
     retrieval_backend: str = field(default_factory=lambda: os.getenv('RETRIEVAL_BACKEND','semantic'))
     idle_seconds: int = field(default_factory=lambda:int(os.getenv('SESSION_IDLE_SECONDS','1800')))
     retention_days: int = field(default_factory=lambda:int(os.getenv('SESSION_RETENTION_DAYS','7')))
+    purge_days: int = field(default_factory=lambda:int(os.getenv('SESSION_PURGE_AFTER_DAYS','0')))
     context_rounds: int = field(default_factory=lambda:int(os.getenv('SESSION_CONTEXT_ROUNDS','20')))
     requests_per_minute: int = field(default_factory=lambda:int(os.getenv('TENANT_MESSAGES_PER_MINUTE','20')))
     global_rag_questions_per_day: int = field(default_factory=lambda:int(os.getenv('GLOBAL_RAG_QUESTIONS_PER_DAY','1000')))
@@ -68,6 +69,7 @@ class Settings:
         if os.getenv('MODEL_THINKING_FORMAT','vllm') not in ('vllm','enable_thinking','none'):raise ValueError('MODEL_THINKING_FORMAT仅支持vllm/enable_thinking/none')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}',self.anonymous_cookie_name):raise ValueError('ANONYMOUS_COOKIE_NAME格式无效')
         if not 1<=self.retention_days<=365 or not 1<=self.context_rounds<=1000:raise ValueError('会话保留天数须为1至365，上下文轮数须为1至1000')
+        if self.purge_days<0 or (self.purge_days and self.purge_days<self.retention_days):raise ValueError('数据库清理天数须为0（不自动清理）或不小于历史可见天数')
         if not 1<=self.requests_per_minute<=10000:raise ValueError('企业每分钟消息额度须为1至10000')
         if not 1<=self.global_rag_questions_per_day<=10000000:raise ValueError('全局每日RAG额度须为1至10000000')
         if not math.isfinite(self.retrieval_timeout) or not .01<=self.retrieval_timeout<=300:raise ValueError('检索总超时须为0.01至300秒')
@@ -532,11 +534,15 @@ class Service:
             if items[i]['created_at']-items[i-1]['created_at']>self.config.idle_seconds:start=i
         return items[start:]
 
-    def prune_sessions(self,batch_size=200):
+    def prune_sessions(self,batch_size=200,days=None):
         from contextlib import nullcontext
         from .storage import BusySession
         result={'deleted_sessions':0,'deleted_messages':0,'deleted_checkpoints':0,'skipped_busy':0}
-        cutoff=self.cutoff()
+        days=self.config.purge_days if days is None else days
+        if isinstance(days,bool) or not isinstance(days,int) or days<0 or (days and days<self.config.retention_days):
+            raise ValueError('清理天数须为0或不小于历史可见天数')
+        if days==0:return {**result,'batch_full':False,'cleanup_disabled':True}
+        cutoff=time.time()-days*86400
         guard=self.db.session_lock('__maintenance_sessions__') if self.config.database_url else nullcontext()
         try:
             with guard:
