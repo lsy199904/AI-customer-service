@@ -52,16 +52,22 @@ data:
   RAG_TOP_K: "12"
   RAG_CONTEXT_K: "3"
   RETRIEVAL_TIMEOUT_SECONDS: "60"
+  QUERY_CONTEXT_TIMEOUT_SECONDS: "30"       # 输入理解/追问解析模型单次超时
+  EVIDENCE_SELECTION_TIMEOUT_SECONDS: "10"  # 证据筛选单次超时，仍受检索总预算限制
 
   # ---- 匿名身份与前端接入 ----
   ANONYMOUS_WIDGET_ENABLED: "true"
+  # 可信门户传userId/userName；未登录仍走匿名身份。不是门户Token验证接口。
+  WIDGET_TRUST_ACCOUNT_PARAMS: "true"
+  WIDGET_ACCOUNT_TENANT: "smarttitu_portal"   # 上线后保持稳定，影响历史归属
   ANONYMOUS_COOKIE_NAME: "smarttitu_ext_40e7b3eaf736"   # 所有Pod同名，上线后不变
   ANONYMOUS_COOKIE_SECURE: "false"  # 纯HTTP（IP直连Ingress）必须为false；浏览器在http下不带Secure cookie，上HTTPS时改回true
 #  FRAME_ORIGINS: ""                 # 【必填】允许嵌入iframe的业务来源，逗号分隔
 #  CORS_ORIGINS: ""                  # 前端跨域直调API时才需要
 
   # ---- 会话与限流 ----
-  SESSION_RETENTION_DAYS: "7"
+  SESSION_RETENTION_DAYS: "7"              # 用户可见历史范围
+  SESSION_PURGE_AFTER_DAYS: "0"             # 关闭数据库自动清理，日志独立保留
   SESSION_CONTEXT_ROUNDS: "20"
   SESSION_IDLE_SECONDS: "1800"
   SESSION_CLEANUP_INTERVAL_SECONDS: "300"

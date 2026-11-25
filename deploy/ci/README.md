@@ -238,3 +238,25 @@ CI 变量会原样传给 build.sh，拉不到官方基础镜像时加变量即�
 
 注意轮换 `DATABASE_URL` 密码会同时影响连接串：密码含 `#` 时 db-migrate 的 entrypoint 已做兼容，
 但更稳妥的做法是 URL 编码（`#` → `%23`）。
+
+## 功能整合后的运行参数
+
+2026-11-25：dev/uat 的 `10-configmap.yml` 已显式补齐门户账号接入、输入理解与证据模型超时、
+数据库历史保留参数。`WIDGET_ACCOUNT_TENANT=smarttitu_portal` 上线后须保持稳定。
+本次不修改发布脚本：CI 仍不会自动 apply ConfigMap/Secret。部署人员须先核对环境差异并
+应用对应配置，再触发原发布流程，使初始化 Job 和新 App Pod 获取同一份配置。
+
+例如 dev 环境（默认 namespace 为 app-zone；实际环境按部署配置选择）：
+
+```bash
+kubectl -n app-zone apply -f deploy/k8s/dev/10-configmap.yml
+```
+
+如果当前线上配置由集群独立维护，勿直接覆盖整份模板，可只补充本次新增参数：
+
+```bash
+kubectl -n app-zone patch configmap titu-assistant-config --type merge -p '{"data":{"WIDGET_TRUST_ACCOUNT_PARAMS":"true","WIDGET_ACCOUNT_TENANT":"smarttitu_portal","QUERY_CONTEXT_TIMEOUT_SECONDS":"30","EVIDENCE_SELECTION_TIMEOUT_SECONDS":"10","SESSION_PURGE_AFTER_DAYS":"0"}}'
+```
+
+此后正常发布时新Pod读取新环境变量；只修改ConfigMap不会改变已有Pod的进程环境。
+Secret 与 AUTH_SECRET 不在本次改动范围内。账号参数模式以可信门户提供稳定userId为前提。
