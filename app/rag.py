@@ -400,8 +400,8 @@ class SemanticKnowledge:
         decisions=[]
         for s in ranked_candidates:
             selected=s['row']['id'] in final_ids
-            if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_semantic_evidence' if semantic_selection is not None else 'selected_query_coverage_fallback' if fallback_policy=='query_coverage_fallback' else 'selected_ranked_evidence'
-            elif fallback_policy in ('query_coverage_fallback','fallback_no_support') and s in eligible:reason='insufficient_distinctive_query_coverage'
+            if selected:reason='selected_primary_title' if s['row']['id'] in primary_ids else 'selected_semantic_evidence' if semantic_selection is not None else 'selected_ranked_query_support_fallback' if fallback_policy=='ranked_query_support_fallback' else 'selected_query_coverage_fallback' if fallback_policy=='query_coverage_fallback' else 'selected_ranked_evidence'
+            elif fallback_policy in ('ranked_query_support_fallback','fallback_no_support') and s in eligible:reason='weak_query_support_or_lower_relevance_rank'
             elif semantic_selection is not None and s in eligible:reason='not_selected_by_semantic_evidence'
             elif s['row']['id'] in rejected_examples:reason='example_not_runtime_capability'
             elif primary:reason='different_subject_from_primary'

@@ -65,6 +65,8 @@ class Settings:
     def validate(self):
         from .query_context import context_timeout
         context_timeout()
+        from .evidence_selection import evidence_timeout
+        evidence_timeout()
         import re
         if os.getenv('MODEL_THINKING_FORMAT','vllm') not in ('vllm','enable_thinking','none'):raise ValueError('MODEL_THINKING_FORMAT仅支持vllm/enable_thinking/none')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}',self.anonymous_cookie_name):raise ValueError('ANONYMOUS_COOKIE_NAME格式无效')
