@@ -1,0 +1,43 @@
+# 对外入口：RKE2 内置 rke2-ingress-nginx（DaemonSet + hostNetwork）占着每个节点的 80/443，
+# 集群既有服务（grafana.k8s.ird / longhorn.k8s.ird / prometheus.k8s.ird / keycloak.k8s.ird）
+# 都是这个模式，沿用同一套命名与证书策略。
+#
+# 访问方式（DNS 未接入时可用节点 IP + Host 头）：
+#   curl -k -H 'Host: titu-assistant.k8s.ird' https://10.180.158.31/smart-bot/ready
+# DNS 接入后：
+#   https://titu-assistant.k8s.ird/smart-bot/
+#
+# path 用 / 即可：应用自带 PublicPrefix 中间件，同时兼容 /smart-bot 前缀与根路径。
+# TLS 由 cert-manager 的 internal-cluster-issuer 自动签发到 titu-assistant-tls，
+# 首次 apply 后 kubectl -n app-zone get certificate 应为 READY=True。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: titu-assistant
+  namespace: app-zone
+  labels:
+    app.kubernetes.io/name: titu-assistant
+  annotations:
+    cert-manager.io/cluster-issuer: internal-cluster-issuer
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # SSE 流式回答必需：nginx 默认会缓冲响应，表现为「卡很久后一次性吐出」
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - titu-assistant.k8s.ird
+      secretName: titu-assistant-tls
+  rules:
+    - host: titu-assistant.k8s.ird
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: titu-assistant
+                port:
+                  number: 8201
