@@ -3,7 +3,7 @@ const assert=require('assert'),fs=require('fs'),http=require('http');
 const {chromium}=require('playwright');
 (async()=>{
  const clients=new Set(),history=[],faq=JSON.parse(fs.readFileSync('data/faq.json','utf8')).items;
- let release,question,requestId,port;
+ let release,question,requestId,port,faqFailures=0;const faqAttempts=[];
  const publish=item=>{for(const res of clients)res.write('event: sync\ndata: '+JSON.stringify(item)+'\n\n');};
  const result=(q,rid,answer)=>({session_id:'sync-session',request_id:rid,answer,status:'answered',images:[],citations:[],suggestions:[]});
  const append=(q,r)=>history.push({role:'user',content:q},{role:'assistant',content:r.answer,response:r});
@@ -30,6 +30,8 @@ const {chromium}=require('playwright');
     release=()=>{const r=result(question,requestId,'第一段正在同步，回答完成。');append(question,r);publish({type:'finish',session_id:'sync-session',request_id:requestId});res.end('event: complete\ndata: '+JSON.stringify(r)+'\n\n');};return;
    }
    if(path.endsWith('/faq')){
+    faqAttempts.push(body.request_id);
+    if(faqFailures>0){faqFailures--;res.writeHead(502,{'Content-Type':'text/html'});return res.end('<html>upstream restarting</html>');}
     const row=faq.find(row=>row.id===body.faq_id);const r={...result(row.question,body.request_id,row.answer),answer_mode:'fixed'};append(row.question,r);
     publish({type:'start',session_id:'sync-session',request_id:body.request_id,question:row.question});publish({type:'finish',session_id:'sync-session',request_id:body.request_id});return json(r);
    }
@@ -49,8 +51,12 @@ const {chromium}=require('playwright');
   await b.getByText('第一段正在同步',{exact:true}).waitFor();assert.equal(history.length,0,'remote delta must arrive before persistence');
   release();await b.getByText('第一段正在同步，回答完成。',{exact:true}).waitFor();
   assert.equal(await b.locator('.message.user').count(),1);assert.equal(await a.locator('.message.user').count(),1);
+  faqFailures=2;
   await a.getByRole('button',{name:'如何创建和管理API Key？',exact:true}).click();
+  await a.getByText('连接暂时中断，正在重新连接…',{exact:true}).waitFor();
   await b.getByText(/再次获取完整API Key/).waitFor();
+  assert.equal(faqAttempts.length,3);assert.equal(new Set(faqAttempts).size,1);
+  assert.equal(await a.getByText(/客服服务返回异常/).count(),0);
   assert.equal(await a.locator('.faq-question').count(),6);assert.equal(await a.getByText('24个问题').count(),0);
   await a.getByRole('button',{name:'换一批',exact:true}).click();assert.equal(await a.locator('.faq-question').count(),6);
   for(const res of [...clients])res.end();

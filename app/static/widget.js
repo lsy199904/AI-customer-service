@@ -76,13 +76,35 @@
     if (typeof value !== 'string' || !value) throw new Error('登录凭证接口未返回 token');
     return value;
   }
-  async function request(path, method = 'GET', body, correlationId) {
-    // Retry only reads and FAQ writes, whose request_id is persisted for deduplication.
-    const safe=method==='GET'||(method==='POST'&&/\/faq$/.test(path)&&body?.request_id);
+  async function retryPause(ms,signal=controller?.signal) {
+    if(signal?.aborted)throw new Error('请求已取消。');
+    await new Promise((resolve,reject)=>{
+      const abort=()=>{clearTimeout(timer);reject(new Error('请求已取消。'));};
+      const timer=setTimeout(()=>{signal?.removeEventListener('abort',abort);resolve();},ms);
+      signal?.addEventListener('abort',abort,{once:true});
+    });
+  }
+  function recoverableResponse(response,data) {
+    return Object.assign(new Error(data?.error?.message || '客服连接暂时中断，请稍后重试。'),{
+      authExpired:response.status===401,
+      recoverable:response.status===401||[502,503,504].includes(response.status)||
+        (response.status===409&&data?.error?.code==='session_busy')
+    });
+  }
+  async function request(path, method = 'GET', body, correlationId, onRetry=()=>{}) {
+    // Message writes are deduplicated server-side by the unchanged request_id.
+    const safe=method==='GET'||(method==='POST'&&/\/(?:faq|messages)$/.test(path)&&body?.request_id);
+    const signal=controller?.signal,started=Date.now();let force=false;
     for(let attempt=0;;attempt++){
-      try{return await requestOnce(path,method,body,correlationId,attempt>0);}
+      try{return await requestOnce(path,method,body,correlationId,force);}
       catch(error){
-        if(controller?.signal.aborted||attempt>=1||(!safe&&!error.authExpired)||!error.recoverable)throw error;
+        if(error?.name==='TypeError'||error?.name==='TimeoutError')error.recoverable=true;
+        if(signal?.aborted||attempt>=11||Date.now()-started>=180000||(!safe&&!error.authExpired)||!error.recoverable)throw error;
+        // A second 401 means renewal did not fix authentication; do not loop.
+        if(error.authExpired&&force)throw error;
+        force=!!error.authExpired;
+        onRetry();
+        await retryPause(Math.min(1000*2**attempt,15000),signal);
       }
     }
   }
@@ -115,8 +137,11 @@
         }
         let data;
         try {data=await response.json();}
-        catch {throw new Error('客服服务返回异常，请稍后重试。');}
-        if(!response.ok)throw Object.assign(new Error(data.error?.message || '连接暂时不可用，请稍后重试'),{authExpired:response.status===401,recoverable:response.status===401||[502,503,504].includes(response.status)});
+        catch {
+          if(!response.ok)throw recoverableResponse(response);
+          throw Object.assign(new Error('客服服务返回异常，请稍后重试。'),{recoverable:true});
+        }
+        if(!response.ok)throw recoverableResponse(response,data);
         return data;
       })()]);
     } finally {
@@ -124,6 +149,17 @@
     }
   }
   async function streamReply(path,body,onStage,onDelta=()=>{},onMetadata=()=>{}) {
+    try{return await streamReplyOnce(path,body,onStage,onDelta,onMetadata);}
+    catch(error){
+      if(controller?.signal.aborted||!error.recoverable)throw error;
+      onStage('reconnecting');
+      // A committed answer is returned from the cache. If still running, wait on
+      // session_busy; if interrupted before commit, restart under the same ID.
+      await retryPause(1000);
+      return request(path,'POST',body,undefined,()=>onStage('reconnecting'));
+    }
+  }
+  async function streamReplyOnce(path,body,onStage,onDelta=()=>{},onMetadata=()=>{}) {
     const scope=new AbortController(),parent=controller?.signal;
     const abort=()=>scope.abort();parent?.addEventListener('abort',abort,{once:true});
     if(parent?.aborted)scope.abort();
@@ -141,7 +177,7 @@
         if(scope.signal.aborted)throw new Error('请求已取消');
         response=await sendStream();
       }
-      if(!response.ok){const data=await response.json();throw new Error(data.error?.message || '客服连接失败');}
+      if(!response.ok){let data;try{data=await response.json();}catch{}throw recoverableResponse(response,data);}
       if(!response.body)throw new Error('浏览器不支持流式响应');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',result=null;
       while(true){
@@ -156,8 +192,8 @@
         if(buffer.length>1000000)throw new Error('客服响应过大');
         if(part.done)break;
       }
-      if(!result)throw new Error('回答传输中断，请重试');return result;
-    } catch(error){if(scope.signal.aborted)throw new Error('请求已取消或超时，请稍后重试');if(error instanceof TypeError)throw new Error('无法连接客服，请检查网络后点击重试。');throw error;}
+      if(!result)throw Object.assign(new Error('回答传输中断，请重试'),{recoverable:true});return result;
+    } catch(error){if(scope.signal.aborted)throw new Error('请求已取消或超时，请稍后重试');if(error instanceof TypeError)throw Object.assign(new Error('无法连接客服，请检查网络后点击重试。'),{recoverable:true});throw error;}
     finally{clearTimeout(timer);parent?.removeEventListener('abort',abort);}
   }
   let syncController=null,syncTimer=null,localRequestId=null,remoteRequestId=null,remoteBubble=null,explicitNew=false;
@@ -522,9 +558,10 @@
         if (v!==generation) return;sessionId=created.session_id;
       }
       const path=`/smart-bot/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
-      const r=faqId ? await request(`/smart-bot/v1/sessions/${sessionId}/faq`,'POST',{faq_id:faqId,request_id:rid}) : config.streaming ? await streamReply(path,payload,stage=>{
+      const r=faqId ? await request(`/smart-bot/v1/sessions/${sessionId}/faq`,'POST',{faq_id:faqId,request_id:rid},undefined,()=>{if(v===generation)loading.textContent='连接暂时中断，正在重新连接…';}) : config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
-        const labels={connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
+        const labels={reconnecting:'连接暂时中断，正在重新连接…',connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
+        if(stage==='reconnecting')loading.hidden=false;
         loading.textContent=stage==='assembling'&&!loading.hidden?'正在加载相关图示…':(labels[stage] || '正在为您解答…');
       },delta=>{
         if(v!==generation)return;
@@ -539,7 +576,7 @@
         scroll();
       }) : await request(path,'POST',payload);
       if (v!==generation) return;
-      const finished=message('assistant',r.answer,r);if(live){live.remove();live=null;finished.style.animation='none';}retry=null;activity();
+      const finished=message('assistant',r.answer,r);if(live){live.remove();live=null;finished.style.animation='none';}retry=null;clearStatus();activity();
     } catch(err) {
       if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true,faqId));
     } finally {
