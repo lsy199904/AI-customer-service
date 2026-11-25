@@ -132,12 +132,12 @@ ROUTING_PROMPT = '''你是 SmartTITU 智能客服的问题分流器。当前问�
 - knowledge：产品、计费、使用方法、典型错误与故障排查。企业内问题可省略 SmartTITU。凭最新问题和历史判定主题。支付不了且没有对象时，澄清账单支付还是充值支付；不能判成要求代付。
 - image：查找产品相关图示。history：回顾对话或复述上一轮已有答案，不能用来回答新的政策、条件或事实。
 - handoff：明确寻求人工，或紧接推荐后说推荐项都不合适。complaint：正在投诉客服或要求升级处理。咨询投诉流程属于 knowledge；上轮投诉不能影响本轮独立问题。
-- action：明确要求客服实际代办。account_status：要求查询用户本人或企业的当前真实数据。“我可以调用哪些模型，去哪里看”“在哪里看余额”是操作咨询，属于 knowledge。
+- action：明确要求客服实际代办。account_status：要求查询用户本人或企业的当前真实数据。“我可以调用哪些模型，去哪里看”“在哪里看余额”是操作咨询，属于 knowledge。描述情况不表示要求客服行动或代查。用户说“我没有钱了”“钱不够了”“付款失败了”，结合上下文按知识咨询或排查处理。若无上下文可询问是平台余额不足，还是想了解费用或体验方式。不要假设Ta有免费额度、当前欠费或要求代付。
 - guide：请求开启或继续已有分步指引。identity、capabilities、greeting、thanks、farewell 为简短客服互动。
 kind 为 independent、followup、mixed、clarify 或 lookup。混合提问选 mixed，question 只保留明确的业务问题。独立完整问题保留原话。追问补全主体，保留金额、日期、报错与客户类型等本轮条件，新信息优先。历史只用于理解，助手旧答案不是业务事实，不把助手旧答案中的数值补进检索问题。只有确实缺少关键对象时才澄清。明确指向旧内容且近期历史不足时用 lookup，提供简短 history_query，用空格分开可能出现在旧对话中的业务词；按时间回看用“昨天”或日期。older_messages 已提供后必须做出最终判断。
-evidence 仅在 handoff、complaint、account_status 或 action 时填写，是本轮中表达该诉求的原话。clarification 在 clarify 时为具体问题，choices 可在下列范围内提供至多三个可用流程选项：register、verification、subscription、recharge、payment、invoice。
-对于完整业务问句，可在 retry_query 提供一条可独立检索的业务同义问法。简短的“最高2万元的提前开票，可以申请多次吗”对象明确，直接检索；“钱不够了，余额怎么充进去”是充值操作方法。
-只输出 JSON：{"intent":"knowledge","kind":"independent","question":"","retry_query":"","clarification":"","history_query":"","choices":[],"evidence":""}
+evidence 仅在 handoff、complaint、account_status 或 action 时填写，是本轮中明确表达请求的完整片段。“没钱了”“余额不足”等只是状态描述，不能作为 action 或 account_status 的依据。clarification 在 clarify 时为具体问题。choices 只列与本轮直接相关的流程，支付歧义只在账单支付与充值支付间选择。可在下列范围内提供至多三个流程选项：register、verification、subscription、recharge、payment、invoice。
+对口语化流程、办理下一步和故障问题，在 retry_query 提供一条可独立检索的业务问法。用户说已注册并询问下一步时，保留已注册条件，尝试“注册完成后如何登录并办理企业认证”，无需账号详情。询问账单支付流程时无需具体账单或支付方式。只有用户明确询问对应通用流程或办理下一步时，提供 flow_id（register、verification、subscription、recharge、payment、invoice）；具体金额、规则、报错和订单状态不选择通用流程。简短的“最高2万元的提前开票，可以申请多次吗”对象明确，直接检索；“钱不够了，余额怎么充进去”是充值操作方法。
+只输出 JSON：{"intent":"knowledge","kind":"independent","question":"","retry_query":"","clarification":"","history_query":"","choices":[],"flow_id":"","evidence":""}
 '''
 
 
@@ -189,78 +189,95 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
                 options['timeout'] = timeout - (time.monotonic() - started)
                 if options['timeout'] <= 0:
                     raise TimeoutError('conversation interpretation deadline')
-            with purpose('query_context'):
-                raw = model.complete([{'role': 'system', 'content': ROUTING_PROMPT},
-                                      {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}])
-            data = json.loads(re.sub(r'^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$', '', raw.strip()))
-            if not isinstance(data, dict):
-                raise ValueError('invalid conversation interpretation')
-            if data.get('intent') == 'out_of_scope':
-                data['kind'] = 'independent'
-            if data.get('intent') == 'clarify' and data.get('kind') == 'followup' and history and not attempt:
-                payload['routing_feedback'] = 'clarify 是 kind，不是 intent。先判断已有消息能否确定追问的对象，再输出结果。'
+            try:
+                with purpose('query_context'):
+                    raw = model.complete([{'role': 'system', 'content': ROUTING_PROMPT},
+                                          {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}])
+                data = json.loads(re.sub(r'^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$', '', raw.strip()))
+                if not isinstance(data, dict):
+                    raise ValueError('invalid conversation interpretation')
+                if data.get('intent') == 'out_of_scope':
+                    data['kind'] = 'independent'
+                if data.get('intent') == 'clarify' and data.get('kind') == 'followup' and history and not attempt:
+                    payload['routing_feedback'] = 'clarify 是 kind，不是 intent。先判断已有消息能否确定追问的对象，再输出结果。'
+                    if diagnostics is not None:
+                        diagnostics.append({'stage':'classification','normalization':'clarify_intent_to_resolution'})
+                    continue
+                if data.get('kind') != 'lookup':
+                    return _validate_interpretation(data, question, history, payload)
+                if attempt or lookup is None:
+                    raise ValueError('invalid history lookup')
+                search = data.get('history_query')
+                if not isinstance(search, str) or not 1 <= len(search.strip()) <= 120:
+                    raise ValueError('invalid history lookup')
+                older = lookup(search.strip())
+                payload['older_messages'] = bounded_history(older, limit=4, budget=1500)
                 if diagnostics is not None:
-                    diagnostics.append({'stage':'classification','normalization':'clarify_intent_to_resolution'})
-                continue
-            if data.get('kind') != 'lookup':
-                break
-            if attempt or lookup is None:
-                raise ValueError('invalid history lookup')
-            search = data.get('history_query')
-            if not isinstance(search, str) or not 1 <= len(search.strip()) <= 120:
-                raise ValueError('invalid history lookup')
-            older = lookup(search.strip())
-            payload['older_messages'] = bounded_history(older, limit=4, budget=1500)
-            if diagnostics is not None:
-                diagnostics.append({'stage': 'history_lookup', 'messages': len(older)})
-        if data.get('intent') == 'clarify' and data.get('kind') in {'clarify', 'followup'}:
-            data.update(intent='knowledge', kind='clarify')
-        intents = {'knowledge', 'image', 'history', 'out_of_scope', 'action', 'account_status', 'handoff', 'complaint',
-                   'guide', 'greeting', 'thanks', 'farewell', 'identity', 'capabilities'}
-        intent, kind = data.get('intent'), data.get('kind')
-        if intent not in intents or kind not in {'independent', 'followup', 'mixed', 'clarify'}:
-            raise ValueError('invalid conversation interpretation')
-        if intent in {'action', 'account_status', 'handoff', 'complaint'}:
-            evidence = data.get('evidence')
-            if not isinstance(evidence, str) or not evidence.strip() or evidence not in question:
-                raise ValueError('intent has no current-question evidence')
-        if kind == 'followup' and intent in {'knowledge', 'image'} and not history and not payload.get('older_messages'):
-            kind = 'clarify'
-            data['clarification'] = '您想了解 SmartTITU 的哪项功能或办理流程？请补充一下具体对象。'
-        if kind == 'clarify':
-            clarification = data.get('clarification')
-            if not isinstance(clarification, str) or not 1 <= len(clarification.strip()) <= 300:
-                raise ValueError('invalid clarification')
-        rewritten = question
-        if kind in {'followup', 'mixed'} and intent in {'knowledge', 'image'}:
-            rewritten = data.get('question')
-            if not isinstance(rewritten, str) or not 1 <= len(rewritten.strip()) <= 2000:
-                raise ValueError('invalid standalone question')
-            current_numbers = set(re.findall(r'\d+(?:\.\d+)?', question))
-            rewritten_numbers = set(re.findall(r'\d+(?:\.\d+)?', rewritten))
-            if kind == 'followup' and not current_numbers <= rewritten_numbers:
-                raise ValueError('lost current numeric condition')
-            known_numbers = set(re.findall(r'\d+(?:\.\d+)?', ' '.join(
-                [question, *(item['content'] for item in payload['recent_messages'] + payload.get('older_messages', [])
-                             if item['role'] == 'user')])))
-            if rewritten_numbers - known_numbers:
-                raise ValueError('invented numeric condition')
-            dates = set(re.findall(r'\d+\s*(?:号|日)', question))
-            if dates and set(re.findall(r'\d+\s*(?:号|日)', rewritten)) - dates:
-                raise ValueError('conflicting old date')
-        retry = data.get('retry_query')
-        if (not isinstance(retry, str) or not 1 <= len(retry.strip()) <= 400 or retry == rewritten
-                or re.findall(r'\d+(?:\.\d+)?', rewritten) != re.findall(r'\d+(?:\.\d+)?', retry)):
-            retry = ''
-        choices = data.get('choices')
-        if not isinstance(choices, list):
-            choices = []
-        normalized = {'intent': intent, 'kind': kind, 'question': rewritten,
-                      'clarification': data.get('clarification', '') if kind == 'clarify' else '',
-                      'retry_query': retry.strip(),
-                      'choices': [choice for choice in choices[:3] if isinstance(choice, str)]}
-        if 'older_messages' in payload:
-            normalized['older_messages'] = payload['older_messages']
-        return normalized
+                    diagnostics.append({'stage': 'history_lookup', 'messages': len(older)})
+            except (ValueError, TypeError, AttributeError) as error:
+                if attempt or str(error)=='invalid history lookup':
+                    raise
+                payload['routing_feedback']='上一轮输出格式或字段无效。只输出约定的 JSON，保留用户本轮条件。'
+                if diagnostics is not None:
+                    diagnostics.append({'stage':'classification_retry','reason':resolution_error_code(error)})
+            except Exception as error:
+                category=safe_provider_error(error)['provider_category']
+                if attempt or category not in {'timeout','connection_error','provider_server_error','api_error'}:
+                    raise
+                if diagnostics is not None:
+                    diagnostics.append({'stage':'classification_retry','reason':category})
     finally:
         _options.reset(token)
+
+
+def _validate_interpretation(data, question, history, payload):
+    if data.get('intent') == 'clarify' and data.get('kind') in {'clarify', 'followup'}:
+        data.update(intent='knowledge', kind='clarify')
+    intents = {'knowledge', 'image', 'history', 'out_of_scope', 'action', 'account_status', 'handoff', 'complaint',
+               'guide', 'greeting', 'thanks', 'farewell', 'identity', 'capabilities'}
+    intent, kind = data.get('intent'), data.get('kind')
+    if intent not in intents or kind not in {'independent', 'followup', 'mixed', 'clarify'}:
+        raise ValueError('invalid conversation interpretation')
+    if intent in {'action', 'account_status', 'handoff', 'complaint'}:
+        evidence = data.get('evidence')
+        if not isinstance(evidence, str) or not evidence.strip() or evidence not in question:
+            raise ValueError('intent has no current-question evidence')
+    if kind == 'followup' and intent in {'knowledge', 'image'} and not history and not payload.get('older_messages'):
+        kind = 'clarify'
+        data['clarification'] = '您想了解 SmartTITU 的哪项功能或办理流程？请补充一下具体对象。'
+    if kind == 'clarify':
+        clarification = data.get('clarification')
+        if not isinstance(clarification, str) or not 1 <= len(clarification.strip()) <= 300:
+            raise ValueError('invalid clarification')
+    rewritten = question
+    if kind in {'followup', 'mixed'} and intent in {'knowledge', 'image'}:
+        rewritten = data.get('question')
+        if not isinstance(rewritten, str) or not 1 <= len(rewritten.strip()) <= 2000:
+            raise ValueError('invalid standalone question')
+        current_numbers = set(re.findall(r'\d+(?:\.\d+)?', question))
+        rewritten_numbers = set(re.findall(r'\d+(?:\.\d+)?', rewritten))
+        if kind == 'followup' and not current_numbers <= rewritten_numbers:
+            raise ValueError('lost current numeric condition')
+        known_numbers = set(re.findall(r'\d+(?:\.\d+)?', ' '.join(
+            [question, *(item['content'] for item in payload['recent_messages'] + payload.get('older_messages', [])
+                         if item['role'] == 'user')])))
+        if rewritten_numbers - known_numbers:
+            raise ValueError('invented numeric condition')
+        dates = set(re.findall(r'\d+\s*(?:号|日)', question))
+        if dates and set(re.findall(r'\d+\s*(?:号|日)', rewritten)) - dates:
+            raise ValueError('conflicting old date')
+    retry = data.get('retry_query')
+    if (not isinstance(retry, str) or not 1 <= len(retry.strip()) <= 400 or retry == rewritten
+            or re.findall(r'\d+(?:\.\d+)?', rewritten) != re.findall(r'\d+(?:\.\d+)?', retry)):
+        retry = ''
+    choices = data.get('choices')
+    if not isinstance(choices, list):
+        choices = []
+    normalized = {'intent': intent, 'kind': kind, 'question': rewritten,
+                  'clarification': data.get('clarification', '') if kind == 'clarify' else '',
+                  'retry_query': retry.strip(),
+                  'flow_id': data.get('flow_id') if intent == 'knowledge' and isinstance(data.get('flow_id'), str) else None,
+                  'choices': [choice for choice in choices[:3] if isinstance(choice, str)]}
+    if 'older_messages' in payload:
+        normalized['older_messages'] = payload['older_messages']
+    return normalized

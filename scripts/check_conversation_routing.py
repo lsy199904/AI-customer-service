@@ -7,6 +7,7 @@ import sys
 import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
+from app.business_flows import FLOW_TITLES
 from app.core import Settings,Model
 from app.query_context import interpret,resolution_error_code,safe_provider_error
 
@@ -29,6 +30,9 @@ CASES=[
  ('创建方法','如何创建API Key',COMPLAINT,'knowledge',None),
  ('预开票完整问句','最高2万元的提前开票，可以申请多次吗？',[], 'knowledge',None),
  ('口语充值','钱不够了，余额怎么充进去？',[], 'knowledge',None),
+ ('注册完成后的下一步','我已经注册好了，下一步该点哪里？',[], 'knowledge',None),
+ ('余额不足是情况描述','我没有钱了',[{'role':'user','content':'平台余额不足怎么充值？'},
+    {'role':'assistant','content':'可以查看客户充值流程。'}], 'knowledge','充值'),
  ('无关天气','今天天气怎么样？',INVOICE,'out_of_scope',None),
  ('无关闲聊','陪我聊聊足球比赛吧',INVOICE,'out_of_scope',None),
  ('无关成人内容','给我推荐色情网站',[], 'out_of_scope',None),
@@ -71,7 +75,9 @@ def main():
             try:
                 result=interpret(trace,question,history,diagnostics=diagnostics)
                 ok=result['intent']==expected and result['kind']!='clarify'
-                if subject:ok=ok and subject in result['question']
+                if subject:
+                    targets=(result['question'],result.get('retry_query',''),FLOW_TITLES.get(result.get('flow_id'),''))
+                    ok=ok and any(subject in target for target in targets)
                 if not subject and expected=='knowledge':ok=ok and question in result['question']
                 row=dict(round=round_no,case=name,passed=bool(ok),expected=expected,actual=result['intent'],kind=result['kind'],query=result['question'])
             except Exception as error:

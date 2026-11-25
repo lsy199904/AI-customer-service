@@ -116,8 +116,13 @@ class SupportWorkflow:
         semantic = self.service.config.mode == 'llm'
         interpretation = {}
         complaint = False
+        from .assistance import FLOWS
+        named_flow = next((key for key, flow in FLOWS.items() if question.rstrip('？?。') == flow['title']), None)
         if state.get('client_action') == 'handoff':
             intent = 'handoff'
+        elif named_flow:
+            intent = 'knowledge'
+            interpretation = {'question':question,'kind':'independent','flow_id':named_flow}
         elif semantic:
             try:
                 from .query_context import interpret
@@ -197,6 +202,21 @@ class SupportWorkflow:
         return {'answer':'这段流程指引已走完。实际办理结果请以平台页面或人工确认为准，我没有查询后台状态。' if completed else '已结束这段分步指导，您可以继续问其他问题。',
                 'success':True,'reason':'guidance_complete' if completed else 'guidance_ended','guidance':guidance}
 
+    @staticmethod
+    def _flow_title(flow_id):
+        from .assistance import FLOWS
+        return (FLOWS.get(flow_id) or {}).get('title')
+
+    def _flow_evidence(self, flow_id, question):
+        from .assistance import chapter
+        if not self._flow_title(flow_id):
+            return None
+        source=chapter(self.service.knowledge.rows.values(),flow_id)
+        if source is None:
+            return None
+        return {'evidence':[source],'retrieval':{'matched':True,'method':'registered_flow',
+                'query':question,'hits':[],'title_matched':True}}
+
     def retrieve(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('retrieving');started=time.monotonic()
         if not self.service.reserve_rag_quota():
@@ -231,6 +251,11 @@ class SupportWorkflow:
                 if resolution['kind']=='clarify':return {'clarification':resolution['clarification']}
                 query=state.get('assistance',{}).get('query') or resolution['question']
                 if self.service.config.retrieval_backend!='semantic' and resolution['kind']=='independent':query=retrieval_query(query,[])
+                flow_id=resolution.get('flow_id')
+                if flow_id and state['question'].rstrip('？?。')==self._flow_title(flow_id):
+                    direct=self._flow_evidence(flow_id,query)
+                    if direct:
+                        return direct
                 resolved,preferred=recommended_selection(self.service.knowledge,query,state['history'])
                 found=retrieve(self.service.knowledge,resolved,preferred_id=preferred) if preferred else retrieve(self.service.knowledge,resolved)
                 retry_query=resolution.get('retry_query')
@@ -239,6 +264,10 @@ class SupportWorkflow:
                     retry=retrieve(self.service.knowledge,retry_query)
                     if retry['evidence']:
                         found,resolved=retry,retry_query
+                if not found['evidence'] and flow_id and not assistance.get('query'):
+                    direct=self._flow_evidence(flow_id,resolved)
+                    if direct:
+                        return direct
                 found['retrieval'].setdefault('query',resolved)
                 return found
             found=run(retrieve_current,self.service.config.retrieval_timeout)

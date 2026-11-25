@@ -107,7 +107,7 @@ def test_realtime_status_and_delegate_action_never_invoke_business_tools(service
 def test_overnight_followup_uses_same_session_and_can_be_recalled(service):
     sid = service.create(ACTOR, {})['session_id']
     service.model.complete.side_effect = [
-        plan('knowledge'),
+        plan('knowledge', flow_id='invoice'),
         plan('knowledge', 'followup', question='提前开票可以多次申请吗？', retry_query='在线开票流程'),
         plan('history'),
     ]
@@ -116,7 +116,7 @@ def test_overnight_followup_uses_same_session_and_can_be_recalled(service):
         {'answerable': True, 'answer': '仅可预开一次。', 'citation_ids': [], 'image_ids': []},
         {'answerable': True, 'answer': '您问了提前开票和申请次数。', 'citation_ids': [], 'image_ids': []},
     ]
-    chat(service, sid, '在线开票流程', 'invoice-question')
+    chat(service, sid, '在线开票流程是什么？', 'invoice-question')
     with service.db:
         service.db.execute('UPDATE messages SET created=created-86400 WHERE session=?', (sid,))
         service.db.execute('UPDATE sessions SET updated=updated-86400 WHERE id=?', (sid,))
@@ -166,7 +166,7 @@ def test_ambiguous_payment_has_real_options_and_selection_is_independent(service
     service.model.complete.side_effect = [
         plan('knowledge', 'clarify', clarification='请问是账单支付还是充值支付？',
              choices=['payment','recharge','invalid']),
-        plan('knowledge'),
+        AssertionError('an explicit flow must not be classified again'),
     ]
     service.model.answer.side_effect = evidence_answer
     response = chat(service, sid, '支付不了', 'ambiguous-payment')
@@ -174,6 +174,8 @@ def test_ambiguous_payment_has_real_options_and_selection_is_independent(service
     assert [action['message'] for action in response['actions']] == ['账单支付流程', '客户充值流程']
     result = chat(service, sid, '账单支付流程', 'chosen-payment')
     assert any('账单支付流程' in item['title'] for item in result['citations'])
+    assert result['retrieval']['method']=='registered_flow'
+    service.model.complete.assert_called_once()
 
 
 def test_new_conditions_take_precedence_and_numeric_guard_is_enforced():
@@ -199,3 +201,19 @@ def test_retrieval_retries_once_and_uses_the_qualified_evidence(service):
         result = chat(service, sid, '钱不够了，余额怎么充进去？', 'recharge-bounded-retry')
     assert [args.args[1] for args in retrieve.call_args_list] == ['钱不够了，余额怎么充进去？', '客户充值流程']
     assert result['citations'][0]['id'] == entry['id']
+
+@pytest.mark.parametrize(('question','flow_id','title'), [
+    ('钱不够了，余额怎么充进去？','recharge','客户充值流程'),
+    ('我已经注册好了，下一步该点哪里？','register','注册流程'),
+    ('我没有钱了','recharge','客户充值流程'),
+])
+def test_recover_model_output_then_ground_general_flow_if_search_misses(service, question, flow_id, title):
+    sid=service.create(ACTOR,{})['session_id']
+    service.model.complete.side_effect=['invalid JSON',plan('knowledge',flow_id=flow_id)]
+    service.model.answer.side_effect=evidence_answer
+    with patch('app.chains.retrieve',return_value={'evidence':[],'retrieval':{'matched':False,'hits':[]}}):
+        result=chat(service,sid,question,'recover-general-flow')
+    assert result['retrieval']['method']=='registered_flow'
+    assert any(title in row['title'] for row in result['citations'])
+    assert service.model.answer.call_args.args[0]==question
+    assert service.model.complete.call_count==2
