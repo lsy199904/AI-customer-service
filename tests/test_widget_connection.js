@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const source=fs.readFileSync('app/static/widget.js','utf8');
-const code=source.slice(source.indexOf('  async function request('),source.indexOf('  function scroll()'));
+const code=source.slice(source.indexOf('  async function retryPause('),source.indexOf('  function scroll()'));
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const customer={};vm.runInNewContext(source.slice(source.indexOf('  function customerText('),source.indexOf('  function renderText(')),customer);
 assert(!customer.customerText('统一接入（KB-0f567c3f2b830588627d13d2）。').includes('KB-'));
@@ -10,7 +10,7 @@ function setup(override={}){
  const context={windowId:'window-test-123',AbortController,TextDecoder,controller:new AbortController(),token:async()=>'test-only-token',apiURL:path=>'https://assistant.example'+path,
  fetch:async()=>({ok:true,json:async()=>({welcome:'hello'})}),
  setTimeout:(callback,delay)=>{timers.set(++number,{callback,delay});return number;},clearTimeout:id=>timers.delete(id),...override};
- vm.runInNewContext(code,context);return {context,timers,expire(){assert.equal(timers.size,1);[...timers.values()][0].callback();}};
+ vm.runInNewContext(code,context);context.retryPause=async()=>{};return {context,timers,expire(){assert.equal(timers.size,1);[...timers.values()][0].callback();}};
 }
 (async()=>{
  let s=setup();assert.equal((await s.context.request('/v1/bootstrap')).welcome,'hello');assert.equal(s.timers.size,0);
@@ -33,11 +33,24 @@ function setup(override={}){
    return {ok:true,json:async()=>({answer:'recovered'})};
  }});
  assert.equal((await s.context.request('/v1/sessions/test/faq','POST',{faq_id:'faq-04',request_id:'same-id'})).answer,'recovered');
- assert.equal(attempts,2);assert.equal(bodies[0],bodies[1]);assert.equal(refresh.join(','),'false,true');
+ assert.equal(attempts,2);assert.equal(bodies[0],bodies[1]);assert.equal(refresh.join(','),'false,false');
  attempts=0;s=setup({fetch:async()=>{attempts++;return {ok:false,status:404,json:async()=>({error:{message:'会话不存在'}})};}});
  await assert.rejects(s.context.request('/v1/sessions/test/faq','POST',{request_id:'same-id'}),/会话不存在/);assert.equal(attempts,1);
  attempts=0;s=setup({fetch:async()=>{attempts++;throw new TypeError('offline');}});
  await assert.rejects(s.context.request('/v1/sessions','POST',{}),/无法连接/);assert.equal(attempts,1);
+ attempts=0;let reconnects=0;
+ s=setup({fetch:async()=>++attempts<3?{ok:false,status:502,json:async()=>{throw new SyntaxError('HTML gateway page');}}:{ok:true,json:async()=>({answer:'recovered after restart'})}});
+ assert.equal((await s.context.request('/v1/sessions/test/faq','POST',{request_id:'same-id'},undefined,()=>reconnects++)).answer,'recovered after restart');
+ assert.equal(attempts,3);assert.equal(reconnects,2);
+ attempts=0;s=setup({fetch:async()=>({ok:false,status:401,json:async()=>{attempts++;return {error:{message:'expired'}};}})});
+ await assert.rejects(s.context.request('/v1/bootstrap'),/expired/);assert.equal(attempts,2);
+ let fallbackBody,reads=0;const partial=new TextEncoder().encode('event: delta\ndata: {"text":"部分回答"}\n\n');
+ s=setup({fetch:async(url,options)=>{
+   if(url.endsWith('/stream'))return {ok:true,body:{getReader:()=>({read:async()=>reads++===0?{value:partial,done:false}:{done:true}})}};
+   fallbackBody=JSON.parse(options.body);return {ok:true,json:async()=>({answer:'完整回答'})};
+ }});
+ const recoveryStages=[];assert.equal((await s.context.streamReply('/v1/sessions/test/messages',{request_id:'original-id',message:'hello'},x=>recoveryStages.push(x))).answer,'完整回答');
+ assert.equal(fallbackBody.request_id,'original-id');assert(recoveryStages.includes('reconnecting'));
  const bytes=new TextEncoder().encode('event: status\ndata: {"stage":"retrieving"}\n\nevent: metadata\ndata: {"citations":[{"id":"source-1"}],"media_pending":true}\n\nevent: complete\ndata: {"answer":"你好"}\n\n');
  let streamCalls=0;const renewals=[];
  s=setup({token:async force=>{renewals.push(force);return force?'fresh':'expired';},fetch:async()=>{
