@@ -1,6 +1,8 @@
 """Pre-generation semantic evidence selection; never generates customer prose."""
 from contextvars import ContextVar
 import json
+import math
+import os
 import re
 import time
 from .observability import event,debug_event
@@ -44,35 +46,34 @@ def focused_excerpt(question, content, budget=600):
     return content[best:best+budget]
 
 
-def fallback_evidence(question, candidates, limit):
-    """Prefer distinctive query coverage if the semantic judge is unavailable.
+def evidence_timeout():
+    value=float(os.getenv('EVIDENCE_SELECTION_TIMEOUT_SECONDS','10'))
+    if not math.isfinite(value) or not .1<=value<=60:
+        raise ValueError('EVIDENCE_SELECTION_TIMEOUT_SECONDS须为0.1至60秒')
+    return value
 
-    Only already eligible candidates are considered. This does not change either
-    retrieval threshold or assert that lexical overlap proves factual support.
+
+def fallback_evidence(question, candidates, limit):
+    """Keep upstream relevance order after a modest full-query support check.
+
+    Candidate-local rarity is not evidence: incidental wording in an off-topic
+    workflow must not overturn a stronger rerank result. Only already eligible
+    candidates are considered; this never bypasses retrieval/rerank thresholds.
     """
     from .retrieval import terms,clean_content,title_text
     query=set(terms(question))
-    bags=[set(terms(c['row']['title']+' '+clean_content(c['row']['content']))) for c in candidates]
-    distinctive={t for t in query if 0<sum(t in bag for bag in bags)<=len(bags)/2}
-    if len(distinctive)<2:return candidates[:limit],'ranked_evidence'
-    # Long glossary bodies accumulate incidental matches. Reward an explicit
-    # subject in a title, using all meaningful query terms rather than only
-    # rare terms (which can be generic wording such as '调用方式').
-    title_bags=[set(terms(title_text(c['row']['title']))) for c in candidates]
-    scored=[]
-    for c,bag,title_bag in zip(candidates,bags,title_bags):
-        body_coverage=len(distinctive & bag)/len(distinctive)
-        title_overlap=len(query & title_bag)
-        title_coverage=title_overlap/max(len(query),1)
-        score=body_coverage
-        if title_overlap>=2 and title_coverage>=.5:
-            score+=title_coverage
-        scored.append((score,c))
-    best=max((score for score,_ in scored),default=0)
-    if best<.5:return [],'fallback_no_support'
-    supported=[(score,c) for score,c in scored if score>=max(.5,best*.8)]
-    supported.sort(key=lambda item:(item[0],item[1].get('lexical',0),item[1]['score']),reverse=True)
-    return [c for _,c in supported[:limit]],'query_coverage_fallback'
+    if not query:return [],'fallback_no_support'
+    supported=[]
+    for candidate in candidates:
+        row=candidate['row']
+        title=set(terms(title_text(row['title'])))
+        body=set(terms(clean_content(row['content'])))
+        overlap=len(query & (title|body))
+        # Use the complete query, not terms made artificially distinctive by
+        # this particular candidate pool. Preserve the upstream ranking.
+        if overlap>=min(2,len(query)) and overlap/len(query)>=.25:
+            supported.append(candidate)
+    return supported[:limit], 'ranked_query_support_fallback' if supported else 'fallback_no_support'
 
 class EvidenceSelector:
     def __init__(self,model):self.model=model
@@ -82,7 +83,9 @@ class EvidenceSelector:
         rows=[{'id':s['row']['id'],'title':s['row']['title'],
                'content':focused_excerpt(question,s['row']['content'])} for s in candidates[:24]]
         event('evidence_selection_started',candidate_count=len(rows))
-        token=_options.set({'timeout':5.,'max_tokens':600})
+        timeout=evidence_timeout()
+        event('evidence_selection_budget',timeout_seconds=timeout)
+        token=_options.set({'timeout':timeout,'max_tokens':600,'purpose':'evidence_selection'})
         try:
             raw=self.model.complete([{'role':'system','content':PROMPT},
                 {'role':'user','content':json.dumps({'question':question,'limit':limit,'candidates':rows},ensure_ascii=False)}])

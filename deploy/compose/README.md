@@ -72,3 +72,14 @@ K8s 不调用这些开发清卷脚本。
 Milvus SDK建集合测试在本机缺少可安装的grpcio依赖，未执行；Docker/K8s实部署需要服务器验证。
 JS连接、身份桥接和双浏览器模拟后端测试通过，覆盖HTML 502重试、Token续期、回答中断恢复、
 原请求ID复用、实时增量同步及最终历史对齐。SQL门禁通过（本机未安装sqlfluff，未执行格式检查）。
+
+### 证据选择模型超时回退修复
+
+`EVIDENCE_SELECTION_TIMEOUT_SECONDS=10` 单独控制证据选择模型，旧代码固定为5秒；
+该调用仍受 `RETRIEVAL_TIMEOUT_SECONDS` 的剩余总预算约束。输入理解仍由
+`QUERY_CONTEXT_TIMEOUT_SECONDS` 控制，两者独立。需要更大预算时可在本地配置中设置
+`RETRIEVAL_TIMEOUT_SECONDS=30`，这是运行配置选择，不改变检索相似度或重排门槛。
+超时、空文本、无效JSON会触发有基本词语匹配检查的原相关性排序回退，不再按候选池内
+“稀有措辞”重排。模型成功返回空证据数组时仍保持无支持证据，不擅自补选。
+日志 `selection_policy=ranked_query_support_fallback` 标识新回退策略。
+新增回归复现了旧策略将问题42排除、误选交付/订购流程的案例，不绑定问题编号或业务答案。
