@@ -161,6 +161,7 @@ class SessionBody(BaseModel):
 class ChatBody(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
     message: str=Field(min_length=1,max_length=2000)
+    client_action: str | None=Field(default=None,pattern=r'^handoff$')
     request_id: str=Field(min_length=8,max_length=80,pattern=r'^[a-zA-Z0-9_-]+$')
 
 class FAQBody(BaseModel):

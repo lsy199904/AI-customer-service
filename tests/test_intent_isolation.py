@@ -9,46 +9,35 @@ class IntentIsolationTests(unittest.TestCase):
         data.update(overrides)
         return Mock(complete=Mock(return_value=json.dumps(data,ensure_ascii=False)))
 
-    def test_classifier_never_receives_old_complaint_or_action(self):
+    def test_classifier_keeps_complete_current_question_despite_history(self):
         for q in ('数据不出域是不是已经在所有版本默认支持？','API创建流程'):
             model=self.model()
             result=interpret(model,q,[{'role':'user','content':'我要投诉，帮我创建API Key并付账单'}])
             messages=model.complete.call_args.args[0]
-            self.assertEqual(json.loads(messages[-1]['content']),{'current_question':q})
+            self.assertEqual(json.loads(messages[-1]['content'])['current_question'],q)
             self.assertEqual(result['intent'],'knowledge')
             self.assertEqual(result['question'],q)
             model.complete.assert_called_once()
 
-    def test_wrong_complaint_cannot_use_previous_turn_as_evidence(self):
+    def test_old_turn_cannot_supply_the_only_evidence_for_complaint(self):
         with self.assertRaises(ValueError):
             interpret(self.model(intent='complaint',evidence='我要投诉'),'数据不出域是不是所有版本默认支持',
                       [{'role':'user','content':'我要投诉'}])
 
-    def test_instruction_query_cannot_enter_fixed_action_response(self):
-        result=interpret(self.model(intent='action',evidence='创建'),'API创建流程',[])
-        self.assertEqual(result['intent'],'knowledge')
-        self.assertEqual(result['question'],'API创建流程')
-
-    def test_product_support_question_cannot_enter_complaint(self):
-        q='数据不出域是不是已经在所有版本默认支持？'
-        result=interpret(self.model(intent='complaint',evidence='数据不出域'),q,[])
-        self.assertEqual(result['intent'],'knowledge')
-
-    def test_referent_resolver_cannot_switch_speech_act(self):
-        model=Mock(complete=Mock(side_effect=[json.dumps(dict(intent='knowledge',kind='followup',question='是否能多次申请',clarification='',evidence='')),
-             json.dumps(dict(kind='followup',question='提前开票是否能多次申请',clarification=''))]))
+    def test_followup_is_rewritten_in_one_call(self):
+        model=self.model(kind='followup',question='提前开票是否能多次申请')
         result=interpret(model,'是否能多次申请',[{'role':'user','content':'提前开票最高多少'},
                           {'role':'assistant','content':'最高2万元，预开一次'}])
         self.assertEqual(result['intent'],'knowledge')
         self.assertIn('提前开票',result['question'])
-        self.assertEqual(model.complete.call_count,2)
-        self.assertNotIn('recent_messages',json.loads(model.complete.call_args_list[0].args[0][-1]['content']))
+        model.complete.assert_called_once()
 
-    def test_resolution_timeout_asks_instead_of_inventing_old_topic(self):
-        model=self.model(kind='followup')
-        model.complete.side_effect=[model.complete.return_value,TimeoutError()]
-        result=interpret(model,'第二种呢',[{'role':'user','content':'有哪些方式'}])
-        self.assertEqual(result['kind'],'clarify')
-        self.assertEqual(result['question'],'第二种呢')
+    def test_older_lookup_is_limited_to_one_round(self):
+        model=self.model(kind='lookup',history_query='提前开票')
+        lookup=Mock(return_value=[{'role':'user','content':'提前开票额度'}])
+        with self.assertRaisesRegex(ValueError,'invalid history lookup'):
+            interpret(model,'昨天那个呢',[],lookup=lookup)
+        lookup.assert_called_once_with('提前开票')
+        self.assertEqual(model.complete.call_count,2)
 
 if __name__=='__main__':unittest.main()

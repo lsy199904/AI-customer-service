@@ -357,7 +357,7 @@
       const button=element('button','',question);button.type='button';button.onclick=()=>send(question);group.append(button);
     }
     if(Array.isArray(response.actions)&&response.actions.some(action=>action?.type==='handoff')) {
-      const button=element('button','handoff-choice','以上都不是，转人工');button.type='button';button.onclick=()=>send('转人工客服');group.append(button);
+      const button=element('button','handoff-choice','以上都不是，转人工');button.type='button';button.onclick=()=>send('转人工客服',false,null,'handoff');group.append(button);
     }
     parent.append(group);
   }
@@ -540,7 +540,8 @@
     controller?.abort();controller=new AbortController();const v=++generation;
     return initialize(v);
   }
-  async function send(value, retrying=false, faqId=null) {
+  async function send(value, retrying=false, faqId=null, clientAction=null) {
+    if(retrying && retry)clientAction=retry.clientAction || null;
     const text=(value ?? input.value).trim();
     if (!text || busy) return;
     if (!initialized) { notice('请先完成客服连接。',()=>refresh());return; }
@@ -549,7 +550,7 @@
     const rid=retrying && retry?.text===text && (retry?.faqId||null)===faqId ? retry.id : ('msg-'+(crypto.randomUUID?.() || Date.now()+'-'+Math.random().toString(36).slice(2)));
     localRequestId=rid;explicitNew=false;
     if (!retrying) message('user',text);
-    input.value='';retry={text,id:rid,faqId};
+    input.value='';retry={text,id:rid,faqId,clientAction};
     let live=null,liveText='';
     const loading=element('div','loading','正在为您解答…');transcript.append(loading);scroll();
     try {
@@ -557,7 +558,7 @@
         const created=await request('/smart-bot/v1/sessions','POST',{context:{page_path:location.pathname.slice(0,200),page_title:document.title.slice(0,200)}},rid);
         if (v!==generation) return;sessionId=created.session_id;
       }
-      const path=`/smart-bot/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid};
+      const path=`/smart-bot/v1/sessions/${sessionId}/messages`,payload={message:text,request_id:rid,...(clientAction?{client_action:clientAction}:{})};
       const r=faqId ? await request(`/smart-bot/v1/sessions/${sessionId}/faq`,'POST',{faq_id:faqId,request_id:rid},undefined,()=>{if(v===generation)loading.textContent='连接暂时中断，正在重新连接…';}) : config.streaming ? await streamReply(path,payload,stage=>{
         if(v!==generation)return;
         const labels={reconnecting:'连接暂时中断，正在重新连接…',connected:'已连接，正在处理…',routing:'正在理解您的问题…',retrieving:'正在查询相关资料…',generating:'正在整理答案…',assembling:'正在附加配图与来源…',business:'正在查询业务信息…',clarifying:'正在确认您的问题…'};
@@ -708,7 +709,7 @@
     input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();}});
     sendButton=element('button','send','发送');sendButton.type='button';sendButton.onclick=()=>send();entry.append(input,sendButton);
     const foot=element('div','foot');foot.append(element('span','','内容由AI生成，请仔细甄别'));
-    const human=element('button','human','联系人工');human.type='button';human.onclick=()=>send('转人工客服');foot.append(human);
+    const human=element('button','human','联系人工');human.type='button';human.onclick=()=>send('转人工客服',false,null,'handoff');foot.append(human);
     composer.append(faqBox,status,entry,foot);panel.append(composer);
     sourcePane=element('div','source-pane');sourcePane.hidden=true;panel.append(sourcePane);root.append(panel);
     panel.addEventListener('pointerdown',activity);panel.addEventListener('keydown',e=>{

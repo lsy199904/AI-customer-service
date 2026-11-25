@@ -14,9 +14,10 @@ class SemanticRoutingTests(unittest.TestCase):
         self.assertEqual(interpret(model,q,[{'role':'user','content':'提前开票最高多少'}])['question'],q)
         model.complete.assert_called_once()
 
-    def test_followup_keeps_all_current_words(self):
+    def test_subjectless_followup_cannot_invent_context(self):
         result=interpret(self.model(kind='followup',question='提前开票能多次申请吗'),'是否能多次申请',[])
-        self.assertIn('是否能多次申请',result['question'])
+        self.assertEqual(result['kind'],'clarify')
+        self.assertEqual(result['question'],'是否能多次申请')
 
     def test_history_and_new_topic_classification(self):
         for intent,q in [('history','概括一下咱们聊到现在的事情'),('knowledge','开票流程是什么')]:
@@ -44,7 +45,7 @@ class SemanticRoutingTests(unittest.TestCase):
         with patch('app.assistance.plan',return_value={}):
             values=workflow.route({'question':q,'history':[{'role':'user','content':'开票'}]},SimpleNamespace(context=Context()))
         self.assertEqual(values['interpretation']['question'],q)
-        self.assertEqual(values['interpretation']['kind'],'independent')
+        self.assertEqual(values['interpretation']['kind'],'unavailable')
 
     def test_action_graph_does_not_retrieve_or_claim_execution(self):
         import tempfile

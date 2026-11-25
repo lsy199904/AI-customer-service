@@ -16,11 +16,13 @@ from typing import TypedDict
 from langgraph.graph import StateGraph,START,END
 from langgraph.runtime import Runtime
 from langsmith import tracing_context
-from .conversation import REPLIES,NO_ANSWER,intent_of,contextual_query,retrieval_query,sensitive_topic,rejected_recommendations,recommended_questions
+from .conversation import REPLIES,NO_ANSWER,intent_of,retrieval_query,sensitive_topic,rejected_recommendations,recommended_questions
 from .observability import event,error_fields,debug_event
 from .tools import ToolContext
 
 FALLBACK=NO_ANSWER
+OUT_OF_SCOPE='这个问题超出了 SmartTITU 客服的服务范围。您可以问我产品使用、模型接入、充值或账单等问题。'
+CONTEXT_UNAVAILABLE='暂时无法理解这条问题，请稍后重试。您可以继续使用当前会话。'
 
 class RequestCancelled(Exception):pass
 class WorkflowConflict(Exception):pass
@@ -32,6 +34,7 @@ class State(TypedDict,total=False):
     actor:dict
     session_id:str
     request_id:str
+    client_action:str | None
     intent:str
     answer:str
     reason:str
@@ -101,50 +104,77 @@ class SupportWorkflow:
         for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),('action',self.action),
                         ('generate',self.generate),('clarify',self.clarify),('guide_ack',self.guide_ack),('guide_end',self.guide_end),('validate',self.validate)]:graph.add_node(name,fn)
         graph.add_edge(START,'route')
-        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive') else 'action' if s['intent']=='action' else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
+        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive','out_of_scope','context_unavailable') else 'action' if s['intent'] in ('action','account_status') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
         graph.add_conditional_edges('retrieve',lambda s:'generate' if s['evidence'] or s['candidates'] else 'validate')
         graph.add_edge('guide_ack','validate');graph.add_edge('clarify','validate');graph.add_edge('guide_end','validate')
         graph.add_edge('action','validate');graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
         self.graph=graph.compile(checkpointer=self.saver,name='smarttitu_support')
 
     def route(self,state:State,runtime:Runtime[Context]):
-        runtime.context.emit('routing');intent=intent_of(state['question'])
-        if rejected_recommendations(state['question'],state['history']):intent='handoff'
-        if intent!='handoff' and sensitive_topic(state['question']):intent='sensitive'
-        interpretation={}
-        complaint=False
-        if self.service.config.mode=='llm' and hasattr(self.service.model,'complete') and intent not in ('handoff','sensitive'):
+        runtime.context.emit('routing')
+        question, history = state['question'], state['history']
+        semantic = self.service.config.mode == 'llm'
+        interpretation = {}
+        complaint = False
+        if state.get('client_action') == 'handoff':
+            intent = 'handoff'
+        elif semantic:
             try:
                 from .query_context import interpret
-                interpretation=interpret(self.service.model,state['question'],state['history'])
+                def lookup(search):
+                    runtime.context.check()
+                    return self.service.lookup_context_history(state['actor'], state['session_id'], search)
+                interpretation = interpret(self.service.model, question, history, lookup=lookup)
                 runtime.context.check()
-                # Existing authenticated business tools remain the only execution path.
-                complaint=interpretation['intent']=='complaint'
-                intent='handoff' if complaint else 'business' if intent=='business' and interpretation['intent']=='action' else interpretation['intent']
-                event('question_resolved',interpreted_intent=interpretation['intent'],resolution_kind=interpretation['kind'],used_context=interpretation['question']!=state['question'])
-                debug_event('resolved_question',original_question=state['question'],**interpretation)
-            except RequestCancelled:raise
+                intent = interpretation['intent']
+                complaint = intent == 'complaint'
+                if complaint:
+                    intent = 'handoff'
+                event('question_resolved', interpreted_intent=interpretation['intent'],
+                      resolution_kind=interpretation['kind'],
+                      used_context=interpretation['kind']=='followup' or bool(interpretation.get('older_messages')))
+                debug_event('resolved_question', original_question=question, **{
+                    key: value for key, value in interpretation.items() if key != 'older_messages'})
+            except RequestCancelled:
+                raise
             except Exception as error:
-                event('question_resolution_unavailable',level='WARNING',**error_fields(error))
-                from .query_context import interpretation_fallback
-                interpretation=interpretation_fallback(error,state['question'],state['history'])
-                if interpretation['kind']=='clarify':intent='knowledge'
-                event('question_resolution_fallback',resolution_kind=interpretation['kind'],retrieval_skipped=interpretation['kind']=='clarify')
+                event('question_resolution_unavailable', level='WARNING', **error_fields(error))
+                intent = 'context_unavailable'
+                interpretation = {'question':question,'kind':'unavailable'}
+        else:
+            intent = intent_of(question)
+            if rejected_recommendations(question, history):
+                intent = 'handoff'
+            elif intent != 'handoff' and sensitive_topic(question):
+                intent = 'sensitive'
         values={'interpretation':interpretation,'intent':intent,'answer':FALLBACK,'reason':'no_knowledge','success':False,
                 'selected':[],'images':[],'evidence':[],'candidates':[],'retrieval_failed':False,
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
-        if intent=='sensitive':values['reason']='sensitive_topic'
-        if intent=='handoff':values.update(answer='好的，您可以通过以下方式联系人工客服。',reason='requested_handoff')
-        if complaint:values.update(answer='很抱歉，之前的服务没有解决您的问题。您可以通过下方人工渠道反馈，并说明未解决的问题及相关时间，便于进一步跟进。当前我无法直接登记投诉或确认处理进度。',reason='complaint_handoff')
+        if intent == 'sensitive':
+            values['reason'] = 'sensitive_topic'
+        if intent == 'out_of_scope':
+            values.update(answer=OUT_OF_SCOPE,reason='out_of_scope')
+        if intent == 'context_unavailable':
+            values.update(answer=CONTEXT_UNAVAILABLE,reason='context_unavailable',retrieval_failed=True)
+        if intent == 'handoff':
+            values.update(answer='好的，您可以通过以下方式联系人工客服。',reason='requested_handoff')
+        if complaint:
+            values.update(answer='您可以通过下方人工渠道反馈，并说明遇到的问题和相关时间。当前我无法直接登记投诉或确认处理进度。',reason='complaint_handoff')
         values.update(assistance={},guidance=None,guide_context=None)
-        if intent in ('knowledge','thanks'):
+        if interpretation.get('kind') == 'clarify' and intent in ('knowledge','image','guide'):
+            from .assistance import FLOWS,available
+            flows = available(self.service.knowledge.rows.values()) if interpretation['choices'] else {}
+            choices = list(dict.fromkeys(FLOWS[key]['title'] for key in interpretation['choices'] if key in flows))
+            values['assistance']={'kind':'clarify','answer':interpretation['clarification'],'choices':choices}
+        elif intent == 'guide' or (not semantic and intent in ('knowledge','thanks')):
             from .assistance import plan
+            from .query_context import guidance_history
             try:
-                from .query_context import guidance_history
-                values['assistance']=plan(state['question'],guidance_history(state['question'],state['history']),list(self.service.knowledge.rows.values()))
-            except Exception as error:event('assistance_unavailable',level='WARNING',**error_fields(error))
-        if interpretation.get('kind')=='clarify' and intent in ('knowledge','image','action'):
-            values['assistance']={'kind':'clarify','answer':interpretation['clarification'],'choices':[]}
+                values['assistance']=plan(question,guidance_history(question,history),list(self.service.knowledge.rows.values()))
+            except Exception as error:
+                event('assistance_unavailable',level='WARNING',**error_fields(error))
+        if intent == 'guide':
+            values['intent'] = 'knowledge'
         if values['assistance']:
             event('assistance_planned',mode=values.get('assistance',{}).get('kind'),flow_id=(values.get('assistance',{}).get('guidance') or {}).get('flow_id') or values.get('assistance',{}).get('flow_id'))
         event('question_classified',intent=intent,history_messages=len(state['history']))
@@ -203,6 +233,12 @@ class SupportWorkflow:
                 if self.service.config.retrieval_backend!='semantic' and resolution['kind']=='independent':query=retrieval_query(query,[])
                 resolved,preferred=recommended_selection(self.service.knowledge,query,state['history'])
                 found=retrieve(self.service.knowledge,resolved,preferred_id=preferred) if preferred else retrieve(self.service.knowledge,resolved)
+                retry_query=resolution.get('retry_query')
+                if retry_query and retry_query!=resolved and not found['evidence'] and not assistance.get('query'):
+                    check()
+                    retry=retrieve(self.service.knowledge,retry_query)
+                    if retry['evidence']:
+                        found,resolved=retry,retry_query
                 found['retrieval'].setdefault('query',resolved)
                 return found
             found=run(retrieve_current,self.service.config.retrieval_timeout)
@@ -253,7 +289,9 @@ class SupportWorkflow:
         finally:self.service.observe('retrieval',time.monotonic()-started)
 
     def action(self,state:State,runtime:Runtime[Context]):
-        # A semantic label never grants tool permissions or invents an execution adapter.
+        if state['intent']=='account_status':
+            return {'answer':'我目前无法直接查询您企业的实时账户数据。您可以登录 SmartTITU 企业服务门户查看，或点击「联系人工」协助核实。',
+                    'reason':'account_status_unavailable','success':True}
         return {'answer':'我目前不能直接替您执行这项操作。您可以在平台上自行办理，我可以提供操作指引。您希望先了解哪一项的操作步骤？',
                 'reason':'action_unavailable','success':True}
 
@@ -278,7 +316,7 @@ class SupportWorkflow:
         # The product identity is owned by the service, independent of the model vendor.
         if intent=='history' and not state['history']:
             return {'answer':'当前可用的会话上下文里还没有之前的问答记录。您可以告诉我想回顾的话题。','reason':'history','success':True}
-        if intent=='identity':return {'answer':REPLIES[intent],'reason':intent,'success':True}
+        if intent in REPLIES:return {'answer':REPLIES[intent],'reason':intent,'success':True}
         if s.config.mode!='llm':
             if conversation:return {'answer':REPLIES.get(intent,'暂时无法整理聊天记录，请稍后重试。'),'reason':intent,'success':True}
             if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'selected':state['evidence']}
@@ -302,7 +340,20 @@ class SupportWorkflow:
                 '_runtime_tools':sorted(s.tools.tools),
                 '_on_delta':safe_delta if runtime.context.observer else None,
                 '_guidance':state.get('guide_context'),'_reserved_qr':bool(qr)}
-            result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],state['history'],generation_evidence(state['evidence'],bool(qr)),context)
+            history=state['history']
+            interpretation=state.get('interpretation',{})
+            if interpretation:
+                from .query_context import bounded_history
+                older=interpretation.get('older_messages',[])
+                if intent=='history':
+                    if older:
+                        observed={(item.get('created_at'),item['role']) for item in older}
+                        history=older+[item for item in history[-6:] if (item.get('created_at'),item['role']) not in observed]
+                elif interpretation['kind']=='followup':
+                    history=(older+bounded_history(history))[-8:]
+                else:
+                    history=[]
+            result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],history,generation_evidence(state['evidence'],bool(qr)),context)
             if runtime.context.observer:
                 tail=link_stream.finish()
                 if tail:runtime.context.delta(tail)
@@ -366,23 +417,26 @@ class SupportWorkflow:
         values={'selected':selected,'images':images,'suggestions':[],'suggestion_sources':[],'actions':[]}
         if not state['success'] and state['intent']!='handoff':
             values.update(images=[],selected=[],suggestions=recommended_questions(s.knowledge,state['question'],
-                state['evidence'],sensitive=state['intent']=='sensitive' or state['retrieval_failed'],
+                state['evidence'],sensitive=state['intent'] in ('sensitive','out_of_scope') or state['retrieval_failed'],
                 related_titles=state['retrieval'].get('_suggestion_titles',[])),
                 actions=[{'type':'handoff','label':'以上都不是，转人工','message':'转人工客服'}])
             if state['reason'] in ('no_knowledge','insufficient_evidence','sensitive_topic'):values['answer']=NO_ANSWER
-        if values['suggestions'] and state['intent']!='sensitive' and not state['retrieval_failed']:
+        if values['suggestions'] and state['intent'] not in ('sensitive','out_of_scope') and not state['retrieval_failed']:
             from .conversation import suggestion_sources
             try:values['suggestion_sources']=suggestion_sources(s.knowledge,values['suggestions'])
             except Exception:pass
-        from .assistance import FLOWS,actions_for,chapter
+        from .assistance import FLOWS,actions_for
         plan=state.get('assistance',{})
         if state['success'] and plan.get('kind')=='clarify':
             values['actions']=[{'type':'clarify','label':q,'message':q} for q in plan['choices']]
         elif state['success'] and state.get('guidance'):
             values['actions']=actions_for(state['guidance'],list(s.knowledge.rows.values()))
-        elif state['success'] and plan.get('kind') in ('offer','choice') and plan.get('flow_id') and chapter(state['selected'],plan['flow_id']):
-            flow=FLOWS[plan['flow_id']]
-            values['actions']=[{'type':'guide','label':'带我一步步办理','message':'分步指导：'+flow['title']}]
+        elif state['success'] and state['intent']=='knowledge':
+            from .assistance import available
+            supported = available(state['selected'])
+            flow_id = plan.get('flow_id') or (next(iter(supported)) if len(supported)==1 else None)
+            if flow_id in supported:
+                values['actions']=[{'type':'guide','label':'带我一步步办理','message':'分步指导：'+FLOWS[flow_id]['title']}]
         if not state['success']:values['guidance']=None
         event('response_assembled',success=state['success'],reason=state['reason'],
               selected_count=len(values.get('selected',state['selected'])),image_count=len(values['images']),
@@ -400,8 +454,11 @@ class SupportWorkflow:
             with tracing_context(enabled=False):
                 previous=self.graph.get_state(config)
                 if previous.values:
-                    if previous.values.get('question')!=state['question']:raise WorkflowConflict('工作流请求编号冲突')
-                    if any(h.get('created_at',0)<self.service.cutoff() for h in previous.values.get('history',[])):
+                    if (previous.values.get('question')!=state['question']
+                            or previous.values.get('client_action')!=state.get('client_action')):
+                        raise WorkflowConflict('工作流请求编号冲突')
+                    stored_history=previous.values.get('history',[])+previous.values.get('interpretation',{}).get('older_messages',[])
+                    if any((h.get('created_at') or 0)<self.service.cutoff() for h in stored_history):
                         # A resumed request must never reintroduce expired conversation text.
                         self.saver.delete_thread(key)
                         previous=self.graph.get_state(config)

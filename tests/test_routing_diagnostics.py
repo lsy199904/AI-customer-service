@@ -22,14 +22,14 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertNotIn('sk-abcdef123456',output.getvalue())
         self.assertEqual(rows[1],{'total':1,'failed':1})
 
-    def test_followup_validation_failure_is_not_hidden(self):
+    def test_malformed_response_after_history_lookup_is_reported(self):
         model=SimpleNamespace(config=SimpleNamespace(model_key=''),complete=Mock(side_effect=[
-            json.dumps(dict(intent='knowledge',kind='followup',clarification='')), 'bad json']))
+            json.dumps(dict(intent='knowledge',kind='lookup',history_query='提前开票')), 'bad json']))
         trace=TracedModel(model);diagnostics=[]
-        result=interpret(trace,'是否能多次申请',[{'role':'user','content':'提前开票最高多少'}],diagnostics)
-        self.assertEqual(result['kind'],'clarify')
-        self.assertEqual(diagnostics[0]['stage'],'followup_resolution')
-        self.assertEqual(diagnostics[0]['reason'],'invalid_json')
+        history=[{'role':'user','content':'提前开票最高多少'}]
+        with self.assertRaises(json.JSONDecodeError):
+            interpret(trace,'之前那个能多次申请吗',[],diagnostics,lookup=lambda query:history)
+        self.assertEqual(diagnostics,[{'stage':'history_lookup','messages':1}])
         self.assertEqual(trace.calls[1]['model_output'],'bad json')
 
     def test_unknown_provider_error_never_exposes_message(self):

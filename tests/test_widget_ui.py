@@ -105,7 +105,7 @@ def install_mock_routes(page):
     seen_requests = []
 
     def handle(route):
-        request = route.request()
+        request = route.request
         path = urlparse(request.url).path
         if path.startswith('/smart-bot/'):
             path = path[len('/smart-bot'):]
@@ -295,8 +295,11 @@ def test_handoff_copies_contacts_without_links(ui):
     page = ui.page
     page.evaluate("() => { window.copiedContacts = []; Object.defineProperty(navigator, 'clipboard', "
                   "{configurable: true, value: {writeText: async value => window.copiedContacts.push(value)}}); }")
-    ask(ui, '转人工客服')
+    page.get_by_role('button', name='打开智能客服').click()
+    page.get_by_text(BOOTSTRAP['welcome'], exact=True).wait_for()
+    page.get_by_role('button', name='联系人工', exact=True).click()
     page.get_by_role('button', name='复制电话', exact=True).click()
+    assert ui.requests[-1]['body']['client_action'] == 'handoff'
     page.get_by_role('button', name='复制邮箱', exact=True).click()
     assert page.evaluate('() => window.copiedContacts') == ['4008841883', 'help@china-entercom.net']
     assert page.locator('.contact a').count() == 0

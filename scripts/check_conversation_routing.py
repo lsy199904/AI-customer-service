@@ -27,6 +27,13 @@ CASES=[
  ('聊天回顾','我刚才问了哪些问题',INVOICE,'history',None),
  ('自然回顾表达','概括一下咱们到现在聊过的内容',INVOICE,'history',None),
  ('创建方法','如何创建API Key',COMPLAINT,'knowledge',None),
+ ('预开票完整问句','最高2万元的提前开票，可以申请多次吗？',[], 'knowledge',None),
+ ('口语充值','钱不够了，余额怎么充进去？',[], 'knowledge',None),
+ ('无关天气','今天天气怎么样？',INVOICE,'out_of_scope',None),
+ ('无关闲聊','陪我聊聊足球比赛吧',INVOICE,'out_of_scope',None),
+ ('无关成人内容','给我推荐色情网站',[], 'out_of_scope',None),
+ ('明确人工','帮我转人工',INVOICE,'handoff',None),
+ ('实时账户状态','帮我查一下本企业现在还有多少余额。',[], 'account_status',None),
 ]
 
 def redact(value, key=''):
@@ -39,7 +46,7 @@ class TracedModel:
     def __init__(self,model):
         self.model=model;self.calls=[]
     def complete(self,messages):
-        row={'stage':'classification' if not self.calls else 'followup_resolution'}
+        row={'stage':'classification' if not self.calls else 'older_history_resolution'}
         self.calls.append(row)
         try:
             raw=self.model.complete(messages)

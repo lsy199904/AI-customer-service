@@ -530,11 +530,47 @@ class Service:
                 (sid,self.cutoff(),2*self.config.context_rounds)).fetchall()
         items=[{'role':r['role'],'content':r['content'],'created_at':r['created'],
                 'response':json.loads(r['payload']) if r['role']=='assistant' else None} for r in reversed(rows)]
-        # An idle gap starts a new context segment, even on the second post-idle turn.
-        start=0
-        for i in range(1,len(items)):
-            if items[i]['created_at']-items[i-1]['created_at']>self.config.idle_seconds:start=i
-        return items[start:]
+        return items
+
+    def lookup_context_history(self, actor, sid, search):
+        """Look up visible turns by topic or date, then return at most two complete exchanges."""
+        from datetime import time as day_time, timedelta
+
+        now = datetime.now(ZoneInfo('Asia/Shanghai'))
+        days = {'昨天': now.date() - timedelta(days=1), '前天': now.date() - timedelta(days=2),
+                '今天': now.date()}
+        target_day = days.get(search)
+        if target_day is None:
+            try:
+                target_day = datetime.strptime(search, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+        with self.lock:
+            self.owned(actor, sid)
+            if target_day is None:
+                words = list(dict.fromkeys(re.findall(r'[\w-]{2,}', search.lower())))[:5]
+                if not words:
+                    return []
+                predicates = ' OR '.join("lower(content) LIKE ?" for _ in words)
+                matches = self.db.execute(
+                    f'SELECT request_id,content FROM messages WHERE session=? AND created>=? AND ({predicates}) ORDER BY rowid DESC LIMIT 24',
+                    (sid, self.cutoff(), *(f'%{word}%' for word in words))).fetchall()
+                matches = sorted(matches, key=lambda row: sum(word in row['content'].lower() for word in words),
+                                 reverse=True)
+            else:
+                start = datetime.combine(target_day, day_time.min, now.tzinfo)
+                end = datetime.combine(target_day + timedelta(days=1), day_time.min, now.tzinfo)
+                matches = self.db.execute(
+                    "SELECT request_id FROM messages WHERE session=? AND role='user' AND created>=? AND created<? ORDER BY rowid DESC LIMIT 2",
+                    (sid, max(self.cutoff(), start.timestamp()), end.timestamp())).fetchall()
+            ids = list(dict.fromkeys(row['request_id'] for row in matches))[:2]
+            if not ids:
+                return []
+            slots = ','.join('?' for _ in ids)
+            rows = self.db.execute(
+                f'SELECT role,content,created FROM messages WHERE session=? AND created>=? AND request_id IN ({slots}) ORDER BY rowid',
+                (sid, self.cutoff(), *ids)).fetchall()
+        return [{'role': row['role'], 'content': row['content'], 'created_at': row['created']} for row in rows]
 
     def prune_sessions(self,batch_size=200,days=None):
         from contextlib import nullcontext
@@ -623,12 +659,15 @@ class Service:
 
     def _chat(self, actor, sid, body, observer=None, cancelled=None):
         from .observability import event,error_fields
-        if set(body)-{'message','request_id','faq_id'}:
-            raise APIError(400,'invalid_fields','仅接受 message/request_id/faq_id')
+        if set(body)-{'message','request_id','faq_id','client_action'}:
+            raise APIError(400,'invalid_fields','仅接受 message/request_id/faq_id/client_action')
         faq_id=body.get('faq_id')
         faq=self.faq.rows.get(faq_id) if isinstance(faq_id,str) else None
         if faq_id is not None and faq is None:raise APIError(404,'faq_not_found','该常见问题已更新，请换一批后重试')
         question=body.get('message'); rid=body.get('request_id')
+        client_action=body.get('client_action')
+        if client_action is not None and (client_action!='handoff' or question!='转人工客服' or faq is not None):
+            raise APIError(400,'invalid_fields','人工客服操作无效')
         if faq is not None and question!=faq['question']:raise APIError(400,'invalid_faq','常见问题与编号不一致，请刷新后重试')
         if not isinstance(question,str) or not question.strip() or len(question)>2000:
             raise APIError(400,'invalid_message','问题须为1至2000字的文本')
@@ -639,8 +678,9 @@ class Service:
             cached=self.db.execute("SELECT payload,created FROM messages WHERE session=? AND request_id=? AND role='assistant'",(sid,rid)).fetchone()
             if cached:
                 if cached['created']<self.cutoff():raise APIError(409,'request_expired','该请求已过期，请使用新的request_id重试')
-                prev=self.db.execute("SELECT content FROM messages WHERE session=? AND request_id=? AND role='user'",(sid,rid)).fetchone()
-                if prev['content']!=question.strip() or json.loads(cached['payload']).get('faq_id')!=faq_id:
+                prev=self.db.execute("SELECT content,payload FROM messages WHERE session=? AND request_id=? AND role='user'",(sid,rid)).fetchone()
+                if (prev['content']!=question.strip() or json.loads(cached['payload']).get('faq_id')!=faq_id
+                        or json.loads(prev['payload']).get('client_action')!=client_action):
                     raise APIError(409,'request_id_conflict','相同request_id不能用于不同问题')
                 from .observability import event
                 event('chat_cache_hit')
@@ -660,16 +700,12 @@ class Service:
                 self.rate(actor)
                 history=self.context_history(actor,sid)
                 question=question.strip()
-                # Resolve short follow-ups with previous user question; idle sessions resume without old context.
-                idle=time.time()-session['updated']>self.config.idle_seconds
-                if idle:
-                    history=[]
                 from .workflow import SupportWorkflow
                 with self.lock:
                     if self._workflow is None:self._workflow=SupportWorkflow(self)
                 state,key=self._workflow.invoke({'question':question,'history':history,
                     'page_context':json.loads(session['context']),'actor':{'tenant_id':actor['tenant_id'],'sub':actor['sub']},
-                    'session_id':sid,'request_id':rid},observer,cancelled)
+                    'session_id':sid,'request_id':rid,'client_action':client_action},observer,cancelled)
             if cancelled is not None and cancelled.is_set():
                 from .workflow import RequestCancelled
                 raise RequestCancelled()
@@ -687,7 +723,8 @@ class Service:
             try:
                 with self.lock, self.db:
                     self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
-                        (str(uuid.uuid4()),sid,rid,'user',question,'{}',result['created_at']))
+                        (str(uuid.uuid4()),sid,rid,'user',question,
+                         json.dumps({'client_action':client_action}) if client_action else '{}',result['created_at']))
                     self.db.execute('INSERT INTO messages(id,session,request_id,role,content,payload,created) VALUES(?,?,?,?,?,?,?)',
                         (result['message_id'],sid,rid,'assistant',answer,json.dumps(result,ensure_ascii=False),result['created_at']))
                     self.db.execute('UPDATE sessions SET updated=? WHERE id=?',(result['created_at'],sid))

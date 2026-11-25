@@ -32,24 +32,24 @@ class ContextTimeoutTests(unittest.TestCase):
                 service.config.mode='llm';service.model=Mock(complete=Mock(side_effect=TimeoutError()))
                 with patch.object(service,'reserve_rag_quota',side_effect=AssertionError('must not retrieve')):
                     result=service.chat(actor,sid,{'message':'那这个额度可以多次申请吗？','request_id':'timeout-subjectless-second'})
-                self.assertEqual(result['reason'],'clarification')
+                self.assertEqual(result['reason'],'context_unavailable')
                 self.assertIn('请稍后重试',result['answer'])
                 self.assertNotIn('无法回答',result['answer'])
                 self.assertEqual(result['citations'],[])
                 self.assertEqual(len(service.context_history(actor,sid)),4)
             finally:service.close()
 
-    def test_failed_followup_completion_also_skips_retrieval(self):
+    def test_failed_older_lookup_completion_also_skips_retrieval(self):
         with tempfile.TemporaryDirectory() as directory:
             service=Service(Settings(secret='x'*40,db=str(Path(directory)/'chat.db'),retrieval_backend='lexical'))
             try:
                 actor={'tenant_id':'test','sub':'visitor'};sid=service.create(actor,{})['session_id']
                 service.chat(actor,sid,{'message':'提前开票最高多少？','request_id':'resolution-history-first'})
                 service.config.mode='llm';service.model=Mock(complete=Mock(side_effect=[
-                    json.dumps(dict(intent='knowledge',kind='followup',clarification='')),TimeoutError()]))
+                    json.dumps(dict(intent='knowledge',kind='lookup',history_query='提前开票')),TimeoutError()]))
                 with patch.object(service,'reserve_rag_quota',side_effect=AssertionError('must not retrieve')):
                     result=service.chat(actor,sid,{'message':'那这个额度可以多次申请吗？','request_id':'resolution-subjectless-second'})
-                self.assertEqual(result['reason'],'clarification')
+                self.assertEqual(result['reason'],'context_unavailable')
                 self.assertEqual(result['citations'],[])
             finally:service.close()
 
