@@ -82,7 +82,8 @@ def main():
     export.add_argument('--output-dir',required=True)
     prune=sub.add_parser('prune-checkpoints',help='清理过期工作流检查点，保留聊天消息')
     prune.add_argument('--days',type=int,default=30)
-    sub.add_parser('prune-sessions',help='按会话保留期限清理在线历史及检查点')
+    prune_sessions=sub.add_parser('prune-sessions',help='手动清理超过指定天数的历史及检查点')
+    prune_sessions.add_argument('--days',type=int,required=True,help='删除早于此天数的历史，须不小于历史可见天数')
     sub.add_parser('retrieval-config',help='仅输出运行环境、.env及代码默认的检索阈值，不修改配置、不输出密钥')
     sub.add_parser('check',help='校验配置和知识,不发送外网请求')
     backup=sub.add_parser('backup',help='一致性备份SQLite,默认写入backups目录')
@@ -171,7 +172,7 @@ def main():
             try:
                 totals={'deleted_sessions':0,'deleted_messages':0,'deleted_checkpoints':0,'skipped_busy':0}
                 while True:
-                    result=service.prune_sessions()
+                    result=service.prune_sessions(days=args.days)
                     for key in totals:totals[key]+=result[key]
                     if not result['batch_full'] or result['skipped_busy']:break
                 print(json.dumps(totals,ensure_ascii=False,indent=2))
