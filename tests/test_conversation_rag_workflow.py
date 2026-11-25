@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from app.business_flows import GUIDED_FLOWS
 from app.core import APIError, Service, Settings
 from app.ingestion import parse_document
 from app.image_policy import ImagePolicy
@@ -175,6 +176,28 @@ def test_ambiguous_payment_has_real_options_and_selection_is_independent(service
     result = chat(service, sid, '账单支付流程', 'chosen-payment')
     assert any('账单支付流程' in item['title'] for item in result['citations'])
     assert result['retrieval']['method']=='registered_flow'
+    service.model.complete.assert_called_once()
+
+
+@pytest.mark.parametrize('flow_id', tuple(GUIDED_FLOWS))
+def test_every_registered_choice_skips_reclassification(service, flow_id):
+    title = GUIDED_FLOWS[flow_id]['title']
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.side_effect = [
+        plan('knowledge', 'clarify', clarification='您想了解哪项办理流程？', choices=[flow_id]),
+        AssertionError('The selected flow was sent to the classifier again'),
+    ]
+    service.model.answer.side_effect = evidence_answer
+
+    clarification = chat(service, sid, '接下来要怎么办理？', 'registered-flow-clarify')
+    assert clarification['actions'] == [{'type': 'clarify', 'label': title, 'message': title}]
+
+    with patch('app.chains.retrieve', side_effect=AssertionError('The selected flow was searched again')):
+        result = chat(service, sid, clarification['actions'][0]['message'], 'registered-flow-choice')
+
+    assert result['status'] == 'answered'
+    assert result['retrieval']['method'] == 'registered_flow'
+    assert [citation['section_title'] for citation in result['citations']] == [title]
     service.model.complete.assert_called_once()
 
 
