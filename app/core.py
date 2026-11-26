@@ -44,6 +44,10 @@ class Settings:
     model_url: str = field(default_factory=lambda: os.getenv('MODEL_BASE_URL', 'https://api.smarttitu.cn/v1'))
     model_key: str = field(default_factory=lambda: os.getenv('MODEL_API_KEY', ''))
     model: str = field(default_factory=lambda: os.getenv('MODEL_NAME', ''))
+    query_context_model: str = field(default_factory=lambda: os.getenv('QUERY_CONTEXT_MODEL_NAME', '').strip())
+    query_context_url: str = field(default_factory=lambda: os.getenv('QUERY_CONTEXT_BASE_URL', '').strip())
+    query_context_key: str = field(default_factory=lambda: os.getenv('QUERY_CONTEXT_API_KEY', ''))
+    query_context_thinking: str = field(default_factory=lambda: os.getenv('QUERY_CONTEXT_THINKING_FORMAT', '').strip())
     origins: tuple = field(default_factory=lambda: tuple(x.strip() for x in os.getenv('CORS_ORIGINS', '').split(',') if x.strip()))
     frame_origins: tuple = field(default_factory=lambda: tuple(x.strip() for x in os.getenv('FRAME_ORIGINS', '').split(',') if x.strip()))
     qr_url: str = field(default_factory=lambda: os.getenv('SUPPORT_QR_URL', ''))
@@ -69,6 +73,10 @@ class Settings:
         evidence_timeout()
         import re
         if os.getenv('MODEL_THINKING_FORMAT','vllm') not in ('vllm','enable_thinking','none'):raise ValueError('MODEL_THINKING_FORMAT仅支持vllm/enable_thinking/none')
+        if self.query_context_thinking not in ('','vllm','enable_thinking','deepseek','none'):
+            raise ValueError('QUERY_CONTEXT_THINKING_FORMAT仅支持vllm/enable_thinking/deepseek/none')
+        if self.query_context_url and not self.query_context_key:
+            raise ValueError('设置QUERY_CONTEXT_BASE_URL时必须设置QUERY_CONTEXT_API_KEY')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}',self.anonymous_cookie_name):raise ValueError('ANONYMOUS_COOKIE_NAME格式无效')
         if not 1<=self.retention_days<=365 or not 1<=self.context_rounds<=1000:raise ValueError('会话保留天数须为1至365，上下文轮数须为1至1000')
         if self.purge_days<0 or (self.purge_days and self.purge_days<self.retention_days):raise ValueError('数据库清理天数须为0（不自动清理）或不小于历史可见天数')
@@ -86,18 +94,23 @@ class Settings:
         if self.mode == 'llm' and (not self.model_key or not self.model):
             raise ValueError('llm 模式必须设置 MODEL_API_KEY 和 MODEL_NAME')
         if self.mode == 'llm':
-            parsed=urllib.parse.urlsplit(self.model_url)
-            if not parsed.hostname or parsed.username or parsed.password:
-                raise ValueError('模型地址无效')
-            if parsed.scheme!='https':
-                origin=parsed.scheme+'://'+parsed.netloc
-                try: private=ipaddress.ip_address(parsed.hostname).is_private
-                except ValueError: private=parsed.hostname=='localhost'
-                if parsed.scheme!='http' or not private or origin not in self.http_origins:
-                    raise ValueError('内网HTTP模型需将准确来源(协议/IP/端口)加入MODEL_HTTP_ORIGINS;其他模型必须使用HTTPS')
+            self.validate_model_url(self.model_url)
+            if self.query_context_url:
+                self.validate_model_url(self.query_context_url)
         if not 0 <= self.min_similarity <= 1:
             raise ValueError('RETRIEVAL_MIN_SIMILARITY必须在0至1之间')
         PublicLinks()
+
+    def validate_model_url(self, url):
+        parsed=urllib.parse.urlsplit(url)
+        if not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError('模型地址无效')
+        if parsed.scheme!='https':
+            origin=parsed.scheme+'://'+parsed.netloc
+            try: private=ipaddress.ip_address(parsed.hostname).is_private
+            except ValueError: private=parsed.hostname=='localhost'
+            if parsed.scheme!='http' or not private or origin not in self.http_origins:
+                raise ValueError('内网HTTP模型需将准确来源(协议/IP/端口)加入MODEL_HTTP_ORIGINS;其他模型必须使用HTTPS')
         for url in (self.qr_url, self.source_url):
             if url==self.qr_url and url.startswith('/media/'):
                 continue
@@ -258,13 +271,18 @@ def customer_answer(text):
     text=re.sub(r'\b(?:KB|DOC)-[a-f0-9]{3,64}\b','',text,flags=re.I)
     return re.sub(r'[ \t]+([，。；：,.!?])',r'\1',text).strip()
 
-def thinking_options(model):
+def thinking_options(model, format_name=None):
     """Explicit provider wire format; preserve legacy Qwen3/vLLM behavior by default."""
-    format_name=os.getenv('MODEL_THINKING_FORMAT','vllm')
-    if format_name not in ('vllm','enable_thinking','none'):
-        raise ValueError('MODEL_THINKING_FORMAT仅支持vllm/enable_thinking/none')
-    if os.getenv('MODEL_DISABLE_THINKING','true').lower()!='true' or format_name=='none':return {}
+    inherited_format = format_name is None
+    if inherited_format:
+        format_name=os.getenv('MODEL_THINKING_FORMAT','vllm')
+    if format_name not in ('vllm','enable_thinking','deepseek','none') or (inherited_format and format_name=='deepseek'):
+        raise ValueError('无效的模型思考参数格式')
+    if inherited_format and os.getenv('MODEL_DISABLE_THINKING','true').lower()!='true':
+        return {}
+    if format_name=='none':return {}
     if format_name=='enable_thinking':return {'extra_body':{'enable_thinking':False}}
+    if format_name=='deepseek':return {'extra_body':{'thinking':{'type':'disabled'}}}
     if 'qwen3' in model.lower():return {'extra_body':{'chat_template_kwargs':{'enable_thinking':False}}}
     return {}
 
@@ -343,19 +361,27 @@ class Model:
         from .observability import event
         response=None; status='failed'; accounting_started=time.monotonic()
         purpose_name=model_purpose(on_delta is not None)
+        model_name, model_url, model_key = self.config.model, self.config.model_url, self.config.model_key
+        thinking_format = None
+        if purpose_name == 'query_context':
+            context_model = getattr(self.config, 'query_context_model', '')
+            model_name = context_model or model_name
+            model_url = getattr(self.config, 'query_context_url', '') or model_url
+            model_key = getattr(self.config, 'query_context_key', '') or model_key
+            thinking_format = getattr(self.config, 'query_context_thinking', '') or ('none' if context_model else None)
         from uuid import uuid4
         cost_call_id=uuid4().hex
-        event('inference_cost_started',call_id=cost_call_id,stage='llm',model=self.config.model,purpose=purpose_name,status='running',elapsed_ms=0,usage=None)
+        event('inference_cost_started',call_id=cost_call_id,stage='llm',model=model_name,purpose=purpose_name,status='running',elapsed_ms=0,usage=None)
         try:
             from langchain.chat_models import init_chat_model
             from .transport import client,async_client
             from .observability import event
-            options=thinking_options(self.config.model)
+            options=thinking_options(model_name, thinking_format)
             from .deadlines import remaining
             from .evidence_selection import model_options
             call_options=model_options() or {}
-            model=init_chat_model(self.config.model,model_provider='openai',base_url=self.config.model_url,
-                api_key=self.config.model_key,http_client=client(),http_async_client=async_client(),timeout=remaining(call_options.get('timeout',45)),max_retries=0,
+            model=init_chat_model(model_name,model_provider='openai',base_url=model_url,
+                api_key=model_key,http_client=client(),http_async_client=async_client(),timeout=remaining(call_options.get('timeout',45)),max_retries=0,
                 max_tokens=call_options.get('max_tokens',int(os.getenv('MODEL_MAX_TOKENS','2048'))),temperature=0.1,stream_usage=True,http_socket_options=(),**options)
             from langsmith import tracing_context
             started=time.monotonic();size=0;chunks=[]
@@ -386,7 +412,7 @@ class Model:
             status='completed'
             return text
         finally:
-            event('inference_cost',call_id=cost_call_id,stage='llm',model=self.config.model,
+            event('inference_cost',call_id=cost_call_id,stage='llm',model=model_name,
                   purpose=purpose_name,status=status,
                   elapsed_ms=round((time.monotonic()-accounting_started)*1000,2),
                   usage=usage_counts(response))
