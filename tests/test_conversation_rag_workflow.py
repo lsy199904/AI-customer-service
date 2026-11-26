@@ -715,6 +715,22 @@ def test_independent_rewrite_does_not_change_error_code():
     assert 'normalized_query' not in result
 
 
+@pytest.mark.parametrize('question,offers_guide', [
+    ('最高2万元的提前开票，可以申请多次吗？', False),
+    ('发票多久能开出来？', False),
+    ('怎样申请提前开票？', True),
+])
+def test_invoice_guidance_offer_depends_on_current_question(service, question, offers_guide):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge', flow_id='invoice')
+    service.model.answer.side_effect = evidence_answer
+    row = next(row for row in service.knowledge.rows.values() if '在线开票流程' in row['title'])
+    with patch('app.chains.retrieve', return_value={'evidence': [row], 'retrieval': {'matched': True, 'hits': []}}):
+        response = chat(service, sid, question, 'invoice-guidance-offer')
+    assert response['status'] == 'answered'
+    assert any(action['type'] == 'guide' for action in response['actions']) is offers_guide
+
+
 def test_guided_progress_uses_registered_stage_even_after_unrelated_history(service):
     sid=service.create(ACTOR,{})['session_id']
     service.model.complete.return_value=plan('guide')

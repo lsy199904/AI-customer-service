@@ -566,10 +566,10 @@ class SupportWorkflow:
         elif state['success'] and state.get('guidance'):
             values['actions']=actions_for(state['guidance'],list(s.knowledge.rows.values()))
         elif state['success'] and state['intent']=='knowledge':
-            from .assistance import available
+            from .assistance import available,wants_process_guidance
             supported = available(state['selected'])
             flow_id = plan.get('flow_id') or (next(iter(supported)) if len(supported)==1 else None)
-            if flow_id in supported:
+            if flow_id in supported and wants_process_guidance(state['question'],flow_id):
                 values['actions']=[{'type':'guide','label':'带我一步步办理','message':'分步指导：'+FLOWS[flow_id]['title']}]
         if not state['success']:values['guidance']=None
         event('response_assembled',success=state['success'],reason=state['reason'],

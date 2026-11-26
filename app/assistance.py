@@ -34,6 +34,20 @@ def flow_match(question,keys):
     return max(matches,default=(0,None))[1]
 
 
+def wants_process_guidance(question, flow_id):
+    """An offer to start guidance requires a procedural request in the current turn."""
+    text = question.strip().rstrip('？?。！!').strip()
+    if text == FLOWS[flow_id]['title']:
+        return True
+    return bool(re.search(
+        r'(?:怎么|怎样|如何|咋)(?:操作|办理|申请|开票|开发票|充值|支付|付款|注册|认证|订购|提交)'
+        r'|(?:办理|操作|申请|支付|充值|开票|注册|认证|订购)(?:的)?(?:流程|步骤)(?:是什么|有哪些|怎么走)?$'
+        r'|(?:下一步|这一步|接下来)(?:该|要)?(?:怎么|怎样|如何)(?:做|办|操作|点)'
+        r'|(?:带我|教我|指导我).{0,12}(?:办理|操作|申请|充值|支付|开票|注册|认证|订购)',
+        text,
+    ))
+
+
 def last_response(history):
     for item in reversed(history):
         if item['role']=='assistant':
