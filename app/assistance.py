@@ -38,6 +38,48 @@ def last_response(history):
     return next((item.get('response') or {} for item in reversed(history) if item['role']=='assistant'),{})
 
 
+# These are the widget's explicit controls, shared by all guided flows.
+GUIDE_CONTROLS = {
+    '这一步已完成': 1,
+    '这一步怎么做': 0,
+    '返回上一步': -1,
+    '结束指导': None,
+}
+
+
+def is_active_guide_control(question, history):
+    if question not in GUIDE_CONTROLS:
+        return False
+    guide = last_response(history).get('guidance') or {}
+    flow = FLOWS.get(guide.get('flow_id'))
+    step = guide.get('step')
+    return bool(flow and guide.get('status')=='active'
+                and type(step) is int and 0<=step<len(flow['stages'])
+                and (GUIDE_CONTROLS[question]!=-1 or step>0))
+
+
+def supported_flow_choices(question, rows):
+    """Offer relevant active chapters when intent classification is unavailable."""
+    query = set(terms(question))
+    options = available(rows)
+    matched = {
+        word for key in options
+        for word in terms(FLOWS[key]['title'])
+        if word in query
+    }
+    if not matched:
+        return []
+    scored = []
+    for key, row in options.items():
+        vocabulary = terms(row['content'])
+        title_words = set(terms(FLOWS[key]['title']))
+        strength = sum(vocabulary.count(word) for word in matched)
+        if strength >= 2 or title_words & matched:
+            scored.append((strength, len(title_words & matched), key))
+    scored.sort(reverse=True)
+    return [FLOWS[key]['title'] for _,_,key in scored[:2]]
+
+
 def guide_state(key,index,row,status='active',notice=None):
     flow=FLOWS[key]
     return {'flow_id':key,'title':flow['title'],'step':index,'total':len(flow['stages']),
@@ -77,7 +119,7 @@ def plan(question,history,rows):
         if not choice and len(partial)==1:choice=partial[0]
         if choice:return {'kind':'choice','query':choice,'resolved_question':choice,'flow_id':flow_match(choice,options)}
     compact=re.sub(r'\s+','',question)
-    if key and text in {'结束指导','结束陪办','退出指导','取消指导','先不办了','不办了'}:
+    if key and (text in GUIDE_CONTROLS and GUIDE_CONTROLS[text] is None or text in {'结束陪办','退出指导','取消指导','先不办了','不办了'}):
         return {'kind':'end','guidance':guide_state(key,active['step'],options[key],status='ended')}
     # A normal named chapter remains a normal question; guidance is opt-in.
     start=bool(re.search(r'带我|一步步|分步指导|陪我|我要办理|我想办理|开始办理|开始指导',compact))
@@ -89,7 +131,7 @@ def plan(question,history,rows):
         current=guide_state(key,0 if changed else active['step'],options[key],notice='知识内容已更新，已回到第一步。' if changed else None)
         return {'kind':'ack','guidance':current}
     if key and (matched is None or matched==key):
-        moves={'这一步已完成':1,'完成了':1,'已完成':1,'下一步':1,'继续下一步':1,'返回上一步':-1,'上一步':-1,'重新开始':0,'这一步怎么做':0,'没完成':0,'还是不行':0,'失败了':0,'看不懂':0}
+        moves={**GUIDE_CONTROLS,'完成了':1,'已完成':1,'下一步':1,'继续下一步':1,'上一步':-1,'重新开始':0,'没完成':0,'还是不行':0,'失败了':0,'看不懂':0}
         related=bool(set(terms(question)) & set(terms(FLOWS[key]['title']+' '+active['stages'][active['step']])))
         if text in moves or (matched==key and text!=FLOWS[key]['title'] and not re.search(r'完整流程|全部步骤|总体|概况',text)) or (related and len(text)<100):
             changed=active.get('source_revision')!=revision(options[key])
@@ -122,13 +164,10 @@ def stage_context(guidance,evidence):
 
 
 def actions_for(guidance,rows):
-    key=guidance['flow_id'];options=available(rows)
+    key=guidance['flow_id']
     if guidance['status']=='active':
-        actions=[{'type':'guide','label':'这一步已完成','message':'这一步已完成'},
-                 {'type':'guide','label':'这一步怎么做','message':'这一步怎么做'}]
-        if guidance['step']>0:actions.append({'type':'guide','label':'返回上一步','message':'返回上一步'})
-        actions.append({'type':'guide','label':'结束指导','message':'结束指导'})
-        return actions
+        return [{'type':'guide','label':label,'message':label} for label, delta in GUIDE_CONTROLS.items()
+                if delta!=-1 or guidance['step']>0]
     from .business_flows import FLOW_TITLES
     # A required next chapter may be an overview without a guided stage machine.
     titles={title_text(row.get('title','')) for row in rows}

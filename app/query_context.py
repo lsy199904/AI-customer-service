@@ -206,6 +206,15 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
                     if diagnostics is not None:
                         diagnostics.append({'stage':'classification','normalization':'clarify_intent_to_resolution'})
                     continue
+                if data.get('intent') in {'action','account_status'} and not attempt:
+                    payload['routing_feedback'] = (
+                        '复核用户是否明确委托客服执行某个具体操作或请求查询自己的实时数据。'
+                        '询问入口、方法、失败原因，以及陈述困难，选择 knowledge。'
+                        '明确委托执行或查询时，摘录足以独立表达请求的完整原话。'
+                    )
+                    if diagnostics is not None:
+                        diagnostics.append({'stage':'confirm_execution_intent'})
+                    continue
                 if data.get('kind') != 'lookup':
                     return _validate_interpretation(data, question, history, payload)
                 if attempt or lookup is None:

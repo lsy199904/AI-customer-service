@@ -305,3 +305,16 @@ def test_handoff_copies_contacts_without_links(ui):
     assert page.locator('.contact a').count() == 0
     assert page.get_by_role('button', name='复制电话', exact=True).inner_text() == '已复制'
     assert_no_page_errors(ui)
+
+@pytest.mark.ui
+def test_punctuation_only_never_sends_or_repeats_last_answer(ui):
+    page=ui.page
+    ask(ui,'操作审计')
+    initial_count=len(ui.requests)
+    user_messages=page.locator('.message.user').count()
+    page.get_by_role('textbox',name='客服问题').fill('，')
+    page.get_by_role('button',name='发送',exact=True).click()
+    expect(page.get_by_text('请输入要咨询的问题。',exact=True)).to_be_visible()
+    assert len(ui.requests)==initial_count
+    assert page.locator('.message.user').count()==user_messages
+    assert_no_page_errors(ui)

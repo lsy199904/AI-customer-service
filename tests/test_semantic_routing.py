@@ -12,7 +12,7 @@ class SemanticRoutingTests(unittest.TestCase):
         q='帮我创建一个API Key，并替我把账单付掉。'
         model=self.model('action')
         self.assertEqual(interpret(model,q,[{'role':'user','content':'提前开票最高多少'}])['question'],q)
-        model.complete.assert_called_once()
+        self.assertEqual(model.complete.call_count,2)
 
     def test_subjectless_followup_cannot_invent_context(self):
         result=interpret(self.model(kind='followup',question='提前开票能多次申请吗'),'是否能多次申请',[])
@@ -61,7 +61,7 @@ class SemanticRoutingTests(unittest.TestCase):
                 self.assertEqual(result['reason'],'action_unavailable')
                 self.assertEqual(result['citations'],[])
                 self.assertIn('不能直接',result['answer'])
-                service.model.complete.assert_called_once()
+                self.assertEqual(service.model.complete.call_count,2)
             finally:service.close()
 
     def test_retrieval_reuses_interpretation_without_second_model_parse(self):

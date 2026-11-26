@@ -94,6 +94,8 @@ def test_realtime_status_and_delegate_action_never_invoke_business_tools(service
     sid = service.create(ACTOR, {})['session_id']
     service.model.complete.side_effect = [
         plan('account_status', evidence='还有多少余额'),
+        plan('account_status', evidence='还有多少余额'),
+        plan('action', evidence='替我付掉这笔账单'),
         plan('action', evidence='替我付掉这笔账单'),
     ]
     with patch.object(service.tools, 'invoke', side_effect=AssertionError('business tool called')), \
@@ -239,4 +241,61 @@ def test_recover_model_output_then_ground_general_flow_if_search_misses(service,
     assert result['retrieval']['method']=='registered_flow'
     assert any(title in row['title'] for row in result['citations'])
     assert service.model.answer.call_args.args[0]==question
+    assert service.model.complete.call_count==2
+
+@pytest.mark.parametrize('value', ['，','?','！？','…','。  '])
+def test_punctuation_cannot_emit_or_inherit_chat_state(service,value):
+    sid=service.create(ACTOR,{})['session_id']
+    with pytest.raises(APIError) as error:
+        chat(service,sid,value,'punctuation-only')
+    assert error.value.code=='invalid_message'
+    assert service.history(ACTOR,sid)['items']==[]
+    service.model.complete.assert_not_called()
+
+
+def test_guided_progress_uses_registered_stage_even_after_unrelated_history(service):
+    sid=service.create(ACTOR,{})['session_id']
+    service.model.complete.return_value=plan('guide')
+    service.model.answer.side_effect=evidence_answer
+    chat(service,sid,'分步指导：注册流程','begin-registration')
+    calls=service.model.complete.call_count
+    service.model.complete.side_effect=AssertionError('guide action must skip intent')
+    service.model.answer.side_effect=AssertionError('guide action uses current stage evidence')
+    with patch('app.chains.retrieve', side_effect=AssertionError('guide action must keep original flow')):
+        second=chat(service,sid,'这一步已完成','register-submit')
+        assert second['guidance']['step']==1
+        assert second['answer'].startswith('第 2 步 · 提交与校验')
+        third=chat(service,sid,'这一步已完成','register-login')
+        assert third['guidance']['step']==2
+        assert third['answer'].startswith('第 3 步 · 登录与后续办理')
+        assert '注册流程' in third['citations'][0]['title'] and '重置密码' not in third['answer']
+        back=chat(service,sid,'返回上一步','register-back')
+        assert back['guidance']['step']==1
+        assert back['answer'].startswith('第 2 步 · 提交与校验')
+        assert any(action['message']=='这一步怎么做' for action in back['actions'])
+    assert service.model.complete.call_count==calls
+
+
+def test_classification_outage_offers_payment_choices_from_active_documents(service):
+    sid=service.create(ACTOR,{})['session_id']
+    service.model.complete.side_effect=TimeoutError
+    with patch.object(service,'reserve_rag_quota',side_effect=AssertionError('outage should not run RAG')):
+        first=chat(service,sid,'支付不了','payment-during-outage')
+    assert first['reason']=='clarification'
+    assert {item['message'] for item in first['actions']}=={'账单支付流程','客户充值流程'}
+    service.model.answer.side_effect=evidence_answer
+    second=chat(service,sid,'账单支付流程','payment-outage-choice')
+    assert second['citations'][0]['section_title']=='账单支付流程'
+
+
+def test_recheck_does_not_turn_recharge_instructions_into_delegation(service):
+    sid=service.create(ACTOR,{})['session_id']
+    service.model.complete.side_effect=[
+        plan('action',evidence='余额怎么充进去'),
+        plan('knowledge',flow_id='recharge',retry_query='客户充值流程'),
+    ]
+    service.model.answer.side_effect=evidence_answer
+    result=chat(service,sid,'钱不够了，余额怎么充进去？','confirm-not-delegation')
+    assert result['reason']=='knowledge'
+    assert result['citations'][0]['section_title']=='客户充值流程'
     assert service.model.complete.call_count==2

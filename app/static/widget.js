@@ -544,6 +544,7 @@
     if(retrying && retry)clientAction=retry.clientAction || null;
     const text=(value ?? input.value).trim();
     if (!text || busy) return;
+    if (!/[\p{L}\p{N}]/u.test(text)) {notice('请输入要咨询的问题。');return;}
     if (!initialized) { notice('请先完成客服连接。',()=>refresh());return; }
     if (text.length>2000) { notice('问题不能超过2000字');return; }
     const v=generation;setBusy(true);clearStatus();activity();

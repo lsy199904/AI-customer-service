@@ -53,6 +53,7 @@ class State(TypedDict,total=False):
     guidance:dict
     guide_context:dict
     interpretation:dict
+    explicit_guide_control:bool
     resolved_question:str
 
 @dataclass
@@ -116,10 +117,13 @@ class SupportWorkflow:
         semantic = self.service.config.mode == 'llm'
         interpretation = {}
         complaint = False
-        from .assistance import FLOWS
+        from .assistance import FLOWS,is_active_guide_control
+        explicit_guide_control=is_active_guide_control(question,history)
         named_flow = next((key for key, flow in FLOWS.items() if question.rstrip('？?。') == flow['title']), None)
         if state.get('client_action') == 'handoff':
             intent = 'handoff'
+        elif explicit_guide_control:
+            intent = 'guide'
         elif named_flow:
             intent = 'knowledge'
             interpretation = {'question':question,'kind':'independent','flow_id':named_flow}
@@ -165,7 +169,17 @@ class SupportWorkflow:
             values.update(answer='好的，您可以通过以下方式联系人工客服。',reason='requested_handoff')
         if complaint:
             values.update(answer='您可以通过下方人工渠道反馈，并说明遇到的问题和相关时间。当前我无法直接登记投诉或确认处理进度。',reason='complaint_handoff')
-        values.update(assistance={},guidance=None,guide_context=None)
+        values.update(assistance={},guidance=None,guide_context=None,explicit_guide_control=explicit_guide_control)
+        if intent == 'context_unavailable':
+            from .assistance import supported_flow_choices
+            try:
+                choices=supported_flow_choices(question,self.service.knowledge.rows.values())
+            except Exception as error:
+                event('assistance_unavailable',level='WARNING',**error_fields(error))
+                choices=[]
+            if choices:
+                values.update(intent='knowledge',retrieval_failed=False,
+                              assistance={'kind':'clarify','answer':'您想了解下面哪个业务流程？','choices':choices})
         if interpretation.get('kind') == 'clarify' and intent in ('knowledge','image','guide'):
             from .assistance import FLOWS,available
             flows = available(self.service.knowledge.rows.values()) if interpretation['choices'] else {}
@@ -175,9 +189,12 @@ class SupportWorkflow:
             from .assistance import plan
             from .query_context import guidance_history
             try:
-                values['assistance']=plan(question,guidance_history(question,history),list(self.service.knowledge.rows.values()))
+                guide_history=history if explicit_guide_control else guidance_history(question,history)
+                values['assistance']=plan(question,guide_history,list(self.service.knowledge.rows.values()))
             except Exception as error:
                 event('assistance_unavailable',level='WARNING',**error_fields(error))
+        if explicit_guide_control and not values['assistance']:
+            values['assistance']={'kind':'clarify','answer':'当前流程资料暂不可用，请稍后重试。','choices':[]}
         if intent == 'guide':
             values['intent'] = 'knowledge'
         if values['assistance']:
@@ -251,6 +268,10 @@ class SupportWorkflow:
                 if resolution['kind']=='clarify':return {'clarification':resolution['clarification']}
                 query=state.get('assistance',{}).get('query') or resolution['question']
                 if self.service.config.retrieval_backend!='semantic' and resolution['kind']=='independent':query=retrieval_query(query,[])
+                if state.get('explicit_guide_control') and assistance.get('kind')=='guide':
+                    direct=self._flow_evidence(assistance['guidance']['flow_id'],query)
+                    if direct:
+                        return direct
                 flow_id=resolution.get('flow_id')
                 if flow_id and state['question'].rstrip('？?。')==self._flow_title(flow_id):
                     direct=self._flow_evidence(flow_id,query)
@@ -342,6 +363,9 @@ class SupportWorkflow:
         from .pdf_media import reserved_qr,generation_evidence
         qr=reserved_qr(state.get('resolved_question') or state['question'],state['candidates'])
         self.start_visual(state)
+        if state.get('explicit_guide_control') and (stage:=state.get('guide_context')):
+            answer=f"第 {stage['step']} 步 · {stage['stage']}\n\n{stage['stage_evidence']}"
+            return {'answer':answer,'reason':'guidance','success':True,'selected':state['evidence']}
         # The product identity is owned by the service, independent of the model vendor.
         if intent=='history' and not state['history']:
             return {'answer':'当前可用的会话上下文里还没有之前的问答记录。您可以告诉我想回顾的话题。','reason':'history','success':True}
@@ -369,7 +393,7 @@ class SupportWorkflow:
                 '_runtime_tools':sorted(s.tools.tools),
                 '_on_delta':safe_delta if runtime.context.observer else None,
                 '_guidance':state.get('guide_context'),'_reserved_qr':bool(qr)}
-            history=state['history']
+            history=[] if state.get('guide_context') else state['history']
             interpretation=state.get('interpretation',{})
             if interpretation:
                 from .query_context import bounded_history
@@ -378,7 +402,7 @@ class SupportWorkflow:
                     if older:
                         observed={(item.get('created_at'),item['role']) for item in older}
                         history=older+[item for item in history[-6:] if (item.get('created_at'),item['role']) not in observed]
-                elif interpretation['kind']=='followup':
+                elif interpretation['kind']=='followup' and not state.get('guide_context'):
                     history=(older+bounded_history(history))[-8:]
                 else:
                     history=[]
