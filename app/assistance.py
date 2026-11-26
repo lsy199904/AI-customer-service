@@ -103,8 +103,32 @@ def ambiguous_payment(text):
     if any(word in text for word in invoice_words):return False
     # Remove billing-mode qualifiers before looking for an actual payment action.
     action=re.sub(r'(?:预|后)(?:付款|付费|支付)', '', text)
-    return bool(re.search(r'支付|付款',action) and
-                not re.search(r'账单|充值|接口|API|api|模型',text) and len(text)<36)
+    return bool(re.search(r'支付|付款|付不了',action) and
+                not re.search(r'账单|充值|接口|API|模型',text,re.I) and len(text)<36)
+
+
+def payment_subject(text):
+    subjects = set()
+    if '账单' in text or flow_match(text, ('payment',)):
+        subjects.add('payment')
+    if flow_match(text, ('recharge',)) or ('余额' in text and re.search(r'充|加|补', text)):
+        subjects.add('recharge')
+    return next(iter(subjects)) if len(subjects) == 1 else None
+
+
+def payment_needs_clarification(question, history, interpretation):
+    if not ambiguous_payment(question) or flow_match(question, FLOWS):
+        return False
+    # Only the user's recent subject can confirm the payment context. A retrieved
+    # chapter or the assistant's previous guess alone cannot resolve it.
+    previous = next((item['content'] for item in reversed(history) if item['role'] == 'user'), '')
+    subject = payment_subject(previous)
+    if not subject:
+        return True
+    if interpretation.get('kind') == 'clarify':
+        return False
+    resolved = interpretation.get('flow_id') or payment_subject(interpretation.get('question', ''))
+    return resolved != subject
 
 
 def plan(question,history,rows):

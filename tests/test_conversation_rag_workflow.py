@@ -8,7 +8,7 @@ import pytest
 
 from app.business_flows import GUIDED_FLOWS
 from app.chains import retrieve
-from app.core import APIError, Service, Settings
+from app.core import APIError, Model, Service, Settings
 from app.ingestion import parse_document
 from app.image_policy import ImagePolicy
 from app.query_context import interpret
@@ -59,6 +59,10 @@ def evidence_answer(question, history, evidence, context):
                                      '推荐色情网站', '给我一个通用 Flask API 示例'])
 def test_out_of_scope_skips_retrieval_and_offers_product_questions(service, question):
     service.model.complete.return_value = plan('out_of_scope')
+    service.model.answer.return_value = {
+        'answerable': True, 'answer': '这类请求超出客服服务范围。您可以咨询 SmartTITU 的产品使用或计费。',
+        'citation_ids': [], 'image_ids': [],
+    }
     sid = service.create(ACTOR, {})['session_id']
     with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('scope bypass')):
         answer = chat(service, sid, question, 'scope-request')
@@ -66,7 +70,35 @@ def test_out_of_scope_skips_retrieval_and_offers_product_questions(service, ques
     assert answer['citations'] == []
     assert '企业认证流程' in answer['suggestions']
     assert any(action['type'] == 'handoff' for action in answer['actions'])
+    assert service.model.answer.call_args.args[:3] == (question, [], [])
     assert len(service.history(ACTOR, sid)['items']) == 2
+
+
+@pytest.mark.parametrize('question,topic', [('今天是多少号', '日期'), ('今天天气怎么样？', '天气')])
+def test_question_misclassified_as_greeting_gets_a_topic_specific_scope_reply(service, question, topic):
+    model = Model(service.config)
+    model.complete = Mock(side_effect=[
+        plan('greeting'), plan('out_of_scope'),
+        f'{topic}查询超出客服服务范围。您可以问我 SmartTITU 的产品使用或模型接入。',
+    ])
+    service.model = model
+    sid = service.create(ACTOR, {})['session_id']
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('outside scope must not retrieve')):
+        result = chat(service, sid, question, 'scope-instead-of-greeting')
+    assert result['reason'] == 'out_of_scope' and result['answer'].startswith(topic)
+    messages = model.complete.call_args.args[0]
+    assert len(messages) == 2
+    assert json.loads(messages[-1]['content']) == {'question': question}
+    assert '先用简短、中性的类别名称' in messages[0]['content']
+
+
+def test_scope_generation_failure_retains_safe_boundary(service):
+    service.model.complete.return_value = plan('out_of_scope')
+    service.model.answer.side_effect = TimeoutError
+    sid = service.create(ACTOR, {})['session_id']
+    result = chat(service, sid, '今天是多少号？', 'scope-model-timeout')
+    assert result['reason'] == 'out_of_scope'
+    assert '服务范围' in result['answer'] and result['suggestions']
 
 
 def test_handoff_buttons_work_with_classifier_unavailable(service):
@@ -206,6 +238,24 @@ def test_payment_failure_after_recharge_uses_recharge_context(service):
     assert result['citations'][0]['section_title'] == '客户充值流程'
     assert service.model.answer.call_args.args[3]['_resolved_question'] == '客户充值时支付失败怎么办？'
     assert result['suggestions'] == []
+
+
+@pytest.mark.parametrize('earlier_topic', [None, '在线开票流程'])
+@pytest.mark.parametrize('question', ['支付不了', '付款失败了'])
+def test_payment_guess_without_user_context_still_offers_both_buttons(service, earlier_topic, question):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.answer.side_effect = evidence_answer
+    if earlier_topic:
+        chat(service, sid, earlier_topic, 'unrelated-earlier-topic')
+    service.model.complete.return_value = plan('knowledge', flow_id='recharge', normalized_query='充值支付失败怎么办？')
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('clarify before retrieval')):
+        result = chat(service, sid, question, 'ambiguous-with-model-guess')
+    assert result['reason'] == 'clarification'
+    assert [action['message'] for action in result['actions']] == ['账单支付流程', '客户充值流程']
+    assert result['citations'] == []
+    selected = chat(service, sid, '账单支付流程', 'resolve-ambiguous-payment')
+    assert selected['citations'][0]['section_title'] == '账单支付流程'
+    service.model.complete.assert_called_once()
 
 
 @pytest.mark.parametrize('flow_id', tuple(GUIDED_FLOWS))

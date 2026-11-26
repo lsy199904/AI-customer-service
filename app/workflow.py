@@ -106,7 +106,7 @@ class SupportWorkflow:
         for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),('action',self.account_status),
                         ('generate',self.generate),('clarify',self.clarify),('guide_ack',self.guide_ack),('guide_end',self.guide_end),('validate',self.validate)]:graph.add_node(name,fn)
         graph.add_edge(START,'route')
-        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive','out_of_scope','context_unavailable') else 'action' if s['intent']=='account_status' else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
+        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive','context_unavailable') else 'action' if s['intent']=='account_status' else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history','out_of_scope') else 'retrieve')
         graph.add_conditional_edges('retrieve',lambda s:'generate' if s['evidence'] or s['candidates'] else 'validate')
         graph.add_edge('guide_ack','validate');graph.add_edge('clarify','validate');graph.add_edge('guide_end','validate')
         graph.add_edge('action','validate');graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
@@ -175,7 +175,19 @@ class SupportWorkflow:
         values.update(assistance={},guidance=None,guide_context=None,explicit_guide_control=explicit_guide_control)
         if intent == 'unclear_input':
             values['assistance']={'kind':'clarify','answer':UNCLEAR_INPUT,'choices':[],'reason':'unclear_input'}
-        if intent == 'context_unavailable':
+        from .assistance import payment_needs_clarification
+        if semantic and intent in ('knowledge','guide','context_unavailable') and payment_needs_clarification(question,history,interpretation):
+            from .assistance import FLOWS,available
+            try:
+                active = available(self.service.knowledge.rows.values())
+            except Exception as error:
+                event('assistance_unavailable',level='WARNING',**error_fields(error))
+                active = {}
+            choices = [FLOWS[key]['title'] for key in ('payment','recharge') if key in active]
+            if len(choices) == 2:
+                values.update(intent='knowledge',retrieval_failed=False,
+                              assistance={'kind':'clarify','answer':'您遇到的是账单支付，还是充值时支付不了？','choices':choices})
+        if intent == 'context_unavailable' and not values['assistance']:
             from .assistance import supported_flow_choices
             try:
                 choices=supported_flow_choices(question,self.service.knowledge.rows.values())
@@ -185,12 +197,12 @@ class SupportWorkflow:
             if choices:
                 values.update(intent='knowledge',retrieval_failed=False,
                               assistance={'kind':'clarify','answer':'您想了解下面哪个业务流程？','choices':choices})
-        if interpretation.get('kind') == 'clarify' and intent in ('knowledge','image','guide'):
+        if not values['assistance'] and interpretation.get('kind') == 'clarify' and intent in ('knowledge','image','guide'):
             from .assistance import FLOWS,available
             flows = available(self.service.knowledge.rows.values()) if interpretation['choices'] else {}
             choices = list(dict.fromkeys(FLOWS[key]['title'] for key in interpretation['choices'] if key in flows))
             values['assistance']={'kind':'clarify','answer':interpretation['clarification'],'choices':choices}
-        elif intent == 'guide' or (not semantic and intent in ('knowledge','thanks')):
+        elif not values['assistance'] and (intent == 'guide' or (not semantic and intent in ('knowledge','thanks'))):
             from .assistance import plan
             from .query_context import guidance_history
             try:
@@ -370,7 +382,7 @@ class SupportWorkflow:
             return {'answer':'业务查询暂时不可用，请稍后再试或联系人工客服。','reason':'business_tool_unavailable'}
 
     def generate(self,state:State,runtime:Runtime[Context]):
-        runtime.context.emit('generating');s=self.service;intent=state['intent'];conversation=intent in REPLIES or intent=='history'
+        runtime.context.emit('generating');s=self.service;intent=state['intent'];conversation=intent in REPLIES or intent in ('history','out_of_scope')
         from .pdf_media import reserved_qr,generation_evidence
         qr=reserved_qr(state.get('resolved_question') or state['question'],state['candidates'])
         self.start_visual(state)
@@ -382,6 +394,7 @@ class SupportWorkflow:
             return {'answer':'当前可用的会话上下文里还没有之前的问答记录。您可以告诉我想回顾的话题。','reason':'history','success':True}
         if intent in REPLIES:return {'answer':REPLIES[intent],'reason':intent,'success':True}
         if s.config.mode!='llm':
+            if intent=='out_of_scope':return {}
             if conversation:return {'answer':REPLIES.get(intent,'暂时无法整理聊天记录，请稍后重试。'),'reason':intent,'success':True}
             if state['candidates'] and intent=='image':return {'answer':'找到这些相关图片，您可以点击放大查看。还想了解哪一部分呢？','reason':'image','success':True,'selected':state['evidence']}
             if state['evidence']:
@@ -424,6 +437,8 @@ class SupportWorkflow:
             runtime.context.check()
             event('generation_completed',citations=len(result.get('citation_ids',[])),
                   history_messages=len(history),elapsed_ms=round((time.monotonic()-started)*1000,2))
+            if intent=='out_of_scope':
+                return {'answer':result['answer']} if result['answerable'] and result['answer'].strip() else {}
             if not result['answerable']:return {'reason':'insufficient_evidence'}
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
             if not conversation:
@@ -447,6 +462,7 @@ class SupportWorkflow:
             event('generation_failed',level='ERROR',evidence_count=len(state['evidence']),
                   history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2),**error_fields(error))
             s.observe('generation_failed',0)
+            if intent=='out_of_scope':return {}
             if conversation:return {'answer':REPLIES.get(intent,'暂时无法整理聊天记录，请稍后重试。'),'success':True,'reason':'conversation_fallback'}
             return {'reason':'model_unavailable','answer':'请稍后重试，您仍可查看常见问题或选择相关问题获取解答。如需进一步帮助，请联系人工客服：4008841883，help@china-entercom.net。'}
         finally:s.observe('generation',time.monotonic()-started)
