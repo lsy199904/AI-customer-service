@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from app.business_flows import GUIDED_FLOWS
+from app.chains import retrieve
 from app.core import APIError, Service, Settings
 from app.ingestion import parse_document
 from app.image_policy import ImagePolicy
@@ -356,6 +357,51 @@ def test_typo_question_still_uses_model_and_does_not_mix_previous_topic(service)
     assert len(payload['recent_messages'])==2 and '开票' in payload['recent_messages'][0]['content']
     assert service.model.answer.call_args.args[1]==[]
     assert any('客户充值流程' in item['title'] for item in response['citations'])
+
+
+def test_incomplete_product_name_gets_a_focused_question_before_search(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan(
+        'knowledge', 'clarify', clarification='您可能想问 SmartTITU。您想了解产品功能，还是账号注册？')
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('ambiguous input must not retrieve')):
+        result = chat(service, sid, 'samrtt', 'incomplete-product-name')
+    assert result['reason'] == 'clarification'
+    assert 'SmartTITU' in result['answer'] and result['suggestions'] == []
+    service.model.answer.assert_not_called()
+
+
+def test_clear_typo_is_corrected_before_search_and_original_remains_in_history(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge', normalized_query='Token 是什么？')
+    service.model.answer.side_effect = evidence_answer
+    with patch('app.chains.retrieve', wraps=retrieve) as search:
+        result = chat(service, sid, 'toen是什么', 'corrected-term-question')
+    assert search.call_args.args[1] == 'Token 是什么？' and search.call_count == 1
+    assert result['retrieval']['method'] == 'glossary_definition'
+    assert service.model.answer.call_args.args[0] == 'toen是什么'
+    assert service.history(ACTOR, sid)['items'][0]['content'] == 'toen是什么'
+
+
+def test_corrected_query_can_fall_back_to_original(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge', normalized_query='如何为账户余额充值？')
+    service.model.answer.side_effect = evidence_answer
+    row = next(row for row in service.knowledge.rows.values() if '客户充值流程' in row['title'])
+    with patch('app.chains.retrieve', side_effect=[
+        {'evidence': [], 'retrieval': {'matched': False, 'hits': []}},
+        {'evidence': [row], 'retrieval': {'matched': True, 'hits': []}},
+    ]) as search:
+        result = chat(service, sid, '我的余额咋往里加', 'search-original-fallback')
+    assert [call.args[1] for call in search.call_args_list] == ['如何为账户余额充值？', '我的余额咋往里加']
+    assert result['status'] == 'answered'
+
+
+def test_independent_rewrite_does_not_change_error_code():
+    model = Mock()
+    model.complete.return_value = plan('knowledge', normalized_query='API 调用报错 403 怎么办？')
+    result = interpret(model, 'API报401咋办', [])
+    assert result['question'] == 'API报401咋办'
+    assert 'normalized_query' not in result
 
 
 def test_guided_progress_uses_registered_stage_even_after_unrelated_history(service):

@@ -136,10 +136,11 @@ ROUTING_PROMPT = '''你是 SmartTITU 智能客服的问题分流器。用户输�
 - handoff：明确请求人工协助，或在推荐之后明确表示选项都不适用。complaint：本轮正在投诉或请求升级。咨询办理方法属于 knowledge。
 - guide：请求开始或继续分步指导。identity、capabilities、greeting、thanks、farewell 为客服互动。
 kind 选择 independent、followup、mixed、clarify 或 lookup。完整问题保留原话。追问根据最近相关消息补全所指，优先使用用户最新说明，保留已完成阶段、金额、时间、报错、主体和限制。前一轮的意图不会延续到明确的新主题。历史只帮助理解，历史助手答复中的业务结论与数值不作为事实。
+独立产品问题如有明显错拼、口语或缺省表达，且主体与需求足够明确，在 normalized_query 写一个适合优先检索的独立问句。只纠正有把握的产品名或术语、补出用户已表达的需求，保留原有的产品、功能、对象、否定、金额、时间和报错等条件。不要从旧话题补入本轮未表达的需求，也不要擅改像型号、版本或错误码的标识。原话已清楚时留空。疑似本平台产品名或术语但只有名称、还看不出想问什么时，选择 knowledge + clarify，说明可能的含义，再问一个具体问题。仅在毫无可辨含义时用 unclear_input。
 用户描述困难时，能从会话确定业务就给出对应检索问法。业务不明确且可能影响下一步时，只澄清一个关键点。能用通用流程回答时无需索要具体订单、账号或支付方式。choices 仅列可能解决本轮歧义的流程，最多三个。明确回指更早对话且近期信息不足时用 lookup，history_query 填简短主题词（词间使用空格）或日期。收到 older_messages 后给出最终判断。
 口语提问、办理下一步和故障排查可在 retry_query 提供一个自包含的等义检索问题，完整保留用户条件。仅在通用流程资料能帮助回答时填写 flow_id。具体政策、数值、报错细节或实时状态需要专门证据，不使用通用流程代替。flow_id 和 choices 仅可使用系统已登记的流程编号，未确定时保留空值。
 evidence 仅在 handoff、complaint、account_status 或 action 时填写，必须从本轮摘录能独立表明用户请求相应帮助的完整片段。澄清时用 clarification 填写用户可以直接回答的问题。只输出约定 JSON。
-{"intent":"knowledge","kind":"independent","question":"","retry_query":"","clarification":"","history_query":"","choices":[],"flow_id":"","evidence":""}
+{"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","clarification":"","history_query":"","choices":[],"flow_id":"","evidence":""}
 '''
 
 
@@ -276,6 +277,11 @@ def _validate_interpretation(data, question, history, payload):
         if not isinstance(clarification, str) or not 1 <= len(clarification.strip()) <= 300:
             raise ValueError('invalid clarification')
     rewritten = question
+    normalized_query = data.get('normalized_query')
+    if (kind == 'independent' and intent in {'knowledge', 'image'}
+            and isinstance(normalized_query, str) and 1 <= len(normalized_query.strip()) <= 400
+            and re.findall(r'\d+(?:\.\d+)?', question) == re.findall(r'\d+(?:\.\d+)?', normalized_query)):
+        rewritten = normalized_query.strip()
     if kind in {'followup', 'mixed'} and intent in {'knowledge', 'image'}:
         rewritten = data.get('question')
         if not isinstance(rewritten, str) or not 1 <= len(rewritten.strip()) <= 2000:
@@ -306,6 +312,8 @@ def _validate_interpretation(data, question, history, payload):
                   'retry_query': retry.strip(),
                   'flow_id': flow_id if intent == 'knowledge' and kind != 'clarify' and isinstance(flow_id, str) and flow_id in registered else None,
                   'choices': [choice for choice in choices[:3] if isinstance(choice, str) and choice in registered]}
+    if kind == 'independent' and rewritten != question:
+        normalized['normalized_query'] = rewritten
     if 'older_messages' in payload:
         normalized['older_messages'] = payload['older_messages']
     return normalized

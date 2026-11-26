@@ -268,7 +268,8 @@ class SupportWorkflow:
                     event('question_resolution_unavailable',level='WARNING',**error_fields(error))
                     resolution={'kind':'followup','question':local_query(state['question'],state['history']),'clarification':''}
                 check()
-                event('question_resolved',resolution_kind=resolution['kind'],used_context=resolution['question']!=state['question'])
+                event('question_resolved',resolution_kind=resolution['kind'],
+                      used_context=resolution['kind']=='followup' or bool(resolution.get('older_messages')))
                 debug_event('resolved_question',original_question=state['question'],**resolution)
                 if resolution['kind']=='clarify':return {'clarification':resolution['clarification']}
                 query=state.get('assistance',{}).get('query') or resolution['question']
@@ -282,9 +283,11 @@ class SupportWorkflow:
                     direct=self._flow_evidence(flow_id,query)
                     if direct:
                         return direct
-                resolved,preferred=recommended_selection(self.service.knowledge,query,state['history'])
+                normalized=resolution.get('normalized_query')
+                picked,preferred=recommended_selection(self.service.knowledge,state['question'] if normalized else query,state['history'])
+                resolved=picked if preferred or not normalized else query
                 found=retrieve(self.service.knowledge,resolved,preferred_id=preferred) if preferred else retrieve(self.service.knowledge,resolved)
-                retry_query=resolution.get('retry_query')
+                retry_query=state['question'] if normalized else resolution.get('retry_query')
                 if retry_query and retry_query!=resolved and not found['evidence'] and not assistance.get('query'):
                     check()
                     retry=retrieve(self.service.knowledge,retry_query)
@@ -395,7 +398,7 @@ class SupportWorkflow:
                 if value:runtime.context.delta(value)
             interpretation=state.get('interpretation',{})
             resolved=state['retrieval'].get('query',state['question'])
-            if interpretation.get('kind') in ('followup','mixed') and not state.get('guide_context'):
+            if (interpretation.get('kind') in ('followup','mixed') or interpretation.get('normalized_query')) and not state.get('guide_context'):
                 resolved=interpretation['question']
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
                 '_resolved_question':resolved,
