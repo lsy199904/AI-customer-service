@@ -103,10 +103,10 @@ class SupportWorkflow:
             self._resource=sqlite3.connect(service.config.db+'.checkpoints.sqlite3',check_same_thread=False)
             self.saver=SqliteSaver(self._resource);self.saver.setup()
         graph=StateGraph(State,context_schema=Context)
-        for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),('action',self.action),
+        for name,fn in [('route',self.route),('retrieve',self.retrieve),('business',self.business),('action',self.account_status),
                         ('generate',self.generate),('clarify',self.clarify),('guide_ack',self.guide_ack),('guide_end',self.guide_end),('validate',self.validate)]:graph.add_node(name,fn)
         graph.add_edge(START,'route')
-        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive','out_of_scope','context_unavailable') else 'action' if s['intent'] in ('action','account_status') else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
+        graph.add_conditional_edges('route',lambda s:'guide_ack' if s.get('assistance',{}).get('kind')=='ack' else 'clarify' if s.get('assistance',{}).get('kind')=='clarify' else 'guide_end' if s.get('assistance',{}).get('kind') in ('end','complete') else 'validate' if s['intent'] in ('handoff','sensitive','out_of_scope','context_unavailable') else 'action' if s['intent']=='account_status' else 'business' if s['intent']=='business' else 'generate' if s['intent'] in (*REPLIES,'history') else 'retrieve')
         graph.add_conditional_edges('retrieve',lambda s:'generate' if s['evidence'] or s['candidates'] else 'validate')
         graph.add_edge('guide_ack','validate');graph.add_edge('clarify','validate');graph.add_edge('guide_end','validate')
         graph.add_edge('action','validate');graph.add_edge('business','validate');graph.add_edge('generate','validate');graph.add_edge('validate',END)
@@ -293,15 +293,21 @@ class SupportWorkflow:
                     retry=retrieve(self.service.knowledge,retry_query)
                     if retry['evidence']:
                         found,resolved=retry,retry_query
-                if not found['evidence'] and flow_id and not assistance.get('query'):
-                    direct=self._flow_evidence(flow_id,resolved)
-                    if direct:
+                if not found['evidence'] and not assistance.get('query'):
+                    if flow_id and (direct:=self._flow_evidence(flow_id,resolved)):
                         return direct
+                    if resolution.get('recovered_action'):
+                        from .assistance import supported_flow_choices
+                        choices=supported_flow_choices(resolved,self.service.knowledge.rows.values())
+                        if choices:
+                            return {'clarification':'您遇到的是下面哪种情况？选一下，我再给您对应的操作指引。',
+                                    'choices':choices}
                 found['retrieval'].setdefault('query',resolved)
                 return found
             found=run(retrieve_current,self.service.config.retrieval_timeout)
             if found.get('clarification'):
-                return {'success':True,'intent':'clarification','reason':'followup_clarification','answer':found['clarification'],'evidence':[],'candidates':[]}
+                return {'success':True,'intent':'clarification','reason':'followup_clarification','answer':found['clarification'],
+                        'assistance':{'kind':'clarify','choices':found.get('choices',[])},'evidence':[],'candidates':[]}
             runtime.context.check()
             report=found['retrieval']
             evidence=found['evidence'];candidates=self.service.media.candidates(report.get('query',state['question']),evidence)
@@ -346,12 +352,9 @@ class SupportWorkflow:
                 'retrieval_failed':True,'retrieval':{'matched':False,'method':self.service.config.retrieval_backend,'reason':'retrieval_unavailable','similarity':None}}
         finally:self.service.observe('retrieval',time.monotonic()-started)
 
-    def action(self,state:State,runtime:Runtime[Context]):
-        if state['intent']=='account_status':
-            return {'answer':'我目前无法直接查询您企业的实时账户数据。您可以登录 SmartTITU 企业服务门户查看，或点击「联系人工」协助核实。',
-                    'reason':'account_status_unavailable','success':True}
-        return {'answer':'我目前不能直接替您执行这项操作。您可以在平台上自行办理，我可以提供操作指引。您希望先了解哪一项的操作步骤？',
-                'reason':'action_unavailable','success':True}
+    def account_status(self,state:State,runtime:Runtime[Context]):
+        return {'answer':'我目前无法直接查询您企业的实时账户数据。您可以登录 SmartTITU 企业服务门户查看，或点击「联系人工」协助核实。',
+                'reason':'account_status_unavailable','success':True}
 
     def business(self,state:State,runtime:Runtime[Context]):
         runtime.context.emit('business');q=state['question']

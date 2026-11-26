@@ -132,7 +132,7 @@ ROUTING_PROMPT = '''你是 SmartTITU 智能客服的问题分流器。用户输�
 识别用户提到的产品名和术语，包括 SmartTITU、TITU Hub（也写作 tituhub）、TITU Edge、Token（词元）、API Key（API 密钥）、RPM（每分钟请求数）和 TPM（每分钟 Token 数）。结合整句和相关上下文识别大小写、空格差异和明显错拼。术语仅用于理解和改写；仅凭字形相似、尚无明确需求时先澄清。模型用量的 Token 与鉴权语境中的 token 分开判断，保留输入 Token、输出 Token 等限定。
 相关问题选择 intent：
 - knowledge：产品能力、规则、操作指引、办理进度的自助查询方法、故障排查，以及用户描述困难后可能需要的产品帮助。
-- action：用户在本轮明确要求客服替他执行具体操作。account_status：本轮明确要求查询其实际账户、资源或订单数据。表达困难、陈述状态、询问步骤或查找查看入口，均不表示授权代办或要求代查。
+- 本客服提供办理指引。无论用户在问怎么操作、描述操作失败，还是请客服帮忙办理，都按 knowledge 理解成查找操作或排查指引。能从前文确定业务就补全检索问题；有多个业务可能且影响指引时，只问需要确认的那一点。account_status 仅用于明确要求查询其账户、资源或订单的实时数据。
 - image：找产品图示。history：回顾对话或复述已有答复。涉及新的产品事实、政策或条件时选 knowledge。
 - handoff：明确请求人工协助，或在推荐之后明确表示选项都不适用。complaint：本轮正在投诉或请求升级。咨询办理方法属于 knowledge。
 - guide：请求开始或继续分步指导。identity、capabilities、greeting、thanks、farewell 为客服互动。
@@ -140,7 +140,7 @@ kind 选择 independent、followup、mixed、clarify 或 lookup。完整问题�
 独立产品问题如有明显错拼、口语或缺省表达，且主体与需求足够明确，在 normalized_query 写一个适合优先检索的独立问句。只纠正有把握的产品名或术语、补出用户已表达的需求，保留原有的产品、功能、对象、否定、金额、时间和报错等条件。不要从旧话题补入本轮未表达的需求，也不要擅改像型号、版本或错误码的标识。原话已清楚时留空。疑似本平台产品名或术语但只有名称、还看不出想问什么时，选择 knowledge + clarify，说明可能的含义，再问一个具体问题。仅在毫无可辨含义时用 unclear_input。
 用户描述困难时，能从会话确定业务就给出对应检索问法。业务不明确且可能影响下一步时，只澄清一个关键点。能用通用流程回答时无需索要具体订单、账号或支付方式。choices 仅列可能解决本轮歧义的流程，最多三个。明确回指更早对话且近期信息不足时用 lookup，history_query 填简短主题词（词间使用空格）或日期。收到 older_messages 后给出最终判断。
 口语提问、办理下一步和故障排查可在 retry_query 提供一个自包含的等义检索问题，完整保留用户条件。仅在通用流程资料能帮助回答时填写 flow_id。具体政策、数值、报错细节或实时状态需要专门证据，不使用通用流程代替。flow_id 和 choices 仅可使用系统已登记的流程编号，未确定时保留空值。
-evidence 仅在 handoff、complaint、account_status 或 action 时填写，必须从本轮摘录能独立表明用户请求相应帮助的完整片段。澄清时用 clarification 填写用户可以直接回答的问题。只输出约定 JSON。
+evidence 仅在 handoff、complaint 或 account_status 时填写，必须从本轮摘录能独立表明用户请求相应帮助的完整片段。澄清时用 clarification 填写用户可以直接回答的问题。只输出约定 JSON。
 {"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","clarification":"","history_query":"","choices":[],"flow_id":"","evidence":""}
 '''
 
@@ -222,11 +222,17 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
                     if diagnostics is not None:
                         diagnostics.append({'stage':'classification','normalization':'clarify_intent_to_resolution'})
                     continue
-                if data.get('intent') in {'action','account_status'} and not attempt:
+                if data.get('intent') == 'action' and not attempt:
                     payload['routing_feedback'] = (
-                        '复核用户是否明确委托客服执行某个具体操作或请求查询自己的实时数据。'
+                        'action 不是可用意图。操作求助和办理失败都用 knowledge。根据本轮和相关上下文'
+                        '给出自包含的检索问句；确实无法确定具体业务时填 clarify，并给出相关的流程选项。'
+                    )
+                    continue
+                if data.get('intent') == 'account_status' and not attempt:
+                    payload['routing_feedback'] = (
+                        '复核用户是否明确请求查询自己的实时数据。'
                         '询问入口、方法、失败原因，以及陈述困难，选择 knowledge。'
-                        '明确委托执行或查询时，摘录足以独立表达请求的完整原话。'
+                        '明确要求查询实时数据时，摘录足以独立表达请求的完整原话。'
                     )
                     if diagnostics is not None:
                         diagnostics.append({'stage':'confirm_execution_intent'})
@@ -259,14 +265,17 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
 
 
 def _validate_interpretation(data, question, history, payload):
+    recovered_action = data.get('intent') == 'action'
+    if recovered_action:
+        data['intent'] = 'knowledge'
     if data.get('intent') == 'clarify' and data.get('kind') in {'clarify', 'followup'}:
         data.update(intent='knowledge', kind='clarify')
-    intents = {'knowledge', 'image', 'history', 'out_of_scope', 'action', 'account_status', 'handoff', 'complaint',
+    intents = {'knowledge', 'image', 'history', 'out_of_scope', 'account_status', 'handoff', 'complaint',
                'guide', 'greeting', 'thanks', 'farewell', 'identity', 'capabilities', 'unclear_input'}
     intent, kind = data.get('intent'), data.get('kind')
     if intent not in intents or kind not in {'independent', 'followup', 'mixed', 'clarify'}:
         raise ValueError('invalid conversation interpretation')
-    if intent in {'action', 'account_status', 'handoff', 'complaint'}:
+    if intent in {'account_status', 'handoff', 'complaint'}:
         evidence = data.get('evidence')
         if not isinstance(evidence, str) or not evidence.strip() or evidence not in question:
             raise ValueError('intent has no current-question evidence')
@@ -315,6 +324,8 @@ def _validate_interpretation(data, question, history, payload):
                   'choices': [choice for choice in choices[:3] if isinstance(choice, str) and choice in registered]}
     if kind == 'independent' and rewritten != question:
         normalized['normalized_query'] = rewritten
+    if recovered_action:
+        normalized['recovered_action'] = True
     if 'older_messages' in payload:
         normalized['older_messages'] = payload['older_messages']
     return normalized

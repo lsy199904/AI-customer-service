@@ -47,7 +47,7 @@ class SemanticRoutingTests(unittest.TestCase):
         self.assertEqual(values['interpretation']['question'],q)
         self.assertEqual(values['interpretation']['kind'],'unavailable')
 
-    def test_action_graph_does_not_retrieve_or_claim_execution(self):
+    def test_legacy_action_label_uses_knowledge_branch(self):
         import tempfile
         from pathlib import Path
         from app.core import Service,Settings
@@ -56,11 +56,12 @@ class SemanticRoutingTests(unittest.TestCase):
             try:
                 actor={'tenant_id':'test','sub':'visitor'};sid=service.create(actor,{})['session_id']
                 service.config.mode='llm';service.model=self.model('action')
-                with patch.object(service,'reserve_rag_quota',side_effect=AssertionError('must not retrieve')):
+                report={'evidence':[],'retrieval':{'matched':False,'hits':[]}}
+                with patch('app.chains.retrieve',return_value=report) as retrieve:
                     result=service.chat(actor,sid,{'message':'帮我创建API Key并支付账单','request_id':'semantic-action-test'})
-                self.assertEqual(result['reason'],'action_unavailable')
+                retrieve.assert_called_once()
                 self.assertEqual(result['citations'],[])
-                self.assertIn('不能直接',result['answer'])
+                self.assertNotIn('不能直接替您执行',result['answer'])
                 self.assertEqual(service.model.complete.call_count,2)
             finally:service.close()
 

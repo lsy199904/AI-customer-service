@@ -84,28 +84,36 @@ def test_complaint_followed_by_product_question(service):
     service.model.complete.side_effect = [plan('complaint', evidence='我要投诉'), plan('knowledge', retry_query='API 密钥管理')]
     service.model.answer.side_effect = evidence_answer
     sid = service.create(ACTOR, {})['session_id']
-    assert chat(service, sid, '我要投诉，客服一直没解决', 'current-complaint')['handoff']
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('complaint should not retrieve')):
+        complaint = chat(service, sid, '我要投诉，客服一直没有解决我的问题。', 'current-complaint')
+    assert complaint['handoff'] and complaint['reason'] == 'complaint_handoff'
+    assert complaint['contact']['phone'] and complaint['contact']['email']
+    assert '无法直接登记投诉' in complaint['answer']
+    assert any(item['content'] == '我要投诉，客服一直没有解决我的问题。'
+               for item in service.history(ACTOR, sid)['items'])
     response = chat(service, sid, 'API 密钥管理', 'subsequent-api-key')
     assert not response['handoff']
     assert any('API' in item['title'] and '密钥' in item['title'] for item in response['citations'])
     assert service.model.answer.call_args.args[1] == []
 
 
-def test_realtime_status_and_delegate_action_never_invoke_business_tools(service):
+def test_realtime_status_and_operation_help_never_invoke_business_tools(service):
     sid = service.create(ACTOR, {})['session_id']
     service.model.complete.side_effect = [
         plan('account_status', evidence='还有多少余额'),
         plan('account_status', evidence='还有多少余额'),
         plan('action', evidence='替我付掉这笔账单'),
-        plan('action', evidence='替我付掉这笔账单'),
+        plan('action', normalized_query='如何支付这笔账单？', flow_id='payment'),
     ]
-    with patch.object(service.tools, 'invoke', side_effect=AssertionError('business tool called')), \
-         patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('retrieval called')):
-        status = chat(service, sid, '帮我查一下本企业现在还有多少余额。', 'actual-balance')
+    service.model.answer.side_effect = evidence_answer
+    with patch.object(service.tools, 'invoke', side_effect=AssertionError('business tool called')):
+        with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('retrieval called')):
+            status = chat(service, sid, '帮我查一下本企业现在还有多少余额。', 'actual-balance')
         action = chat(service, sid, '替我付掉这笔账单', 'delegate-payment')
     assert status['reason'] == 'account_status_unavailable'
-    assert action['reason'] == 'action_unavailable'
-    assert '实时' in status['answer'] and '自行办理' in action['answer']
+    assert '实时' in status['answer']
+    assert action['reason'] == 'knowledge'
+    assert action['citations'][0]['section_title'] == '账单支付流程'
 
 
 def test_overnight_followup_uses_same_session_and_can_be_recalled(service):
@@ -445,10 +453,20 @@ def test_recheck_does_not_turn_recharge_instructions_into_delegation(service):
     sid=service.create(ACTOR,{})['session_id']
     service.model.complete.side_effect=[
         plan('action',evidence='余额怎么充进去'),
-        plan('knowledge',flow_id='recharge',retry_query='客户充值流程'),
+        plan('action',flow_id='recharge',normalized_query='如何为账户余额充值？'),
     ]
     service.model.answer.side_effect=evidence_answer
     result=chat(service,sid,'钱不够了，余额怎么充进去？','confirm-not-delegation')
     assert result['reason']=='knowledge'
     assert result['citations'][0]['section_title']=='客户充值流程'
     assert service.model.complete.call_count==2
+
+
+def test_repeated_action_label_on_ambiguous_payment_offers_relevant_choices(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('action', evidence='支付不了')
+    with patch('app.chains.retrieve', return_value={'evidence': [], 'retrieval': {'matched': False, 'hits': []}}):
+        result = chat(service, sid, '支付不了', 'repeated-action-payment')
+    assert result['intent'] == 'clarification'
+    assert {item['message'] for item in result['actions']} == {'账单支付流程', '客户充值流程'}
+    assert result['suggestions'] == []
