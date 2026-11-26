@@ -16,7 +16,7 @@ from typing import TypedDict
 from langgraph.graph import StateGraph,START,END
 from langgraph.runtime import Runtime
 from langsmith import tracing_context
-from .conversation import REPLIES,NO_ANSWER,intent_of,retrieval_query,sensitive_topic,rejected_recommendations,recommended_questions
+from .conversation import REPLIES,NO_ANSWER,explicit_history_request,intent_of,retrieval_query,sensitive_topic,rejected_recommendations,recommended_questions
 from .observability import event,error_fields,debug_event
 from .tools import ToolContext
 
@@ -129,6 +129,8 @@ class SupportWorkflow:
         elif named_flow:
             intent = 'knowledge'
             interpretation = {'question':question,'kind':'independent','flow_id':named_flow}
+        elif explicit_history_request(question):
+            intent = 'history'
         elif semantic:
             try:
                 from .query_context import interpret

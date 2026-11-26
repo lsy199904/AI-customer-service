@@ -76,6 +76,16 @@ def recommended_questions(knowledge,question,evidence=(),sensitive=False,related
     return result
 
 
+def explicit_history_request(question):
+    text = question.strip().rstrip('？?。！!').strip()
+    return bool(re.fullmatch(
+        r'(?:(?:刚才|刚刚|之前|前面)?(?:我|我们)(?:刚才|刚刚|之前|前面)?'
+        r'(?:问了什么|问过哪些问题|问过什么|聊了什么|聊过什么)'
+        r'|(?:请|帮我)?(?:总结|概括|回顾)(?:一下)?(?:我(?:们)?的|刚才的|当前|本次|这次的)?(?:聊天|对话|聊天记录|问答))'
+        r'(?:吗|呢)?', text,
+    ))
+
+
 def intent_of(question):
     compact=re.sub(r'[\s\W_]+','',question.lower())
     # Recall asks about the conversation itself, not the business topic mentioned in it.

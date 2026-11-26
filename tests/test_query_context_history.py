@@ -88,10 +88,14 @@ class RecallWorkflowTests(unittest.TestCase):
                 service.chat(actor,sid,{'message':'你好','request_id':'recall-greeting-request'})
                 service.config.mode='llm'
                 service.model=Mock()
-                service.model.complete.return_value=json.dumps({'intent':'history','kind':'independent','question':'刚才我问了什么','clarification':''})
+                service.model.complete.side_effect=AssertionError('explicit recall must skip classification')
                 service.model.answer.return_value={'answerable':True,'answer':'你刚才说了“你好”。','citation_ids':[],'image_ids':[]}
                 with patch.object(service,'reserve_rag_quota',side_effect=AssertionError('recall must not retrieve')):
                     response=service.chat(actor,sid,{'message':'刚才我问了什么','request_id':'recall-history-request'})
+                    summary=service.chat(actor,sid,{'message':'总结我的对话','request_id':'recall-summary-request'})
+                self.assertEqual(summary['reason'],'history')
+                self.assertEqual(summary['status'],'answered')
+                service.model.complete.assert_not_called()
                 self.assertEqual(response['reason'],'history')
                 self.assertEqual(response['status'],'answered')
                 self.assertEqual(response['citations'],[])
