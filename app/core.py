@@ -279,6 +279,7 @@ class Model:
         on_delta=context.pop('_on_delta',None);guidance=context.pop('_guidance',None)
         resolved=context.pop('_resolved_question',question)
         parts=context.pop('_question_parts',[])
+        grounding_feedback=context.pop('_grounding_feedback',[])
         runtime_tools=context.pop('_runtime_tools',[])
         if intent=='history':
             from .history_recall import recall
@@ -299,8 +300,11 @@ class Model:
         from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
         from langchain_core.runnables import RunnableLambda
         from langsmith import tracing_context
+        system = SYSTEM
+        if grounding_feedback:
+            system += '\n这是对上一版答案的校验修正。payload 中的 unsupported_details 缺少本轮资料支持。删除这些细节，保留有依据的部分；无法确认的部分简短说明。'
         prompt=ChatPromptTemplate.from_messages([
-            SystemMessage(content=SYSTEM),MessagesPlaceholder('history'),('human','{payload}')])
+            SystemMessage(content=system),MessagesPlaceholder('history'),('human','{payload}')])
         # IDs are server-owned: the model only writes prose, never citation/image metadata.
         evidence_payload=[{'title':r.get('title',''),'content':r['content'],'image_evidence':r.get('image_evidence','')} for r in evidence]
         question_parts=[]
@@ -310,7 +314,8 @@ class Model:
             for position in indexes:
                 evidence_payload[position].setdefault('parts',[]).append(index)
         payload=json.dumps({'available_runtime_tools':runtime_tools,'public_link_hosts':list(PublicLinks().hosts),'question':question,'resolved_question':resolved,'page_context':context,'intent':intent,
-            'question_parts':question_parts,'evidence':evidence_payload,'qr_delivery':'available' if context.get('_reserved_qr') else 'unavailable','media_titles':[r.get('title','') for r in media],'guidance':guidance},ensure_ascii=False)
+            'question_parts':question_parts,'evidence':evidence_payload,'unsupported_details':grounding_feedback,
+            'qr_delivery':'available' if context.get('_reserved_qr') else 'unavailable','media_titles':[r.get('title','') for r in media],'guidance':guidance},ensure_ascii=False)
         chain=prompt | RunnableLambda(lambda value:self.complete(convert_to_openai_messages(value.to_messages()),on_delta),name='model_completion')
         with tracing_context(enabled=False):
             text=chain.invoke({'history':[(h['role'],h['content']) for h in history[-2*(self.config.context_rounds if intent=='history' else min(self.config.context_rounds,5)):]],'payload':payload})

@@ -85,6 +85,14 @@ def check_service(base_url):
             ('那可以申请几次？', lambda r: title_contains(r, '开票')),
             ('API 密钥在哪里创建？', lambda r: title_contains(r, 'API Key', 'API 密钥') and not title_contains(r, '开票')),
         ]),
+        ('残缺输入和新产品主题', [
+            ('企业认证流程', lambda r: title_contains(r, '企业认证')),
+            ('to', lambda r: r['reason']=='unclear_input' and not r.get('citations') and not r.get('images')),
+            ('API 密钥在哪里创建？', lambda r: title_contains(r, 'API Key', 'API 密钥')),
+            ('SmartTITU 是什么？', lambda r: r['status']=='answered' and 'SmartTITU' in r['answer']
+             and title_contains(r, '产品介绍', '产品定位', 'SmartTITU是什么')
+             and not title_contains(r, 'API 密钥', '获取 API Key')),
+        ]),
         ('开票和 cURL 示例', [
             ('怎么开票？再给一个 API 调用的 cURL 示例。', lambda r:
              title_contains(r, '开票') and title_contains(r, 'cURL')

@@ -135,6 +135,82 @@ def test_weather_payment_and_followup_after_split_use_each_new_turn(service):
     assert context['_resolved_question']=='充值时支付失败怎么办？' and not context['_question_parts']
 
 
+def test_bare_english_fragment_cannot_restart_the_previous_certification_topic(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.answer.side_effect = evidence_answer
+    chat(service, sid, '企业认证流程', 'certification-before-fragment')
+    service.model.complete.return_value = plan(
+        'knowledge', 'followup', question='企业认证流程是什么？', flow_id='verification')
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('fragment must not retrieve')):
+        result = chat(service, sid, 'to', 'bare-english-fragment')
+    assert result['reason']=='unclear_input' and not result['citations'] and not result['images']
+    payload = json.loads(service.model.complete.call_args.args[0][-1]['content'])
+    assert not payload['recent_messages'] and not payload['older_user_topics']
+
+
+@pytest.mark.parametrize('wrong_plan', [
+    plan('knowledge', 'followup', question='如何创建 API Key？'),
+    plan('knowledge', normalized_query='如何创建 API Key？'),
+])
+def test_product_definition_cannot_be_rewritten_as_previous_api_key_task(service, wrong_plan):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.side_effect = [plan('knowledge'), wrong_plan]
+    service.model.answer.side_effect = evidence_answer
+    api = next(row for row in service.knowledge.rows.values() if 'API 密钥管理' in row['title'])
+    with patch('app.chains.retrieve', return_value={'evidence':[api], 'retrieval':{'matched':True,'hits':[]}}) as search:
+        chat(service, sid, 'API 密钥在哪里创建？', 'api-before-product')
+        search.return_value={'evidence':[], 'retrieval':{'matched':False,'hits':[]}}
+        result = chat(service, sid, 'SmartTITU 是什么？', 'independent-product-definition')
+    assert search.call_args.args[1]=='SmartTITU 是什么？'
+    assert not result['citations'] and result['suggestions']
+    service.model.answer.assert_called_once()
+
+
+def test_new_api_how_to_does_not_reuse_previous_invoice_topic():
+    model = Mock()
+    model.complete.return_value = plan('knowledge', 'followup', question='提前开票怎么申请？',
+                                      context_reference='提前开票流程')
+    result = interpret(model, 'API 密钥在哪里创建？', [{'role':'user','content':'提前开票流程'}])
+    assert result['kind']=='independent' and result['question']=='API 密钥在哪里创建？'
+
+
+def test_business_fact_checks_accept_equivalent_amount_and_count_and_reject_extra_limit():
+    from app.grounding import unsupported_business_facts
+    evidence = [{'content':'最高20,000元，可申请1次。限流指标为每分钟请求数和每分钟 Token 数。'}]
+    assert not unsupported_business_facts('最高2万元，可申请一次。限流指标为 RPM 和 TPM。', evidence)
+    assert unsupported_business_facts('最高2万元，可申请2次，平台额外限制QPS。', evidence)==['QPS', '申请2次']
+
+
+@pytest.mark.parametrize('valid_revision', [True, False])
+def test_unsupported_payment_details_never_reach_stream_and_supported_steps_survive(service, valid_revision):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge')
+    source = next(row for row in service.knowledge.rows.values() if row['title'].endswith('客户充值流程'))
+    row = {**source, 'content':'进入费用中心，在充值页面选择在线充值或对公汇款。'}
+    unverified = '在费用中心选择【中信银行】，要求最低充值 500 元。'
+    corrected = '进入费用中心，在充值页面选择在线充值或对公汇款。资料没有明确银行或最低金额。'
+    stream = []
+
+    def answer(question, history, evidence, context):
+        if context.get('_on_delta'):
+            context['_on_delta'](unverified)
+            text = unverified
+        else:
+            assert context['_grounding_feedback']==['中信银行', '500 元']
+            text = corrected if valid_revision else unverified
+        return {'answerable':True, 'answer':text, 'citation_ids':[row['id']], 'image_ids':[]}
+
+    service.model.answer.side_effect = answer
+    with patch('app.chains.retrieve', return_value={'evidence':[row], 'retrieval':{'matched':True,'hits':[]}}):
+        result = service.chat(ACTOR, sid, {'message':'充值支持什么方式？','request_id':'guard-payment-details'}, observer=stream.append)
+    assert not any('中信银行' in event.get('text','') for event in stream)
+    if valid_revision:
+        assert result['answer']==corrected and result['citations']
+        assert any(event.get('text')==corrected for event in stream)
+    else:
+        assert result['reason']=='insufficient_evidence' and result['suggestions']
+
+
 @pytest.mark.parametrize('question', ['今天天气怎么样？', '聊聊你喜欢的足球队',
                                      '推荐色情网站', '给我一个通用 Flask API 示例', '淘宝订单支付不了'])
 def test_out_of_scope_skips_retrieval_and_offers_product_questions(service, question):

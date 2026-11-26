@@ -150,7 +150,9 @@ class SupportWorkflow:
                 raise
             except Exception as error:
                 event('question_resolution_unavailable', level='WARNING', **error_fields(error))
-                intent = 'context_unavailable' if any(character.isalnum() for character in question) else 'unclear_input'
+                from .query_context import standalone_fragment
+                unclear = standalone_fragment(question) or not any(character.isalnum() for character in question)
+                intent = 'unclear_input' if unclear else 'context_unavailable'
                 interpretation = {'question':question,'kind':'unavailable'}
         elif not any(character.isalnum() for character in question):
             intent = 'unclear_input'
@@ -418,7 +420,7 @@ class SupportWorkflow:
         from .pdf_media import reserved_qr,generation_evidence
         qr=reserved_qr(state.get('resolved_question') or state['question'],state['candidates'])
         self.start_visual(state)
-        if state.get('explicit_guide_control') and (stage:=state.get('guide_context')):
+        if (state.get('explicit_guide_control') or state['question'].startswith('分步指导：')) and (stage:=state.get('guide_context')):
             answer=f"第 {stage['step']} 步 · {stage['stage']}\n\n{stage['stage_evidence']}"
             return {'answer':answer,'reason':'guidance','success':True,'selected':state['evidence']}
         # The product identity is owned by the service, independent of the model vendor.
@@ -438,10 +440,13 @@ class SupportWorkflow:
             return {}
         started=time.monotonic()
         try:
-            # Hold only unfinished link tokens, never the complete answer.
             from .public_links import PublicLinks
             link_stream=PublicLinks().stream()
+            # Business replies must pass factual checks before any text is emitted.
+            check_facts = not conversation
             def safe_delta(text):
+                if check_facts:
+                    return
                 value=link_stream.feed(text)
                 if value:runtime.context.delta(value)
             interpretation=state.get('interpretation',{})
@@ -461,7 +466,9 @@ class SupportWorkflow:
                 if older:
                     observed={(item.get('created_at'),item['role']) for item in older}
                     history=older+[item for item in history[-6:] if (item.get('created_at'),item['role']) not in observed]
-            result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],history,generation_evidence(state['evidence'],bool(qr)),context)
+            question=state.get('assistance',{}).get('resolved_question') or state['question']
+            evidence=generation_evidence(state['evidence'],bool(qr))
+            result=s.model.answer(question,history,evidence,context)
             if runtime.context.observer:
                 tail=link_stream.finish()
                 if tail:runtime.context.delta(tail)
@@ -472,7 +479,21 @@ class SupportWorkflow:
                   history_messages=len(history),elapsed_ms=round((time.monotonic()-started)*1000,2))
             if intent=='out_of_scope':
                 return {'answer':result['answer']} if result['answerable'] and result['answer'].strip() else {}
-            if not result['answerable']:return {'reason':'insufficient_evidence'}
+            if not result['answerable'] or not result['answer'].strip():return {'reason':'insufficient_evidence'}
+            if check_facts:
+                from .grounding import unsupported_business_facts
+                unsupported=unsupported_business_facts(result['answer'],evidence,state.get('guide_context'))
+                if unsupported:
+                    event('business_answer_revision',unsupported_count=len(unsupported))
+                    result=s.model.answer(question,history,evidence,{**context,
+                        '_on_delta':None,'_grounding_feedback':unsupported})
+                    runtime.context.check()
+                    result={**result,'answer':PublicLinks().clean(result['answer'])}
+                    if (not result['answerable'] or not result['answer'].strip()
+                            or unsupported_business_facts(result['answer'],evidence,state.get('guide_context'))):
+                        return {'reason':'insufficient_evidence'}
+                if result['answer'].strip():
+                    runtime.context.delta(result['answer'])
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
             if not conversation:
                 from .grounding import unsupported_literals,citation_ids

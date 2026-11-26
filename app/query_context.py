@@ -16,6 +16,38 @@ PROMPT='''仅解析客服问题，输出JSON，不回答业务问题。输入是
 '''
 
 
+def standalone_fragment(question):
+    """Bare English function words do not establish a topic or a follow-up."""
+    text = re.sub(r'[\W_]+', '', question.casefold())
+    return text in {'to', 'of', 'the', 'a', 'an', 'with', 'and', 'or', 'but', 'from', 'for', 'at'}
+
+
+def definition_target(question):
+    if dependent(question):
+        return None
+    text = question.strip().rstrip('？?。！!').strip()
+    text = re.sub(r'^(?:你好[，, ]*|请问\s*|我想知道\s*)+', '', text)
+    match = re.fullmatch(
+        r'什么是\s*([^，,。!?！？；;]{2,45})|([^，,。!?！？；;]{2,45}?)(?:是什么|是什么意思|是啥|指什么)', text,
+    )
+    if match:
+        return re.sub(r'[\W_]+', '', (match[1] or match[2]).casefold()) or None
+    return None
+
+
+def has_explicit_topic(question):
+    if dependent(question):
+        return False
+    if definition_target(question):
+        return True
+    if not re.search(r'怎么|如何|哪里|在哪|需要什么|有哪些|how\b|where\b', question, re.I):
+        return False
+    from .assistance import FLOWS,flow_match
+    return bool(flow_match(question,FLOWS) or re.search(
+        r'(?<![A-Za-z0-9])(?:api|sdk|curl|token|rpm|tpm|qps|smarttitu|titu\s*(?:hub|edge))(?![A-Za-z0-9])',
+        question,re.I))
+
+
 def dependent(question):
     q=question.strip()
     return len(q)<100 and bool(re.search(r'这个|那个|它|上述|刚才|这一步|然后|接下来|还有呢|对应的|上述的|该模型|这些模型',q)
@@ -137,13 +169,14 @@ ROUTING_PROMPT = '''你是 SmartTITU 智能客服的问题分流器。用户输�
 - handoff：本轮明确请求人工协助，或在推荐之后明确表示选项都不适用。complaint：本轮明确表示要投诉、申诉或升级处理。仅描述故障、表达不满、说问题还没解决，或询问投诉办理方法，仍用 knowledge。
 - guide：请求开始或继续分步指导。identity、capabilities、greeting、thanks、farewell 为客服互动。
 kind 选择 independent、followup、mixed、clarify 或 lookup。完整问题保留原话。追问根据最近相关消息补全所指，优先使用用户最新说明，保留已完成阶段、金额、时间、报错、主体和限制。前一轮的意图不会延续到明确的新主题。历史只帮助理解，历史助手答复中的业务结论与数值不作为事实。
+只有本轮确实有承接前文的内容，或用户回答上一轮澄清，才能用 followup；此时在 context_reference 摘录相关历史消息中能确认所指的原话。仅有残缺输入或语法片段时，不得靠历史替用户造问题。用户明确说明了新的主题和想问的事时，按 independent，禁止把它改写成旧主题。
 独立产品问题如有明显错拼、口语或缺省表达，且主体与需求足够明确，在 normalized_query 写一个适合优先检索的独立问句。只纠正有把握的产品名或术语、补出用户已表达的需求，保留原有的产品、功能、对象、否定、金额、时间和报错等条件。不要从旧话题补入本轮未表达的需求，也不要擅改像型号、版本或错误码的标识。原话已清楚时留空。疑似本平台产品名或术语但只有名称、还看不出想问什么时，选择 knowledge + clarify，说明可能的含义，再问一个具体问题。仅在毫无可辨含义时用 unclear_input。
 用户描述困难时，能从会话确定业务就给出对应检索问法。业务不明确且可能影响下一步时，只澄清一个关键点。能用通用流程回答时无需索要具体订单、账号或支付方式。choices 仅列可能解决本轮歧义的流程，最多三个。明确回指更早对话且近期信息不足时用 lookup，history_query 填简短主题词（词间使用空格）或日期。收到 older_messages 后给出最终判断。
 pending_clarification 存在时，先判断本轮是否在回答上一轮的澄清问题。能确定用户选了哪个主题时，按 knowledge + followup 补成独立检索问句，短语或选项名也可以完成澄清。仍缺少关键条件时，只问缺失的那一项。用户明确换题时，按新问题处理。
 口语提问、办理下一步和故障排查可在 retry_query 提供一个自包含的等义检索问题，完整保留用户条件。仅在通用流程资料能帮助回答时填写 flow_id。具体政策、数值、报错细节或实时状态需要专门证据，不使用通用流程代替。flow_id 和 choices 仅可使用系统已登记的流程编号，未确定时保留空值。
 同一轮有两到三个需要分别查资料的产品问题时，按原顺序把自包含的检索问句填进 subqueries。保留每个子问题各自的限定。例如同时问开票和 API 的 cURL 示例，应分别检索。单一问题、同义改写或必须一起理解的条件留空；范围外的问题不写进 subqueries。
 evidence 仅在 handoff、complaint 或 account_status 时填写，必须从本轮摘录能独立表明用户请求相应帮助的完整片段。澄清时用 clarification 填写用户可以直接回答的问题。只输出约定 JSON。
-{"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","subqueries":[],"clarification":"","history_query":"","choices":[],"flow_id":"","evidence":""}
+{"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","subqueries":[],"clarification":"","history_query":"","context_reference":"","choices":[],"flow_id":"","evidence":""}
 '''
 
 
@@ -173,7 +206,8 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
     from .evidence_selection import _options
 
     has_words = any(character.isalnum() for character in question)
-    if not has_words:
+    fragment = standalone_fragment(question)
+    if not has_words or fragment:
         history = []
     # A prompt to restate an unclear message adds no business context.
     ignored = set()
@@ -225,7 +259,7 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
                 data = json.loads(re.sub(r'^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$', '', raw.strip()))
                 if not isinstance(data, dict):
                     raise ValueError('invalid conversation interpretation')
-                if not has_words and data.get('intent') not in {'greeting', 'thanks', 'farewell'}:
+                if fragment or (not has_words and data.get('intent') not in {'greeting', 'thanks', 'farewell'}):
                     data.update(intent='unclear_input', kind='independent')
                 if data.get('intent') == 'greeting' and re.search(r'[?？]|什么|怎么|多少|哪|为什么|何时', question):
                     from .conversation import intent_of
@@ -330,6 +364,16 @@ def _validate_interpretation(data, question, history, payload):
     intent, kind = data.get('intent'), data.get('kind')
     if intent not in intents or kind not in {'independent', 'followup', 'mixed', 'clarify'}:
         raise ValueError('invalid conversation interpretation')
+    target = definition_target(question)
+    reference = data.get('context_reference')
+    if kind=='followup' and isinstance(reference,str) and reference.strip():
+        prior = payload['recent_messages'] + payload.get('older_messages', [])
+        if not any(reference.strip() in item['content'] for item in prior):
+            data.update(kind='independent',normalized_query='',retry_query='',flow_id=None,subqueries=[])
+            kind = 'independent'
+    if intent=='knowledge' and (kind=='followup' and has_explicit_topic(question) or kind=='mixed' and target):
+        data.update(kind='independent',normalized_query='',retry_query='',flow_id=None,subqueries=[])
+        kind = 'independent'
     if intent in {'account_status', 'handoff', 'complaint'}:
         evidence = data.get('evidence')
         if not isinstance(evidence, str) or not evidence.strip() or evidence not in question:
@@ -343,6 +387,12 @@ def _validate_interpretation(data, question, history, payload):
             raise ValueError('invalid clarification')
     rewritten = question
     normalized_query = data.get('normalized_query')
+    if target and isinstance(normalized_query,str) and normalized_query.strip():
+        from difflib import SequenceMatcher
+        candidate = definition_target(normalized_query)
+        if not candidate or SequenceMatcher(None,target,candidate).ratio() < .8:
+            data.update(retry_query='',flow_id=None,subqueries=[])
+            normalized_query = ''
     if (kind == 'independent' and intent in {'knowledge', 'image'}
             and isinstance(normalized_query, str) and 1 <= len(normalized_query.strip()) <= 400
             and re.findall(r'\d+(?:\.\d+)?', question) == re.findall(r'\d+(?:\.\d+)?', normalized_query)):
