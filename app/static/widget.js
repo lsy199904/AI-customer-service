@@ -86,6 +86,7 @@
   }
   function recoverableResponse(response,data) {
     return Object.assign(new Error(data?.error?.message || '客服连接暂时中断，请稍后重试。'),{
+      code:data?.error?.code,
       authExpired:response.status===401,
       recoverable:response.status===401||[502,503,504].includes(response.status)||
         (response.status===409&&data?.error?.code==='session_busy')
@@ -187,7 +188,7 @@
           const frame=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);
           const kind=frame.split('\n').find(line=>line.startsWith('event: '))?.slice(7);
           const raw=frame.split('\n').filter(line=>line.startsWith('data: ')).map(line=>line.slice(6)).join('\n');
-          if(raw){const payload=JSON.parse(raw);if(kind==='status')onStage(payload.stage);if(kind==='delta'&&typeof payload.text==='string')onDelta(payload.text);if(kind==='metadata')onMetadata(payload);if(kind==='complete')result=payload;if(kind==='error')throw new Error(payload.message || '服务暂时不可用');}
+          if(raw){const payload=JSON.parse(raw);if(kind==='status')onStage(payload.stage);if(kind==='delta'&&typeof payload.text==='string')onDelta(payload.text);if(kind==='metadata')onMetadata(payload);if(kind==='complete')result=payload;if(kind==='error')throw Object.assign(new Error(payload.message || '服务暂时不可用'),{code:payload.code});}
         }
         if(buffer.length>1000000)throw new Error('客服响应过大');
         if(part.done)break;
@@ -579,7 +580,15 @@
       if (v!==generation) return;
       const finished=message('assistant',r.answer,r);if(live){live.remove();live=null;finished.style.animation='none';}retry=null;clearStatus();activity();
     } catch(err) {
-      if (v===generation) notice(err.message+'（问题编号：'+rid+'）',()=>send(text,true,faqId));
+      if (v===generation) {
+        const retryAction=()=>send(text,true,faqId);
+        if(err.code==='tenant_rate_limited'){
+          notice('当前咨询较多。您的问题已保留，请稍等片刻后点击重试，也可以先查看上方的常见问题。',retryAction);
+          renderRequestReference(status,rid);
+        } else {
+          notice(err.message+'（问题编号：'+rid+'）',retryAction);
+        }
+      }
     } finally {
       live?.remove();loading.remove();if(v===generation) {setBusy(false);input.focus();scroll();}
     }
