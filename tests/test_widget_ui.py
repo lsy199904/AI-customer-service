@@ -11,13 +11,14 @@ from urllib.parse import urlparse
 
 import pytest
 
+from app.business_flows import GUIDED_FLOWS
+
 pytest.importorskip('playwright', reason='playwright 未安装：uv sync 后执行 uv run playwright install chromium')
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 WIDGET_JS = (ROOT / 'app/static/widget.js').read_text(encoding='utf-8')
 MEDIA_FILES = {'/media/hub-03.png', '/media/business-verification.png'}
-GUIDE_STAGES = ['完善企业资料', '选择认证方式', '办理认证与审核', '查看认证结果']
 
 PAGE_HTML = ('<!doctype html><html lang="zh"><head><meta charset="utf-8"></head>'
              '<body style="background:#eef3fb"><script src="/widget.js"></script></body></html>')
@@ -61,7 +62,7 @@ STREAMING_SETUP = """
 """
 
 
-def message_reply(body):
+def message_reply(body, guide_flow='verification', guide_step=0):
     """与原 JS mock 一致：默认回答基础上按提问内容覆盖分支字段。"""
     message = body['message']
     if message == '，':
@@ -75,24 +76,24 @@ def message_reply(body):
     if message == '转人工客服':
         data['handoff'] = True
         data['contact'] = {'phone': '4008841883', 'email': 'help@china-entercom.net'}
-    elif message == '企业认证流程':
-        data['answer'] = '登录后完善企业资料，选择在线或线下认证，并根据页面提示办理。'
+    elif message in BOOTSTRAP['quick_questions']:
+        data['answer'] = f'这里是{message}的办理指引。'
         data['images'] = []
-        data['actions'] = [{'type': 'guide', 'label': '带我一步步办理', 'message': '分步指导：企业认证流程'}]
+        data['actions'] = [{'type': 'guide', 'label': '带我一步步办理', 'message': '分步指导：' + message}]
     elif message == '支付不了':
         data.update({'answer': '您遇到的是账单支付，还是充值支付的问题？', 'images': [], 'citations': [], 'intent': 'clarification',
                      'actions': [{'type': 'clarify', 'label': '账单支付流程', 'message': '账单支付流程'},
                                  {'type': 'clarify', 'label': '客户充值流程', 'message': '客户充值流程'}]})
-    elif message in ('分步指导：企业认证流程', '这一步已完成', '返回上一步', '结束指导'):
-        guide_step = 1 if message == '这一步已完成' else 0
+    elif message.startswith('分步指导：') or message in ('这一步已完成', '这一步怎么做', '返回上一步', '结束指导'):
+        flow = GUIDED_FLOWS[guide_flow]
+        stages = [title for title, _ in flow['stages']]
         ended = message == '结束指导'
-        data['answer'] = ('已结束这段分步指导。' if ended else
-                          ('进入企业认证页面，选择在线认证或线下认证。' if guide_step else
-                           '登录后完善企业名称、行业和公司地址等资料，按页面提示提交。'))
-        data['guidance'] = {'flow_id': 'verification', 'title': '企业认证流程', 'step': guide_step,
-                            'total': 4, 'stages': GUIDE_STAGES, 'status': 'ended' if ended else 'active'}
-        data['images'] = [{'id': 'business-verification', 'title': '企业认证流程', 'url': '/media/business-verification.png'}]
-        data['citations'] = [{'id': 'KB-test', 'title': '问题6 企业认证流程'}]
+        data['answer'] = '已结束这段分步指导。' if ended else f'请办理「{stages[guide_step]}」。'
+        data['guidance'] = {'flow_id': guide_flow, 'title': flow['title'], 'step': guide_step,
+                            'total': len(stages), 'stages': stages, 'status': 'ended' if ended else 'active'}
+        data['images'] = ([{'id': 'business-verification', 'title': flow['title'],
+                           'url': '/media/business-verification.png'}] if guide_flow=='verification' else [])
+        data['citations'] = [{'id': 'KB-test', 'title': flow['title']}]
         data['actions'] = [] if ended else [
             {'type': 'guide', 'label': '这一步已完成', 'message': '这一步已完成'},
             {'type': 'guide', 'label': '这一步怎么做', 'message': '这一步怎么做'},
@@ -106,8 +107,10 @@ def message_reply(body):
 def install_mock_routes(page):
     """拦截 widget.test 全部请求：静态资源读仓库文件，API 走 mock；返回请求捕获列表。"""
     seen_requests = []
+    guide_flow, guide_step = 'verification', 0
 
     def handle(route):
+        nonlocal guide_flow, guide_step
         request = route.request
         path = urlparse(request.url).path
         if path.startswith('/smart-bot/'):
@@ -125,9 +128,18 @@ def install_mock_routes(page):
         elif path == '/v1/sessions':
             route.fulfill(content_type='application/json', body='{"session_id":"preview-session"}')
         elif path.endswith('/messages'):
-            seen_requests.append({'headers': request.headers, 'body': request.post_data_json})
+            body = request.post_data_json
+            seen_requests.append({'headers': request.headers, 'body': body})
+            message = body['message']
+            if message.startswith('分步指导：'):
+                guide_flow = next(key for key, flow in GUIDED_FLOWS.items() if flow['title']==message.split('：', 1)[1])
+                guide_step = 0
+            elif message == '这一步已完成':
+                guide_step = min(guide_step+1, len(GUIDED_FLOWS[guide_flow]['stages'])-1)
+            elif message == '返回上一步':
+                guide_step = max(0, guide_step-1)
             route.fulfill(content_type='application/json',
-                          body=json.dumps(message_reply(request.post_data_json), ensure_ascii=False))
+                          body=json.dumps(message_reply(body, guide_flow, guide_step), ensure_ascii=False))
         elif path == '/v1/sources/KB-test':
             route.fulfill(content_type='application/json', body=json.dumps(SOURCE_KB_TEST, ensure_ascii=False))
         else:
@@ -260,36 +272,43 @@ def test_streaming_reply(ui):
 
 
 @pytest.mark.ui
-def test_guided_flow_navigation(ui):
+@pytest.mark.parametrize('flow_id', tuple(GUIDED_FLOWS))
+def test_guided_flow_navigation(ui, flow_id):
     page = ui.page
-    ask(ui, '企业认证流程')
+    flow = GUIDED_FLOWS[flow_id]
+    first, second = [title for title, _ in flow['stages'][:2]]
+    ask(ui, flow['title'])
     page.locator('.message.assistant').last.get_by_role('button', name='带我一步步办理', exact=True).click()
     page.locator('.guidance-card').wait_for()
-    assert page.locator('.guidance-card [aria-current="step"]').inner_text() == '1\n完善企业资料'
+    assert page.locator('.guidance-card [aria-current="step"]').inner_text() == '1\n' + first
     page.locator('.message.assistant').last.get_by_role('button', name='这一步已完成', exact=True).click()
-    page.locator('.guidance-card').last.get_by_text('选择认证方式', exact=True).wait_for()
-    page.wait_for_function(
-        "document.querySelector('#smarttitu-assistant-widget').shadowRoot.querySelectorAll('.guidance-card').length === 2")
-    assert '选择认证方式' in page.locator('.guidance-card [aria-current="step"]').last.inner_text()
+    expect(page.locator('.guidance-card')).to_have_count(2)
+    assert second in page.locator('.guidance-card [aria-current="step"]').last.inner_text()
     expect(page.get_by_role('button', name='这一步已完成', exact=True).first).to_be_disabled()
     screenshot = os.environ.get('V2_SCREENSHOT')
-    if screenshot:
+    if screenshot and flow_id=='verification':
         page.set_viewport_size({'width': 1100, 'height': 1000})
         page.locator('.guidance-card').last.scroll_into_view_if_needed()
         page.locator('#smarttitu-panel').screenshot(path=screenshot)
+    page.locator('.message.assistant').last.get_by_role('button', name='这一步怎么做', exact=True).click()
+    expect(page.locator('.guidance-card')).to_have_count(3)
+    assert second in page.locator('.guidance-card [aria-current="step"]').last.inner_text()
     page.locator('.message.assistant').last.get_by_role('button', name='返回上一步', exact=True).click()
-    page.wait_for_function(
-        "document.querySelector('#smarttitu-assistant-widget').shadowRoot.querySelectorAll('.guidance-card').length === 3")
-    assert '完善企业资料' in page.locator('.guidance-card [aria-current="step"]').last.inner_text()
+    expect(page.locator('.guidance-card')).to_have_count(4)
+    assert first in page.locator('.guidance-card [aria-current="step"]').last.inner_text()
     page.locator('.message.assistant').last.get_by_role('button', name='结束指导', exact=True).click()
     page.locator('.guidance-badge').last.get_by_text('已结束', exact=True).wait_for()
     assert_no_page_errors(ui)
 
 
 @pytest.mark.ui
-def test_clarification_offers_both_paths(ui):
+@pytest.mark.parametrize('choice', ['账单支付流程', '客户充值流程'])
+def test_clarification_offers_both_paths(ui, choice):
     ask(ui, '支付不了')
     assert ui.page.locator('.message.assistant').last.locator('.assistant-actions button').count() == 2
+    ui.page.locator('.message.assistant').last.get_by_role('button', name=choice, exact=True).click()
+    expect(ui.page.get_by_text(f'这里是{choice}的办理指引。', exact=True)).to_be_visible()
+    assert ui.requests[-1]['body']['message']==choice
     assert_no_page_errors(ui)
 
 

@@ -56,6 +56,7 @@ class State(TypedDict,total=False):
     interpretation:dict
     explicit_guide_control:bool
     resolved_question:str
+    question_parts:list
 
 @dataclass
 class Context:
@@ -159,7 +160,7 @@ class SupportWorkflow:
                 intent = 'handoff'
             elif intent != 'handoff' and sensitive_topic(question):
                 intent = 'sensitive'
-        values={'interpretation':interpretation,'intent':intent,'answer':FALLBACK,'reason':'no_knowledge','success':False,
+        values={'interpretation':interpretation,'intent':intent,'answer':FALLBACK,'reason':'no_knowledge','success':False,'question_parts':[],
                 'selected':[],'images':[],'evidence':[],'candidates':[],'retrieval_failed':False,
                 'retrieval':{'matched':False,'method':'skipped','threshold':self.service.config.min_similarity,'similarity':None}}
         if intent == 'sensitive':
@@ -284,6 +285,34 @@ class SupportWorkflow:
                       used_context=resolution['kind']=='followup' or bool(resolution.get('older_messages')))
                 debug_event('resolved_question',original_question=state['question'],**resolution)
                 if resolution['kind']=='clarify':return {'clarification':resolution['clarification']}
+                if resolution.get('subqueries') and not assistance.get('query'):
+                    from .deadlines import RetrievalTimeout
+                    evidence, indexes, parts, failures = [], {}, [], []
+                    for query in resolution['subqueries']:
+                        check()
+                        runtime.context.check()
+                        try:
+                            rows = retrieve(self.service.knowledge,query)['evidence']
+                        except (RequestCancelled,RetrievalTimeout):
+                            raise
+                        except Exception as error:
+                            check()
+                            event('subquery_retrieval_failed',level='WARNING',**error_fields(error))
+                            failures.append(error)
+                            rows = []
+                        part_indexes = []
+                        for row in rows:
+                            key = (row['id'],row['content'],row.get('image_evidence'))
+                            if key not in indexes:
+                                indexes[key] = len(evidence)
+                                evidence.append(row)
+                            part_indexes.append(indexes[key])
+                        parts.append({'question':query,'evidence_indexes':part_indexes})
+                    if len(failures) == len(parts):
+                        raise failures[0]
+                    return {'evidence':evidence,'question_parts':parts,
+                            'retrieval':{'matched':bool(evidence),'method':'decomposed','query':resolution['question'],
+                                         'parts':[{'question':part['question'],'matched':bool(part['evidence_indexes'])} for part in parts]}}
                 query=state.get('assistance',{}).get('query') or resolution['question']
                 if self.service.config.retrieval_backend!='semantic' and resolution['kind']=='independent':query=retrieval_query(query,[])
                 if state.get('explicit_guide_control') and assistance.get('kind')=='guide':
@@ -333,7 +362,8 @@ class SupportWorkflow:
                   evidence_count=len(evidence),evidence_ids=[r['id'] for r in evidence],
                   rerank_scores=[round(float(hit[0]),6) for hit in hits],
                   elapsed_ms=round((time.monotonic()-started)*1000,2))
-            values={'retrieval':report,'evidence':evidence,'candidates':candidates,'resolved_question':report.get('query',state['question'])}
+            values={'retrieval':report,'evidence':evidence,'candidates':candidates,'resolved_question':report.get('query',state['question']),
+                    'question_parts':found.get('question_parts',[])}
             if state.get('assistance',{}).get('kind')=='guide':
                 from .assistance import stage_context
                 guidance=state['assistance']['guidance'];current=stage_context(guidance,evidence)
@@ -418,6 +448,7 @@ class SupportWorkflow:
                 resolved=interpretation['question']
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
                 '_resolved_question':resolved,
+                '_question_parts':state.get('question_parts',[]),
                 '_runtime_tools':sorted(s.tools.tools),
                 '_on_delta':safe_delta if runtime.context.observer else None,
                 '_guidance':state.get('guide_context'),'_reserved_qr':bool(qr)}
@@ -455,6 +486,8 @@ class SupportWorkflow:
                 if qr:
                     supported=[r for r in state['evidence'] if qr['id'] in r.get('image_ids',[])]
                     selected=list({r['id']:r for r in [*selected,*supported]}.values())
+                elif state.get('question_parts'):
+                    selected=list({r['id']:r for r in selected}.values())
                 runtime.context.metadata(citations=[s.citation(r) for r in selected],images=[],media_pending=self.visual_pending(state))
             return {'selected':selected,'images':[],'answer':result['answer'],'reason':'guidance' if state.get('guide_context') else intent,'success':True}
         except RequestCancelled:raise

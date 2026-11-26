@@ -20,9 +20,12 @@ class IntentIsolationTests(unittest.TestCase):
             model.complete.assert_called_once()
 
     def test_old_turn_cannot_supply_the_only_evidence_for_complaint(self):
-        with self.assertRaises(ValueError):
-            interpret(self.model(intent='complaint',evidence='我要投诉'),'数据不出域是不是所有版本默认支持',
-                      [{'role':'user','content':'我要投诉'}])
+        question='数据不出域是不是所有版本默认支持'
+        model=self.model(intent='complaint',evidence='我要投诉')
+        result=interpret(model,question,[{'role':'user','content':'我要投诉'}])
+        self.assertEqual(result['intent'],'knowledge')
+        self.assertEqual(result['question'],question)
+        self.assertEqual(model.complete.call_count,2)
 
     def test_followup_is_rewritten_in_one_call(self):
         model=self.model(kind='followup',question='提前开票是否能多次申请')

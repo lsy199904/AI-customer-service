@@ -55,6 +55,86 @@ def evidence_answer(question, history, evidence, context):
             'citation_ids': [item['id'] for item in evidence], 'image_ids': []}
 
 
+@pytest.mark.parametrize('has_curl', [True, False])
+def test_combined_invoice_and_curl_search_independently_and_keep_per_part_evidence(service, has_curl):
+    sid = service.create(ACTOR, {})['session_id']
+    questions = ['在线开票流程是什么？', 'SmartTITU API 怎么用 cURL 调用？']
+    invoice = next(row for row in service.knowledge.rows.values() if row['title'].endswith('在线开票流程'))
+    curl = next(row for row in service.knowledge.rows.values() if 'curl' in row['title'].lower())
+    model = Model(service.config)
+    reply = f"1. {invoice['content'][:180]}\n2. " + (curl['content'][:220] if has_curl else '未找到 cURL 示例。')
+    model.complete = Mock(side_effect=[plan('knowledge', subqueries=questions), reply])
+    service.model = model
+    with patch('app.chains.retrieve', side_effect=[
+        {'evidence': [invoice]}, {'evidence': [curl] if has_curl else []},
+    ]) as search:
+        result = chat(service, sid, '怎么开票？再给一个 API 调用的 cURL 示例。', 'invoice-and-curl')
+    assert [call.args[1] for call in search.call_args_list] == questions
+    payload = json.loads(model.complete.call_args.args[0][-1]['content'])
+    assert [part['matched'] for part in payload['question_parts']] == [True, has_curl]
+    assert [item['parts'] for item in payload['evidence']] == ([[1], [2]] if has_curl else [[1]])
+    assert result['status'] == 'answered' and result['retrieval']['method'] == 'decomposed'
+    assert len(result['citations']) == (2 if has_curl else 1)
+    assert ('未找到 cURL 示例' in result['answer']) is not has_curl
+
+
+def test_a_split_that_drops_the_new_amount_falls_back_to_the_unsplit_question():
+    model = Mock()
+    model.complete.return_value = plan('knowledge', subqueries=['怎么提前开票？', '怎么创建 API 密钥？'])
+    question = '如何提前开票2万元，还要去哪创建 API 密钥？'
+    result = interpret(model, question, [])
+    assert result['question'] == question
+    assert 'subqueries' not in result
+
+
+def test_two_excerpts_from_the_same_source_keep_their_own_parts(service):
+    sid = service.create(ACTOR, {})['session_id']
+    model = Model(service.config)
+    model.complete = Mock(side_effect=[
+        plan('knowledge', subqueries=['Token是什么？', 'RPM是什么？']),
+        'Token 是词元。RPM 是每分钟请求数。',
+    ])
+    service.model = model
+    result = chat(service, sid, 'Token是什么？RPM是什么？', 'same-source-separate-parts')
+    payload = json.loads(model.complete.call_args.args[0][-1]['content'])
+    assert [item['parts'] for item in payload['evidence']] == [[1], [2]]
+    assert 'Token(词元)' in payload['evidence'][0]['content']
+    assert 'RPM(每分钟请求数)' in payload['evidence'][1]['content']
+    assert len(result['citations']) == 1
+
+
+def test_weather_payment_and_followup_after_split_use_each_new_turn(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.side_effect = [
+        plan('knowledge', subqueries=['Token是什么？', 'RPM是什么？']),
+        plan('out_of_scope'),
+        plan('knowledge', flow_id='recharge'),
+        plan('knowledge', 'followup', question='充值时支付失败怎么办？', flow_id='recharge'),
+    ]
+    def answer(question, history, evidence, context):
+        if context['_intent']=='out_of_scope':
+            assert not context['_question_parts'] and not history and not evidence
+            return {'answerable':True, 'answer':'天气查询超出 SmartTITU 客服服务范围。',
+                    'citation_ids':[], 'image_ids':[]}
+        return evidence_answer(question, history, evidence, context)
+
+    service.model.answer.side_effect = answer
+    first = chat(service, sid, 'Token是什么？RPM是什么？', 'split-before-other-turns')
+    assert first['retrieval']['method']=='decomposed'
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('scope and clarification skip retrieval')):
+        weather = chat(service, sid, '今天天气怎么样？', 'weather-after-split')
+        payment = chat(service, sid, '支付不了', 'payment-after-weather')
+    assert weather['reason']=='out_of_scope' and weather['citations']==[]
+    assert [action['message'] for action in payment['actions']]==['账单支付流程', '客户充值流程']
+    selected = chat(service, sid, '客户充值流程', 'choose-recharge-after-split')
+    assert selected['retrieval']['method']=='registered_flow'
+    with patch('app.chains.retrieve', return_value={'evidence':[], 'retrieval':{'matched':False,'hits':[]}}):
+        followup = chat(service, sid, '还是支付不了怎么办？', 'recharge-followup-after-split')
+    assert [item['section_title'] for item in followup['citations']]==['客户充值流程']
+    context = service.model.answer.call_args.args[3]
+    assert context['_resolved_question']=='充值时支付失败怎么办？' and not context['_question_parts']
+
+
 @pytest.mark.parametrize('question', ['今天天气怎么样？', '聊聊你喜欢的足球队',
                                      '推荐色情网站', '给我一个通用 Flask API 示例'])
 def test_out_of_scope_skips_retrieval_and_offers_product_questions(service, question):

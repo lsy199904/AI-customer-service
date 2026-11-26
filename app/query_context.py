@@ -140,8 +140,9 @@ kind 选择 independent、followup、mixed、clarify 或 lookup。完整问题�
 独立产品问题如有明显错拼、口语或缺省表达，且主体与需求足够明确，在 normalized_query 写一个适合优先检索的独立问句。只纠正有把握的产品名或术语、补出用户已表达的需求，保留原有的产品、功能、对象、否定、金额、时间和报错等条件。不要从旧话题补入本轮未表达的需求，也不要擅改像型号、版本或错误码的标识。原话已清楚时留空。疑似本平台产品名或术语但只有名称、还看不出想问什么时，选择 knowledge + clarify，说明可能的含义，再问一个具体问题。仅在毫无可辨含义时用 unclear_input。
 用户描述困难时，能从会话确定业务就给出对应检索问法。业务不明确且可能影响下一步时，只澄清一个关键点。能用通用流程回答时无需索要具体订单、账号或支付方式。choices 仅列可能解决本轮歧义的流程，最多三个。明确回指更早对话且近期信息不足时用 lookup，history_query 填简短主题词（词间使用空格）或日期。收到 older_messages 后给出最终判断。
 口语提问、办理下一步和故障排查可在 retry_query 提供一个自包含的等义检索问题，完整保留用户条件。仅在通用流程资料能帮助回答时填写 flow_id。具体政策、数值、报错细节或实时状态需要专门证据，不使用通用流程代替。flow_id 和 choices 仅可使用系统已登记的流程编号，未确定时保留空值。
+同一轮有两到三个需要分别查资料的产品问题时，按原顺序把自包含的检索问句填进 subqueries。保留每个子问题各自的限定。例如同时问开票和 API 的 cURL 示例，应分别检索。单一问题、同义改写或必须一起理解的条件留空；范围外的问题不写进 subqueries。
 evidence 仅在 handoff、complaint 或 account_status 时填写，必须从本轮摘录能独立表明用户请求相应帮助的完整片段。澄清时用 clarification 填写用户可以直接回答的问题。只输出约定 JSON。
-{"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","clarification":"","history_query":"","choices":[],"flow_id":"","evidence":""}
+{"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","subqueries":[],"clarification":"","history_query":"","choices":[],"flow_id":"","evidence":""}
 '''
 
 
@@ -355,6 +356,16 @@ def _validate_interpretation(data, question, history, payload):
                   'choices': [choice for choice in choices[:3] if isinstance(choice, str) and choice in registered]}
     if kind == 'independent' and rewritten != question:
         normalized['normalized_query'] = rewritten
+    subqueries = data.get('subqueries')
+    if (intent == 'knowledge' and kind in ('independent', 'followup', 'mixed')
+            and isinstance(subqueries,list) and 2<=len(subqueries)<=3
+            and all(isinstance(query,str) and 1<=len(query.strip())<=400 for query in subqueries)):
+        queries = [query.strip() for query in subqueries]
+        numbers = r'\d+(?:\.\d+)?'
+        if (len({query.casefold().rstrip('？?。').strip() for query in queries}) == len(queries)
+                and set(re.findall(numbers,question)) <= set(re.findall(numbers,' '.join(queries)))
+                <= set(re.findall(numbers,rewritten)) | set(re.findall(numbers,question))):
+            normalized['subqueries'] = queries
     if recovered_action:
         normalized['recovered_action'] = True
     if 'older_messages' in payload:
