@@ -171,14 +171,14 @@ ROUTING_PROMPT = '''你是 SmartTITU 智能客服的问题分流器。用户输�
 kind 选择 independent、followup、mixed、clarify 或 lookup。完整问题保留原话。追问根据最近相关消息补全所指，优先使用用户最新说明，保留已完成阶段、金额、时间、报错、主体和限制。前一轮的意图不会延续到明确的新主题。历史只帮助理解，历史助手答复中的业务结论与数值不作为事实。
 只有本轮确实有承接前文的内容，或用户回答上一轮澄清，才能用 followup；此时在 context_reference 摘录相关历史消息中能确认所指的原话。仅有残缺输入或语法片段时，不得靠历史替用户造问题。用户明确说明了新的主题和想问的事时，按 independent，禁止把它改写成旧主题。
 先从本轮确认业务对象和想问的事。两者都明确时用 independent，原话清楚时直接用原问；例如“提前开票最高多少？”只问开票金额上限，不能带入旧话题的调用限额或增添申请次数。
-有指代或关键对象省略时，从最新消息向前找，优先绑定最近一个能解释所指的明确业务对象，并在 context_reference 摘录含该对象的原话。上一轮已谈提前开票时，“那这个额度可以多次申请吗？”只补全为“提前开票可以多次申请吗？”；上一轮明确谈模型调用限额时，同一句话指调用限额。仅共享“额度”“申请”等词不能确认指代。用户明确回指更早内容时按其指向查找；多个对象仍无法区分时只澄清对象。改写只补齐本轮缺失的信息，不从历史填入未经证实的规则或额外问题。
+有指代或关键对象省略时，从最新消息向前找，优先绑定最近一个能解释所指的明确业务对象，并在 context_reference 摘录含该对象的原话，在 context_index 填该消息的 index。上一轮已谈提前开票时，“那这个额度可以多次申请吗？”只补全为“提前开票可以多次申请吗？”；上一轮明确谈模型调用限额时，同一句话指调用限额。仅共享“额度”“申请”等词不能确认指代。用户明确回指更早内容时按其指向查找；多个对象仍无法区分时只澄清对象。改写只补齐本轮缺失的信息，不从历史填入未经证实的规则或额外问题。
 独立产品问题如有明显错拼、口语或缺省表达，且主体与需求足够明确，在 normalized_query 写一个适合优先检索的独立问句。只纠正有把握的产品名或术语、补出用户已表达的需求，保留原有的产品、功能、对象、否定、金额、时间和报错等条件。不要从旧话题补入本轮未表达的需求，也不要擅改像型号、版本或错误码的标识。原话已清楚时留空。疑似本平台产品名或术语但只有名称、还看不出想问什么时，选择 knowledge + clarify，说明可能的含义，再问一个具体问题。仅在毫无可辨含义时用 unclear_input。
 用户描述困难时，能从会话确定业务就给出对应检索问法。业务不明确且可能影响下一步时，只澄清一个关键点。能用通用流程回答时无需索要具体订单、账号或支付方式。choices 仅列可能解决本轮歧义的流程，最多三个。明确回指更早对话且近期信息不足时用 lookup，history_query 填简短主题词（词间使用空格）或日期。收到 older_messages 后给出最终判断。
 pending_clarification 存在时，先判断本轮是否在回答上一轮的澄清问题。能确定用户选了哪个主题时，按 knowledge + followup 补成独立检索问句，短语或选项名也可以完成澄清。仍缺少关键条件时，只问缺失的那一项。用户明确换题时，按新问题处理。
-口语提问、办理下一步和故障排查可在 retry_query 提供一个自包含的等义检索问题，完整保留用户条件。仅在通用流程资料能帮助回答时填写 flow_id。具体政策、数值、报错细节或实时状态需要专门证据，不使用通用流程代替。flow_id 和 choices 仅可使用系统已登记的流程编号，未确定时保留空值。
+口语提问、办理下一步和故障排查可在 retry_query 提供一个自包含的等义检索问题，完整保留用户条件。请求代码、命令或配置示例时，在 retry_query 提供包含示例类型和已知业务对象的检索问句，查找实际请求或配置示例；保留用户指定的端点、语言和模型，未指定时不要猜。仅在通用流程资料能帮助回答时填写 flow_id。具体政策、数值、报错细节或实时状态需要专门证据，不使用通用流程代替。flow_id 和 choices 仅可使用系统已登记的流程编号，未确定时保留空值。
 同一轮有两到三个需要分别查资料的产品问题时，按原顺序把自包含的检索问句填进 subqueries。保留每个子问题各自的限定。例如同时问开票和 API 的 cURL 示例，应分别检索。单一问题、同义改写或必须一起理解的条件留空；范围外的问题不写进 subqueries。
 evidence 仅在 handoff、complaint 或 account_status 时填写，必须从本轮摘录能独立表明用户请求相应帮助的完整片段。澄清时用 clarification 填写用户可以直接回答的问题。只输出约定 JSON。
-{"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","subqueries":[],"clarification":"","history_query":"","context_reference":"","choices":[],"flow_id":"","evidence":""}
+{"intent":"knowledge","kind":"independent","question":"","normalized_query":"","retry_query":"","subqueries":[],"clarification":"","history_query":"","context_reference":"","context_index":null,"choices":[],"flow_id":"","evidence":""}
 '''
 
 
@@ -199,7 +199,7 @@ def bounded_history(history, limit=6, budget=3200):
                        'created_at': item.get('created_at'), 'status': response.get('status'), 'intent': response.get('intent'),
                        'guidance': (response.get('guidance') or {}).get('title')})
         budget -= len(text)
-    return list(reversed(result))
+    return [dict(item, index=index) for index, item in enumerate(reversed(result))]
 
 
 def interpret(model, question, history, diagnostics=None, *, lookup=None):
@@ -320,7 +320,8 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
                 if not isinstance(search, str) or not 1 <= len(search.strip()) <= 120:
                     raise ValueError('invalid history lookup')
                 older = lookup(search.strip())
-                payload['older_messages'] = bounded_history(older, limit=4, budget=1500)
+                payload['older_messages'] = [dict(item, index=len(payload['recent_messages']) + index)
+                                             for index, item in enumerate(bounded_history(older, limit=4, budget=1500))]
                 if diagnostics is not None:
                     diagnostics.append({'stage': 'history_lookup', 'messages': len(older)})
             except (ValueError, TypeError, AttributeError) as error:
@@ -368,7 +369,7 @@ def _validate_interpretation(data, question, history, payload):
         raise ValueError('invalid conversation interpretation')
     target = definition_target(question)
     reference = data.get('context_reference')
-    if kind=='followup' and isinstance(reference,str) and reference.strip():
+    if kind=='followup' and 'context_index' not in data and isinstance(reference,str) and reference.strip():
         prior = payload['recent_messages'] + payload.get('older_messages', [])
         if not any(reference.strip() in item['content'] for item in prior):
             data.update(kind='independent',normalized_query='',retry_query='',flow_id=None,subqueries=[])
@@ -376,6 +377,12 @@ def _validate_interpretation(data, question, history, payload):
     if intent=='knowledge' and (kind=='followup' and has_explicit_topic(question) or kind=='mixed' and target):
         data.update(kind='independent',normalized_query='',retry_query='',flow_id=None,subqueries=[])
         kind = 'independent'
+    if kind == 'followup' and intent in {'knowledge', 'image'} and 'context_index' in data:
+        index = data['context_index']
+        prior = payload['recent_messages'] + payload.get('older_messages', [])
+        if (type(index) is not int or not isinstance(reference, str) or not reference.strip()
+                or not any(item.get('index') == index and reference.strip() in item['content'] for item in prior)):
+            raise ValueError('invalid followup context reference')
     if intent in {'account_status', 'handoff', 'complaint'}:
         evidence = data.get('evidence')
         if not isinstance(evidence, str) or not evidence.strip() or evidence not in question:

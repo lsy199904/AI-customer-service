@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
+import re
 from contextvars import copy_context
 from concurrent.futures import ThreadPoolExecutor,TimeoutError as FutureTimeout
 import sqlite3
@@ -334,11 +335,25 @@ class SupportWorkflow:
                 picked,preferred=recommended_selection(self.service.knowledge,state['question'] if normalized else query,state['history'])
                 resolved=picked if preferred or not normalized else query
                 found=retrieve(self.service.knowledge,resolved,preferred_id=preferred) if preferred else retrieve(self.service.knowledge,resolved)
+                def partial_only(result):
+                    selected = [row.get('semantic_support') or {} for row in
+                                result['retrieval'].get('_candidate_decisions', []) if row.get('selected')]
+                    return bool(selected) and all(row.get('support') == 'partial' for row in selected)
+
+                weak_evidence = partial_only(found)
                 retry_query=state['question'] if normalized else resolution.get('retry_query')
-                if retry_query and retry_query!=resolved and not found['evidence'] and not assistance.get('query'):
+                if weak_evidence and resolution['kind']=='independent' and resolved!=state['question']:
+                    retry_query=state['question']
+                original = state['question']
+                codes = set(re.findall(r'(?<!\d)[45]\d{2}(?!\d)', original))
+                if (resolution['kind']=='independent' and len(codes)==1 and
+                        re.search(r'\bHTTP\s*[45]\d{2}\b|返回\s*[45]\d{2}|(?:报错|错误码|状态码)\s*[：:]?\s*[45]\d{2}', original, re.I)):
+                    retry_query = next(iter(codes))
+                if (retry_query and retry_query!=resolved and (not found['evidence'] or weak_evidence)
+                        and not assistance.get('query')):
                     check()
                     retry=retrieve(self.service.knowledge,retry_query)
-                    if retry['evidence']:
+                    if retry['evidence'] and (not weak_evidence or not partial_only(retry)):
                         found,resolved=retry,retry_query
                 if not found['evidence'] and not assistance.get('query'):
                     if flow_id and (direct:=self._flow_evidence(flow_id,resolved)):

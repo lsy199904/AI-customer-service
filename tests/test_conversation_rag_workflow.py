@@ -191,9 +191,11 @@ def test_explicit_limit_question_ignores_stale_followup_plan(question):
 def test_ambiguous_limit_followup_keeps_resolved_topic(topic, older):
     model = Mock()
     rewritten = f'{topic}可以多次申请吗？'
-    model.complete.return_value = plan(
-        'knowledge', 'followup', question=rewritten, context_reference=topic,
-    )
+    model.complete.side_effect = [
+        plan('knowledge', 'followup', question=f'{older}可以多次申请吗？',
+             context_reference=older, context_index=3),
+        plan('knowledge', 'followup', question=rewritten, context_reference=topic, context_index=3),
+    ]
     result = interpret(model, '那这个额度可以多次申请吗？', [
         {'role': 'user', 'content': f'{older}是多少？'},
         {'role': 'assistant', 'content': f'刚才讨论的是{older}。'},
@@ -202,6 +204,7 @@ def test_ambiguous_limit_followup_keeps_resolved_topic(topic, older):
     ])
     assert result['kind'] == 'followup'
     assert result['question'] == rewritten
+    assert model.complete.call_count == 2
 
 
 def test_business_fact_checks_accept_equivalent_amount_and_count_and_reject_extra_limit():
@@ -693,13 +696,15 @@ def test_clear_typo_is_corrected_before_search_and_original_remains_in_history(s
     assert service.history(ACTOR, sid)['items'][0]['content'] == 'toen是什么'
 
 
-def test_corrected_query_can_fall_back_to_original(service):
+@pytest.mark.parametrize('partial', [False, True])
+def test_corrected_query_can_fall_back_to_original(service, partial):
     sid = service.create(ACTOR, {})['session_id']
     service.model.complete.return_value = plan('knowledge', normalized_query='如何为账户余额充值？')
     service.model.answer.side_effect = evidence_answer
     row = next(row for row in service.knowledge.rows.values() if '客户充值流程' in row['title'])
     with patch('app.chains.retrieve', side_effect=[
-        {'evidence': [], 'retrieval': {'matched': False, 'hits': []}},
+        {'evidence': [row] if partial else [], 'retrieval': {'matched': partial, 'hits': [],
+            '_candidate_decisions': [{'selected': True, 'semantic_support': {'support': 'partial'}}] if partial else []}},
         {'evidence': [row], 'retrieval': {'matched': True, 'hits': []}},
     ]) as search:
         result = chat(service, sid, '我的余额咋往里加', 'search-original-fallback')
@@ -713,6 +718,40 @@ def test_independent_rewrite_does_not_change_error_code():
     result = interpret(model, 'API报401咋办', [])
     assert result['question'] == 'API报401咋办'
     assert 'normalized_query' not in result
+
+
+def test_full_http_error_question_retries_by_code(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge')
+    service.model.answer.side_effect = evidence_answer
+    row = next(row for row in service.knowledge.rows.values() if '429' in row['content'])
+    with patch('app.chains.retrieve', side_effect=[
+        {'evidence': [], 'retrieval': {'matched': False, 'hits': []}},
+        {'evidence': [row], 'retrieval': {'matched': True, 'hits': []}},
+    ]) as search:
+        result = chat(service, sid, 'API返回429，我应该怎么处理？', 'http-error-code-retry')
+    assert [call.args[1] for call in search.call_args_list] == ['API返回429，我应该怎么处理？', '429']
+    assert result['status'] == 'answered'
+
+
+def test_curl_request_retries_when_only_partial_evidence_is_selected(service):
+    sid = service.create(ACTOR, {})['session_id']
+    alternate = 'SmartTITU cURL 请求示例，包含命令和请求参数'
+    service.model.complete.return_value = plan('knowledge', retry_query=alternate)
+    service.model.answer.side_effect = evidence_answer
+    rows = service.knowledge.rows.values()
+    response_example = next(row for row in rows if 'curl' in row['title'].lower() and '响应示例' in row['title'])
+    request_example = next(row for row in rows if 'cURL 调用' in row['title'] and 'curl -X POST' in row['content'])
+    with patch('app.chains.retrieve', side_effect=[
+        {'evidence': [response_example], 'retrieval': {'matched': True, 'hits': [],
+            '_candidate_decisions': [{'selected': True, 'semantic_support': {'support': 'partial'}}]}},
+        {'evidence': [request_example], 'retrieval': {'matched': True, 'hits': [],
+            '_candidate_decisions': [{'selected': True, 'semantic_support': {'support': 'direct'}}]}},
+    ]) as search:
+        result = chat(service, sid, '给我一个最简单的cURL调用示例。', 'curl-request-example')
+    assert search.call_args.args[1] == alternate
+    assert 'curl -X POST' in result['answer']
+    assert [citation['id'] for citation in result['citations']] == [request_example['id']]
 
 
 @pytest.mark.parametrize('question,offers_guide', [
