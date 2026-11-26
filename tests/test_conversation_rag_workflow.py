@@ -136,7 +136,7 @@ def test_weather_payment_and_followup_after_split_use_each_new_turn(service):
 
 
 @pytest.mark.parametrize('question', ['今天天气怎么样？', '聊聊你喜欢的足球队',
-                                     '推荐色情网站', '给我一个通用 Flask API 示例'])
+                                     '推荐色情网站', '给我一个通用 Flask API 示例', '淘宝订单支付不了'])
 def test_out_of_scope_skips_retrieval_and_offers_product_questions(service, question):
     service.model.complete.return_value = plan('out_of_scope')
     service.model.answer.return_value = {
@@ -152,6 +152,18 @@ def test_out_of_scope_skips_retrieval_and_offers_product_questions(service, ques
     assert any(action['type'] == 'handoff' for action in answer['actions'])
     assert service.model.answer.call_args.args[:3] == (question, [], [])
     assert len(service.history(ACTOR, sid)['items']) == 2
+
+
+@pytest.mark.parametrize('question', ['支付不了', '付款失败了', '我这边无法支付，怎么办？'])
+def test_payment_failure_mislabeled_out_of_scope_still_offers_both_choices(service, question):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('out_of_scope')
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('clarify without retrieval')):
+        result = chat(service, sid, question, 'payment-mislabeled-out-of-scope')
+    assert result['reason']=='clarification' and result['intent']=='clarification'
+    assert [item['message'] for item in result['actions']]==['账单支付流程', '客户充值流程']
+    assert not result['suggestions'] and not result['handoff']
+    service.model.answer.assert_not_called()
 
 
 @pytest.mark.parametrize('question,topic', [('今天是多少号', '日期'), ('今天天气怎么样？', '天气')])
@@ -524,6 +536,43 @@ def test_incomplete_product_name_gets_a_focused_question_before_search(service):
     assert result['reason'] == 'clarification'
     assert 'SmartTITU' in result['answer'] and result['suggestions'] == []
     service.model.answer.assert_not_called()
+
+
+@pytest.mark.parametrize('selection', ['api的token', 'api key里的token'])
+def test_token_clarification_can_be_resolved_by_a_short_reply(service, selection):
+    sid = service.create(ACTOR, {})['session_id']
+    clarification = '您是指 API Key 中的 token，还是模型用量中的 Token（词元）？'
+    repeated = plan('knowledge', 'clarify', clarification=clarification)
+    service.model.complete.side_effect = [
+        repeated, repeated, plan('knowledge', 'followup', question='SmartTITU API Key 鉴权凭证是什么？',
+                                 retry_query='API 密钥管理'),
+    ]
+    service.model.answer.side_effect = evidence_answer
+    first = chat(service, sid, 'tokn', 'token-first-clarification')
+    assert first['reason']=='clarification'
+    row = next(row for row in service.knowledge.rows.values() if 'API 密钥管理' in row['title'])
+    with patch('app.chains.retrieve', return_value={'evidence':[row], 'retrieval':{'matched':True,'hits':[]}}) as search:
+        result = chat(service, sid, selection, 'token-selection')
+    assert result['reason']=='knowledge'
+    assert 'API 密钥管理' in result['citations'][0]['title']
+    assert search.call_args.args[1]=='SmartTITU API Key 鉴权凭证是什么？'
+    review = json.loads(service.model.complete.call_args.args[0][-1]['content'])
+    assert review['pending_clarification']==clarification and 'routing_feedback' in review
+
+
+def test_repeated_clarification_uses_new_user_terms_for_search(service):
+    sid = service.create(ACTOR, {})['session_id']
+    repeated = plan('knowledge', 'clarify', clarification='您指注册还是企业认证？')
+    service.model.complete.return_value = repeated
+    assert chat(service, sid, '接下来怎么弄', 'general-clarification')['reason']=='clarification'
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('uncertain reply must not search')):
+        assert chat(service, sid, '不知道', 'still-uncertain')['reason']=='clarification'
+    empty = {'evidence':[], 'retrieval':{'matched':False,'hits':[]}}
+    with patch('app.chains.retrieve', return_value=empty) as search:
+        result = chat(service, sid, '企业实名认证', 'specific-topic')
+    search.assert_called_once()
+    assert search.call_args.args[1]=='企业实名认证'
+    assert '您指注册还是企业认证' not in result['answer']
 
 
 def test_clear_typo_is_corrected_before_search_and_original_remains_in_history(service):

@@ -176,8 +176,10 @@ class SupportWorkflow:
         values.update(assistance={},guidance=None,guide_context=None,explicit_guide_control=explicit_guide_control)
         if intent == 'unclear_input':
             values['assistance']={'kind':'clarify','answer':UNCLEAR_INPUT,'choices':[],'reason':'unclear_input'}
-        from .assistance import payment_needs_clarification
-        if semantic and intent in ('knowledge','guide','context_unavailable') and payment_needs_clarification(question,history,interpretation):
+        from .assistance import payment_needs_clarification,unqualified_payment_failure
+        can_clarify_payment = (intent in ('knowledge','guide','context_unavailable')
+                               or intent == 'out_of_scope' and unqualified_payment_failure(question))
+        if semantic and can_clarify_payment and payment_needs_clarification(question,history,interpretation):
             from .assistance import FLOWS,available
             try:
                 active = available(self.service.knowledge.rows.values())

@@ -116,6 +116,16 @@ def payment_subject(text):
     return next(iter(subjects)) if len(subjects) == 1 else None
 
 
+def unqualified_payment_failure(question):
+    """Recognize a short failure report without an external payment subject."""
+    compact = re.sub(r'[\s。！!？?，,]+', '', question)
+    return re.fullmatch(
+        r'(?:我这边|我|还是|一直|现在|刚才)*'
+        r'(?:(?:支付|付款|付)(?:不了|失败(?:了)?|不成功|不行)|(?:无法|不能)(?:支付|付款))'
+        r'(?:了|呢|怎么办|怎么处理)?', compact,
+    ) is not None
+
+
 def payment_needs_clarification(question, history, interpretation):
     if not ambiguous_payment(question) or flow_match(question, FLOWS):
         return False
