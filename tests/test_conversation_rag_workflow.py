@@ -79,7 +79,8 @@ def test_question_misclassified_as_greeting_gets_a_topic_specific_scope_reply(se
     model = Model(service.config)
     model.complete = Mock(side_effect=[
         plan('greeting'), plan('out_of_scope'),
-        f'{topic}查询超出客服服务范围。您可以问我 SmartTITU 的产品使用或模型接入。',
+        json.dumps({'topic': f'{topic}查询',
+                    'reply': '这项查询超出客服服务范围。您可以问我 SmartTITU 的产品使用或模型接入。'}, ensure_ascii=False),
     ])
     service.model = model
     sid = service.create(ACTOR, {})['session_id']
@@ -99,6 +100,23 @@ def test_scope_generation_failure_retains_safe_boundary(service):
     result = chat(service, sid, '今天是多少号？', 'scope-model-timeout')
     assert result['reason'] == 'out_of_scope'
     assert '服务范围' in result['answer'] and result['suggestions']
+
+
+@pytest.mark.parametrize('intent', ['complaint', 'handoff'])
+def test_payment_report_after_out_of_scope_cannot_become_an_escalation(service, intent):
+    service.model.complete.side_effect = [
+        plan('out_of_scope'), plan(intent, evidence='支付不了'), plan(intent, evidence='支付不了'),
+    ]
+    service.model.answer.return_value = {
+        'answerable': True, 'answer': '天气查询超出客服服务范围。您可以问我平台使用问题。',
+        'citation_ids': [], 'image_ids': [],
+    }
+    sid = service.create(ACTOR, {})['session_id']
+    with patch.object(service, 'reserve_rag_quota', side_effect=AssertionError('clarify before retrieval')):
+        chat(service, sid, '今天天气怎么样', 'weather-before-payment')
+        result = chat(service, sid, '支付不了', 'wrong-escalation')
+    assert result['reason'] == 'clarification' and not result['handoff']
+    assert [choice['message'] for choice in result['actions']] == ['账单支付流程', '客户充值流程']
 
 
 def test_handoff_buttons_work_with_classifier_unavailable(service):

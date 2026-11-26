@@ -134,7 +134,7 @@ ROUTING_PROMPT = '''你是 SmartTITU 智能客服的问题分流器。用户输�
 - knowledge：产品能力、规则、操作指引、办理进度的自助查询方法、故障排查，以及用户描述困难后可能需要的产品帮助。
 - 本客服提供办理指引。无论用户在问怎么操作、描述操作失败，还是请客服帮忙办理，都按 knowledge 理解成查找操作或排查指引。能从前文确定业务就补全检索问题；有多个业务可能且影响指引时，只问需要确认的那一点。account_status 仅用于明确要求查询其账户、资源或订单的实时数据。
 - image：找产品图示。history：回顾对话或复述已有答复。涉及新的产品事实、政策或条件时选 knowledge。
-- handoff：明确请求人工协助，或在推荐之后明确表示选项都不适用。complaint：本轮正在投诉或请求升级。咨询办理方法属于 knowledge。
+- handoff：本轮明确请求人工协助，或在推荐之后明确表示选项都不适用。complaint：本轮明确表示要投诉、申诉或升级处理。仅描述故障、表达不满、说问题还没解决，或询问投诉办理方法，仍用 knowledge。
 - guide：请求开始或继续分步指导。identity、capabilities、greeting、thanks、farewell 为客服互动。
 kind 选择 independent、followup、mixed、clarify 或 lookup。完整问题保留原话。追问根据最近相关消息补全所指，优先使用用户最新说明，保留已完成阶段、金额、时间、报错、主体和限制。前一轮的意图不会延续到明确的新主题。历史只帮助理解，历史助手答复中的业务结论与数值不作为事实。
 独立产品问题如有明显错拼、口语或缺省表达，且主体与需求足够明确，在 normalized_query 写一个适合优先检索的独立问句。只纠正有把握的产品名或术语、补出用户已表达的需求，保留原有的产品、功能、对象、否定、金额、时间和报错等条件。不要从旧话题补入本轮未表达的需求，也不要擅改像型号、版本或错误码的标识。原话已清楚时留空。疑似本平台产品名或术语但只有名称、还看不出想问什么时，选择 knowledge + clarify，说明可能的含义，再问一个具体问题。仅在毫无可辨含义时用 unclear_input。
@@ -235,6 +235,14 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
                         '给出自包含的检索问句；确实无法确定具体业务时填 clarify，并给出相关的流程选项。'
                     )
                     continue
+                if data.get('intent') in ('complaint','handoff') and not explicit_escalation(data, question, history):
+                    if not attempt:
+                        payload['routing_feedback'] = (
+                            '本轮原话没有明确要求投诉、升级、转人工，也没有拒绝上一轮的推荐。'
+                            '按实际主题重新分流；描述业务失败时给出检索问句，或澄清涉及哪个流程。'
+                        )
+                        continue
+                    data.update(intent='knowledge', kind='independent')
                 if data.get('intent') == 'account_status' and not attempt:
                     payload['routing_feedback'] = (
                         '复核用户是否明确请求查询自己的实时数据。'
@@ -269,6 +277,22 @@ def interpret(model, question, history, diagnostics=None, *, lookup=None):
                     diagnostics.append({'stage':'classification_retry','reason':category})
     finally:
         _options.reset(token)
+
+
+def explicit_escalation(data, question, history):
+    """A routing label alone cannot turn a problem report into an escalation."""
+    evidence = data.get('evidence')
+    if not isinstance(evidence, str) or not evidence.strip() or evidence not in question:
+        return False
+    if data['intent']=='complaint':
+        return bool(re.search(r'投诉|申诉|举报|升级(?:处理|反馈|工单)|\b(?:complain|complaint|escalate)\b', evidence, re.I)
+                    and not re.search(r'(?:怎么|如何|哪里|怎样|取消|撤回|不想|不要)(?:.{0,8})(?:投诉|申诉|举报|升级)', question))
+    from .conversation import intent_of, rejected_recommendations
+    if rejected_recommendations(question, history):
+        return True
+    requests_human = (intent_of(question)=='handoff'
+                      or bool(re.search(r'\b(?:human agent|live agent|speak to a person)\b', evidence, re.I)))
+    return requests_human and not re.search(r'(?:不要|不想|不用|无需)(?:.{0,5})(?:人工|客服)', question)
 
 
 def _validate_interpretation(data, question, history, payload):
