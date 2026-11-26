@@ -734,6 +734,17 @@ def test_full_http_error_question_retries_by_code(service):
     assert result['status'] == 'answered'
 
 
+def test_http_error_uses_matching_source_when_generation_cannot_answer(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge')
+    service.model.answer.return_value = {'answerable': False, 'answer': '', 'citation_ids': [], 'image_ids': []}
+    row = next(row for row in service.knowledge.rows.values() if 'rate_limit_error(429)' in row['title'])
+    with patch('app.chains.retrieve', return_value={'evidence': [row], 'retrieval': {'matched': True, 'hits': []}}):
+        result = chat(service, sid, 'API返回429，我应该怎么处理？', 'http-error-source-fallback')
+    assert result['status'] == 'answered'
+    assert [citation['id'] for citation in result['citations']] == [row['id']]
+
+
 def test_curl_request_retries_when_only_partial_evidence_is_selected(service):
     sid = service.create(ACTOR, {})['session_id']
     alternate = 'SmartTITU cURL 请求示例，包含命令和请求参数'

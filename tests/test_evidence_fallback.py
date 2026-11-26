@@ -32,6 +32,15 @@ def test_no_lexical_support_returns_no_evidence():
     assert fallback_evidence('海底火山形成原因',candidates(),4)==([],'fallback_no_support')
 
 
+def test_curl_fallback_prioritizes_a_request_over_a_response_example():
+    rows = [
+        {'row': {'id': 'response', 'title': 'cURL 调用响应示例', 'content': '返回请求 ID。'}},
+        {'row': {'id': 'request', 'title': '请求示例', 'content': 'curl -X POST https://api.example.com/v1/responses'}},
+    ]
+    selected, _ = fallback_evidence('给我一个最简单的cURL调用示例。', rows, 1)
+    assert selected == [rows[1]]
+
+
 def test_unrelated_high_score_does_not_prove_support():
     rows=[{**candidates()[0],'row':dict(id='bad',title='天气',content='晴天。'),'score':1.}]+candidates()
     assert fallback_evidence('如何创建和管理API KEY',rows,1)[0][0]['row']['id']=='api-management'

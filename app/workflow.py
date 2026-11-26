@@ -26,6 +26,18 @@ OUT_OF_SCOPE='这个问题超出了 SmartTITU 客服的服务范围。您可以�
 CONTEXT_UNAVAILABLE='暂时无法理解这条问题，请稍后重试。您可以继续使用当前会话。'
 UNCLEAR_INPUT='请问您想了解 SmartTITU 的哪项功能，或遇到了什么问题？'
 
+HTTP_STATUS = re.compile(r'(?<!\d)[45]\d{2}(?!\d)')
+
+
+def explicit_http_status(question):
+    codes = set(HTTP_STATUS.findall(question))
+    if len(codes) == 1 and re.search(
+        r'\bHTTP\s*[45]\d{2}\b|返回\s*[45]\d{2}|(?:报错|错误码|状态码)\s*[：:]?\s*[45]\d{2}',
+        question, re.I,
+    ):
+        return next(iter(codes))
+
+
 class RequestCancelled(Exception):pass
 class WorkflowConflict(Exception):pass
 
@@ -344,11 +356,8 @@ class SupportWorkflow:
                 retry_query=state['question'] if normalized else resolution.get('retry_query')
                 if weak_evidence and resolution['kind']=='independent' and resolved!=state['question']:
                     retry_query=state['question']
-                original = state['question']
-                codes = set(re.findall(r'(?<!\d)[45]\d{2}(?!\d)', original))
-                if (resolution['kind']=='independent' and len(codes)==1 and
-                        re.search(r'\bHTTP\s*[45]\d{2}\b|返回\s*[45]\d{2}|(?:报错|错误码|状态码)\s*[：:]?\s*[45]\d{2}', original, re.I)):
-                    retry_query = next(iter(codes))
+                if resolution['kind']=='independent':
+                    retry_query = explicit_http_status(state['question']) or retry_query
                 if (retry_query and retry_query!=resolved and (not found['evidence'] or weak_evidence)
                         and not assistance.get('query')):
                     check()
@@ -496,7 +505,15 @@ class SupportWorkflow:
                   history_messages=len(history),elapsed_ms=round((time.monotonic()-started)*1000,2))
             if intent=='out_of_scope':
                 return {'answer':result['answer']} if result['answerable'] and result['answer'].strip() else {}
-            if not result['answerable'] or not result['answer'].strip():return {'reason':'insufficient_evidence'}
+            def insufficient():
+                code = explicit_http_status(state['question'])
+                if code and intent=='knowledge':
+                    source = next((row for row in evidence if code in HTTP_STATUS.findall(row['title'])), None)
+                    if source and (answer := PublicLinks().clean(source['content']).strip()):
+                        event('http_status_source_fallback', status_code=code, evidence_id=source['id'])
+                        return {'answer':answer,'reason':'knowledge','success':True,'selected':[source]}
+                return {'reason':'insufficient_evidence'}
+            if not result['answerable'] or not result['answer'].strip():return insufficient()
             if check_facts:
                 from .grounding import unsupported_business_facts
                 unsupported=unsupported_business_facts(result['answer'],evidence,state.get('guide_context'))
@@ -508,7 +525,8 @@ class SupportWorkflow:
                     result={**result,'answer':PublicLinks().clean(result['answer'])}
                     if (not result['answerable'] or not result['answer'].strip()
                             or unsupported_business_facts(result['answer'],evidence,state.get('guide_context'))):
-                        return {'reason':'insufficient_evidence'}
+                        event('business_answer_revision_rejected')
+                        return insufficient()
                 if result['answer'].strip():
                     runtime.context.delta(result['answer'])
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]

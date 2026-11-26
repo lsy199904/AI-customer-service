@@ -64,6 +64,10 @@ def fallback_evidence(question, candidates, limit):
     from .retrieval import terms,clean_content,title_text
     query=set(terms(question))
     if not query:return [],'fallback_no_support'
+    command_requested = re.search(r'(?<![a-z0-9])curl(?![a-z0-9])', question, re.I) and not re.search(
+        r'响应示例|响应格式|返回示例|返回格式', question)
+    commands = [candidate for candidate in candidates if command_requested and re.search(
+        r'(?<![\w-])curl\s+[^\n]*https?://', candidate['row']['content'], re.I)]
     supported=[]
     for candidate in candidates:
         row=candidate['row']
@@ -74,7 +78,8 @@ def fallback_evidence(question, candidates, limit):
         # this particular candidate pool. Preserve the upstream ranking.
         if overlap>=min(2,len(query)) and overlap/len(query)>=.25:
             supported.append(candidate)
-    return supported[:limit], 'ranked_query_support_fallback' if supported else 'fallback_no_support'
+    selected = commands + [candidate for candidate in supported if candidate not in commands]
+    return selected[:limit], 'ranked_query_support_fallback' if selected else 'fallback_no_support'
 
 class EvidenceSelector:
     def __init__(self,model):self.model=model
