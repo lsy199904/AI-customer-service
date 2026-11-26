@@ -47,6 +47,40 @@ def write_env(path, values):
         handle.write(''.join(f'{key}={value}\n' for key, value in values.items()))
 
 
+def gateway_origin(url):
+    parsed = urlsplit(url)
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+        return None
+    return parsed.scheme, parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80)
+
+
+def model_trial_keys(env, trial):
+    answer_url = env.get('MODEL_BASE_URL', 'https://api.smarttitu.cn/v1')
+    context = (env.get('QUERY_CONTEXT_BASE_URL') or answer_url, env.get('QUERY_CONTEXT_API_KEY'))
+    embed = (env.get('EMBEDDING_URL', ''), env.get('EMBEDDING_API_KEY'))
+    answer = (answer_url, env.get('MODEL_API_KEY'))
+    prompted = {}
+    keys = {}
+    for key_name, url_name, candidates in (
+        ('QUERY_CONTEXT_API_KEY', 'QUERY_CONTEXT_BASE_URL', (context, answer, embed)),
+        ('EMBEDDING_API_KEY', 'EMBEDDING_URL', (embed, answer, context)),
+    ):
+        origin = gateway_origin(trial[url_name])
+        if origin is None:
+            raise SystemExit(f'{url_name} 不是有效的网关地址。')
+        key = next((value for url, value in candidates if value and gateway_origin(url) == origin), None)
+        if key:
+            print(f'{key_name} 复用 8207 已配置的同网关 Key。', flush=True)
+        else:
+            if origin not in prompted:
+                prompted[origin] = getpass.getpass(f'请输入 {origin[1]} 的 API Key（输入不可见）：').strip()
+            key = prompted[origin]
+            if not key:
+                raise SystemExit('缺少试用网关 API Key，8207 未切换。')
+        keys[key_name] = key
+    return keys
+
+
 def cutover(candidate):
     renamed = False
     stopped = False
@@ -108,13 +142,9 @@ def switch(flyway_image):
     config_path = REPO / 'deploy/compose/8207-model-trial.env.example'
     trial = dict(line.split('=', 1) for line in config_path.read_text().splitlines()
                  if line and not line.startswith('#'))
-    key = getpass.getpass('请输入上述网关的 API Key（两种模型都须有权限，输入不可见）：').strip()
-    if not key:
-        raise SystemExit('需要提供试用网关 API Key。')
-    env.update(trial)
+    env.update(trial, **model_trial_keys(env, trial))
     env.update(DATABASE_URL=db_url, DEPLOYMENT_ID='smarttitu-rag-8207-pro',
                VECTOR_BACKEND='milvus', MILVUS_COLLECTION='smarttitu_rag_8207_pro',
-               QUERY_CONTEXT_API_KEY=key, EMBEDDING_API_KEY=key,
                ANONYMOUS_COOKIE_NAME='smarttitu_8207_pro_visitor',
                PORT='8207', APP_PORT='8207', HOST='0.0.0.0',
                KNOWLEDGE_SOURCE_DIR=f'{app_root}/knowledge_sources',
