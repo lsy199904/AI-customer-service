@@ -23,6 +23,7 @@ from .tools import ToolContext
 FALLBACK=NO_ANSWER
 OUT_OF_SCOPE='这个问题超出了 SmartTITU 客服的服务范围。您可以问我产品使用、模型接入、充值或账单等问题。'
 CONTEXT_UNAVAILABLE='暂时无法理解这条问题，请稍后重试。您可以继续使用当前会话。'
+UNCLEAR_INPUT='请问您想了解 SmartTITU 的哪项功能，或遇到了什么问题？'
 
 class RequestCancelled(Exception):pass
 class WorkflowConflict(Exception):pass
@@ -148,8 +149,10 @@ class SupportWorkflow:
                 raise
             except Exception as error:
                 event('question_resolution_unavailable', level='WARNING', **error_fields(error))
-                intent = 'context_unavailable'
+                intent = 'context_unavailable' if any(character.isalnum() for character in question) else 'unclear_input'
                 interpretation = {'question':question,'kind':'unavailable'}
+        elif not any(character.isalnum() for character in question):
+            intent = 'unclear_input'
         else:
             intent = intent_of(question)
             if rejected_recommendations(question, history):
@@ -170,6 +173,8 @@ class SupportWorkflow:
         if complaint:
             values.update(answer='您可以通过下方人工渠道反馈，并说明遇到的问题和相关时间。当前我无法直接登记投诉或确认处理进度。',reason='complaint_handoff')
         values.update(assistance={},guidance=None,guide_context=None,explicit_guide_control=explicit_guide_control)
+        if intent == 'unclear_input':
+            values['assistance']={'kind':'clarify','answer':UNCLEAR_INPUT,'choices':[],'reason':'unclear_input'}
         if intent == 'context_unavailable':
             from .assistance import supported_flow_choices
             try:
@@ -206,7 +211,7 @@ class SupportWorkflow:
         runtime.context.emit('clarifying')
         plan=state.get('assistance',{})
         event('clarification_requested',choice_count=len(plan['choices']))
-        return {'answer':plan['answer'],'success':True,'reason':'clarification','intent':'clarification'}
+        return {'answer':plan['answer'],'success':True,'reason':plan.get('reason','clarification'),'intent':'clarification'}
 
     def guide_ack(self,state:State,runtime:Runtime[Context]):
         return {'answer':'好的，当前步骤已保留。您可以继续操作，完成后告诉我，或点“这一步怎么做”继续了解。',
@@ -388,24 +393,22 @@ class SupportWorkflow:
             def safe_delta(text):
                 value=link_stream.feed(text)
                 if value:runtime.context.delta(value)
+            interpretation=state.get('interpretation',{})
+            resolved=state['retrieval'].get('query',state['question'])
+            if interpretation.get('kind') in ('followup','mixed') and not state.get('guide_context'):
+                resolved=interpretation['question']
             context={**state['page_context'],'_intent':intent,'_media':state['candidates'],
-                '_resolved_question':state['retrieval'].get('query',state['question']),
+                '_resolved_question':resolved,
                 '_runtime_tools':sorted(s.tools.tools),
                 '_on_delta':safe_delta if runtime.context.observer else None,
                 '_guidance':state.get('guide_context'),'_reserved_qr':bool(qr)}
-            history=[] if state.get('guide_context') else state['history']
-            interpretation=state.get('interpretation',{})
-            if interpretation:
-                from .query_context import bounded_history
+            history=[]
+            if intent=='history':
+                history=state['history']
                 older=interpretation.get('older_messages',[])
-                if intent=='history':
-                    if older:
-                        observed={(item.get('created_at'),item['role']) for item in older}
-                        history=older+[item for item in history[-6:] if (item.get('created_at'),item['role']) not in observed]
-                elif interpretation['kind']=='followup' and not state.get('guide_context'):
-                    history=(older+bounded_history(history))[-8:]
-                else:
-                    history=[]
+                if older:
+                    observed={(item.get('created_at'),item['role']) for item in older}
+                    history=older+[item for item in history[-6:] if (item.get('created_at'),item['role']) not in observed]
             result=s.model.answer(state.get('assistance',{}).get('resolved_question') or state['question'],history,generation_evidence(state['evidence'],bool(qr)),context)
             if runtime.context.observer:
                 tail=link_stream.finish()
@@ -414,7 +417,7 @@ class SupportWorkflow:
             result={**result,'answer':PublicLinks().clean(result['answer'])}
             runtime.context.check()
             event('generation_completed',citations=len(result.get('citation_ids',[])),
-                  history_messages=len(state['history']),elapsed_ms=round((time.monotonic()-started)*1000,2))
+                  history_messages=len(history),elapsed_ms=round((time.monotonic()-started)*1000,2))
             if not result['answerable']:return {'reason':'insufficient_evidence'}
             selected=[r for r in state['evidence'] if r['id'] in result['citation_ids']]
             if not conversation:
@@ -451,7 +454,7 @@ class SupportWorkflow:
             if self.image_policy.parallel(s.config.mode,s.model):
                 decision=self.finish_visual(state)
             else:
-                decision=self.image_policy.propose(s.config.mode,s.model,state['question'],state['answer'],state['history'],selected,state['candidates'],state.get('guide_context'),state.get('resolved_question'))
+                decision=self.image_policy.propose(s.config.mode,s.model,state['question'],state['answer'],[],selected,state['candidates'],state.get('guide_context'),state.get('resolved_question'))
             from .pdf_media import reserved_qr
             qr=reserved_qr(state.get('resolved_question') or state['question'],state['candidates'])
             decision=self.image_policy.guard(state['question'],decision)
@@ -532,7 +535,7 @@ class SupportWorkflow:
         ctx=copy_context();key=self.key(state)
         event('image_planning_started',parallel=True)
         try:
-            job=self._visual_pool.submit(ctx.run,self.image_policy.propose,s.config.mode,s.model,state['question'],'',state['history'],
+            job=self._visual_pool.submit(ctx.run,self.image_policy.propose,s.config.mode,s.model,state['question'],'',[],
                 state['evidence'],state['candidates'],state.get('guide_context'),state.get('resolved_question'))
         except Exception:
             self._visual_slots.release();return

@@ -669,8 +669,8 @@ class Service:
         if client_action is not None and (client_action!='handoff' or question!='转人工客服' or faq is not None):
             raise APIError(400,'invalid_fields','人工客服操作无效')
         if faq is not None and question!=faq['question']:raise APIError(400,'invalid_faq','常见问题与编号不一致，请刷新后重试')
-        if not isinstance(question,str) or len(question)>2000 or not any(character.isalnum() for character in question):
-            raise APIError(400,'invalid_message','问题须包含文字或数字，且不超过2000字')
+        if not isinstance(question,str) or not question.strip() or len(question)>2000:
+            raise APIError(400,'invalid_message','问题不能为空，且不超过2000字')
         if not isinstance(rid,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{8,80}',rid):
             raise APIError(400,'invalid_request_id','request_id 须为8至80位字母、数字、下划线或连字符')
         with self.lock:

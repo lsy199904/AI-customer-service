@@ -64,6 +64,9 @@ STREAMING_SETUP = """
 def message_reply(body):
     """与原 JS mock 一致：默认回答基础上按提问内容覆盖分支字段。"""
     message = body['message']
+    if message == '，':
+        return {'answer': '请问您想了解 SmartTITU 的哪项功能，或遇到了什么问题？',
+                'status': 'answered', 'reason': 'unclear_input', 'request_id': body['request_id']}
     if message == '测试失败':
         return {'answer': '暂时无法完成回答，请稍后重试。', 'status': 'suggestions',
                 'request_id': body['request_id'], 'suggestions': ['操作审计']}
@@ -307,14 +310,15 @@ def test_handoff_copies_contacts_without_links(ui):
     assert_no_page_errors(ui)
 
 @pytest.mark.ui
-def test_punctuation_only_never_sends_or_repeats_last_answer(ui):
+def test_punctuation_only_can_be_sent_and_gets_a_neutral_prompt(ui):
     page=ui.page
     ask(ui,'操作审计')
     initial_count=len(ui.requests)
     user_messages=page.locator('.message.user').count()
     page.get_by_role('textbox',name='客服问题').fill('，')
     page.get_by_role('button',name='发送',exact=True).click()
-    expect(page.get_by_text('请输入要咨询的问题。',exact=True)).to_be_visible()
-    assert len(ui.requests)==initial_count
-    assert page.locator('.message.user').count()==user_messages
+    expect(page.get_by_text('请问您想了解 SmartTITU 的哪项功能，或遇到了什么问题？',exact=True)).to_be_visible()
+    assert len(ui.requests)==initial_count+1
+    assert ui.requests[-1]['body']['message']=='，'
+    assert page.locator('.message.user').count()==user_messages+1
     assert_no_page_errors(ui)

@@ -126,10 +126,13 @@ def test_overnight_followup_uses_same_session_and_can_be_recalled(service):
     answer = chat(service, sid, '那这个额度可以多次申请吗？', 'overnight-followup')
     assert '一次' in answer['answer']
     assert '开票' in answer['retrieval']['query']
+    assert service.model.answer.call_args.args[1] == []
+    assert service.model.answer.call_args.args[3]['_resolved_question'] == '提前开票可以多次申请吗？'
     recent = json.loads(service.model.complete.call_args_list[1].args[0][-1]['content'])['recent_messages']
     assert [item['role'] for item in recent] == ['user', 'assistant']
     recalled = chat(service, sid, '我刚才问了什么？', 'history-recall')
     assert recalled['reason'] == 'history'
+    assert any(item['content'] == '最高2万元。' for item in service.model.answer.call_args.args[1])
     assert len(service.history(ACTOR, sid)['items']) == 6
 
 
@@ -174,11 +177,26 @@ def test_ambiguous_payment_has_real_options_and_selection_is_independent(service
     service.model.answer.side_effect = evidence_answer
     response = chat(service, sid, '支付不了', 'ambiguous-payment')
     assert response['reason'] == 'clarification'
+    assert response['suggestions'] == []
     assert [action['message'] for action in response['actions']] == ['账单支付流程', '客户充值流程']
     result = chat(service, sid, '账单支付流程', 'chosen-payment')
     assert any('账单支付流程' in item['title'] for item in result['citations'])
     assert result['retrieval']['method']=='registered_flow'
     service.model.complete.assert_called_once()
+
+
+def test_payment_failure_after_recharge_uses_recharge_context(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan(
+        'knowledge', 'followup', question='客户充值时支付失败怎么办？', flow_id='recharge')
+    service.model.answer.side_effect = evidence_answer
+    chat(service, sid, '客户充值流程', 'recharge-before-failure')
+    with patch('app.chains.retrieve', return_value={'evidence': [], 'retrieval': {'matched': False, 'hits': []}}):
+        result = chat(service, sid, '支付不了', 'recharge-payment-failure')
+    assert result['reason'] == 'knowledge'
+    assert result['citations'][0]['section_title'] == '客户充值流程'
+    assert service.model.answer.call_args.args[3]['_resolved_question'] == '客户充值时支付失败怎么办？'
+    assert result['suggestions'] == []
 
 
 @pytest.mark.parametrize('flow_id', tuple(GUIDED_FLOWS))
@@ -200,6 +218,34 @@ def test_every_registered_choice_skips_reclassification(service, flow_id):
     assert result['status'] == 'answered'
     assert result['retrieval']['method'] == 'registered_flow'
     assert [citation['section_title'] for citation in result['citations']] == [title]
+    service.model.complete.assert_called_once()
+
+
+@pytest.mark.parametrize('flow_id', tuple(GUIDED_FLOWS))
+def test_every_guided_flow_stays_on_its_own_steps(service, flow_id):
+    flow = GUIDED_FLOWS[flow_id]
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('guide')
+    service.model.answer.side_effect = evidence_answer
+    result = chat(service, sid, '分步指导：' + flow['title'], 'start-guided-flow')
+    assert result['guidance']['flow_id'] == flow_id and result['guidance']['step'] == 0
+    service.model.complete.side_effect = AssertionError('guide control reclassified')
+    service.model.answer.side_effect = AssertionError('guide control regenerated from history')
+    with patch('app.chains.retrieve', side_effect=AssertionError('guide control used general search')):
+        for step, (stage, _) in enumerate(flow['stages']):
+            if step:
+                result = chat(service, sid, '这一步已完成', f'guide-advance-{step}')
+                assert result['guidance']['flow_id'] == flow_id and result['guidance']['step'] == step
+                assert result['answer'].startswith(f'第 {step + 1} 步 · {stage}')
+            current = chat(service, sid, '这一步怎么做', f'guide-read-{step}')
+            assert current['guidance']['step'] == step
+            assert current['answer'].startswith(f'第 {step + 1} 步 · {stage}')
+            assert [item['section_title'] for item in current['citations']] == [flow['title']]
+        backed = chat(service, sid, '返回上一步', 'guide-step-back')
+        assert backed['guidance']['flow_id'] == flow_id
+        assert backed['guidance']['step'] == len(flow['stages']) - 2
+        ended = chat(service, sid, '结束指导', 'guide-step-end')
+        assert ended['guidance']['status'] == 'ended'
     service.model.complete.assert_called_once()
 
 
@@ -243,14 +289,73 @@ def test_recover_model_output_then_ground_general_flow_if_search_misses(service,
     assert service.model.answer.call_args.args[0]==question
     assert service.model.complete.call_count==2
 
+
+@pytest.mark.parametrize('question, heading', [
+    ('Token是什么', 'Token(词元)'),
+    ('Token是什么？', 'Token(词元)'),
+    ('TOKEN 是什么意思？？', 'Token(词元)'),
+    ('什么是 Token', 'Token(词元)'),
+    ('词元是什么', 'Token(词元)'),
+    ('RAG是什么', 'RAG(检索增强生成)'),
+])
+def test_definition_questions_use_the_glossary_for_multiple_terms(service, question, heading):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge')
+    service.model.answer.side_effect = evidence_answer
+    result = chat(service, sid, question, 'glossary-definition')
+    assert result['status'] == 'answered'
+    assert result['retrieval']['method'] == 'glossary_definition'
+    assert '名词解释' in result['citations'][0]['title']
+    assert result['answer'].startswith(heading)
+    assert result['suggestions'] == []
+
+
+def test_unanswered_product_question_offers_suggestions_and_human_support(service):
+    sid = service.create(ACTOR, {})['session_id']
+    service.model.complete.return_value = plan('knowledge')
+    with patch('app.chains.retrieve', return_value={
+        'evidence': [], 'retrieval': {'matched': False, 'hits': [], '_suggestion_titles': ['问题73 SmartTITU 名词解释']},
+    }):
+        result = chat(service, sid, '怎么配置模型的每日预算上限？', 'no-supported-answer')
+    assert result['status'] == 'suggestions'
+    assert 1 <= len(result['suggestions']) <= 6
+    assert result['actions'][0]['type'] == 'handoff'
+    service.model.answer.assert_not_called()
+
 @pytest.mark.parametrize('value', ['，','?','！？','…','。  '])
-def test_punctuation_cannot_emit_or_inherit_chat_state(service,value):
+def test_punctuation_asks_what_help_is_needed_without_inheriting_history(service,value):
     sid=service.create(ACTOR,{})['session_id']
-    with pytest.raises(APIError) as error:
-        chat(service,sid,value,'punctuation-only')
-    assert error.value.code=='invalid_message'
-    assert service.history(ACTOR,sid)['items']==[]
-    service.model.complete.assert_not_called()
+    service.model.complete.side_effect=[plan('knowledge',flow_id='invoice'),plan('knowledge','lookup',history_query='开票')]
+    service.model.answer.side_effect=evidence_answer
+    chat(service,sid,'在线开票流程是什么？','prior-invoice')
+    service.model.answer.reset_mock()
+    with patch.object(service,'reserve_rag_quota',side_effect=AssertionError('unclear input must not retrieve')):
+        response=chat(service,sid,value,'punctuation-only')
+    assert response['reason']=='unclear_input'
+    assert response['citations']==[] and response['suggestions']==[]
+    assert '想了解' in response['answer']
+    assert len(service.history(ACTOR,sid)['items'])==4
+    payload=json.loads(service.model.complete.call_args.args[0][-1]['content'])
+    assert payload['current_question']==value.strip() and payload['recent_messages']==[]
+    service.model.answer.assert_not_called()
+
+
+def test_typo_question_still_uses_model_and_does_not_mix_previous_topic(service):
+    sid=service.create(ACTOR,{})['session_id']
+    question='余额怎吗冲值？？'
+    service.model.complete.side_effect=[
+        plan('knowledge',flow_id='invoice'),plan('unclear_input'),plan('knowledge',flow_id='recharge'),
+    ]
+    service.model.answer.side_effect=evidence_answer
+    chat(service,sid,'在线开票流程是什么？','prior-invoice')
+    assert chat(service,sid,'asdf','unclear-typed')['reason']=='unclear_input'
+    with patch('app.chains.retrieve',return_value={'evidence':[],'retrieval':{'matched':False,'hits':[]}}):
+        response=chat(service,sid,question,'noisy-recharge')
+    payload=json.loads(service.model.complete.call_args.args[0][-1]['content'])
+    assert payload['current_question']==question
+    assert len(payload['recent_messages'])==2 and '开票' in payload['recent_messages'][0]['content']
+    assert service.model.answer.call_args.args[1]==[]
+    assert any('客户充值流程' in item['title'] for item in response['citations'])
 
 
 def test_guided_progress_uses_registered_stage_even_after_unrelated_history(service):
@@ -258,6 +363,8 @@ def test_guided_progress_uses_registered_stage_even_after_unrelated_history(serv
     service.model.complete.return_value=plan('guide')
     service.model.answer.side_effect=evidence_answer
     chat(service,sid,'分步指导：注册流程','begin-registration')
+    service.model.complete.return_value=plan('unclear_input')
+    assert chat(service,sid,'，','guide-mistyped')['reason']=='unclear_input'
     calls=service.model.complete.call_count
     service.model.complete.side_effect=AssertionError('guide action must skip intent')
     service.model.answer.side_effect=AssertionError('guide action uses current stage evidence')

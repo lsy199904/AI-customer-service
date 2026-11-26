@@ -35,7 +35,12 @@ def flow_match(question,keys):
 
 
 def last_response(history):
-    return next((item.get('response') or {} for item in reversed(history) if item['role']=='assistant'),{})
+    for item in reversed(history):
+        if item['role']=='assistant':
+            response=item.get('response') or {}
+            if response.get('reason')!='unclear_input':
+                return response
+    return {}
 
 
 # These are the widget's explicit controls, shared by all guided flows.

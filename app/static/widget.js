@@ -287,7 +287,7 @@
     svg.append(path);holder.append(svg);return holder;
   }
   function message(role, text, response) {
-    if(role==='assistant')transcript.querySelectorAll('.assistant-actions button').forEach(button=>{button.disabled=true;});
+    if(role==='assistant'&&response&&response.reason!=='unclear_input')transcript.querySelectorAll('.assistant-actions button').forEach(button=>{button.disabled=true;});
     const row = element('div', 'message ' + role);
     const identity=element('div','message-role');
     identity.append(roleAvatar(role),element('span','',role==='assistant'?'SmartTITU 智能客服':'您'));
@@ -544,7 +544,6 @@
     if(retrying && retry)clientAction=retry.clientAction || null;
     const text=(value ?? input.value).trim();
     if (!text || busy) return;
-    if (!/[\p{L}\p{N}]/u.test(text)) {notice('请输入要咨询的问题。');return;}
     if (!initialized) { notice('请先完成客服连接。',()=>refresh());return; }
     if (text.length>2000) { notice('问题不能超过2000字');return; }
     const v=generation;setBusy(true);clearStatus();activity();
