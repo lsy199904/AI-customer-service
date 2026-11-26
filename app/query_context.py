@@ -40,11 +40,11 @@ def has_explicit_topic(question):
         return False
     if definition_target(question):
         return True
-    if not re.search(r'怎么|如何|哪里|在哪|需要什么|有哪些|how\b|where\b', question, re.I):
+    if not re.search(r'怎么|如何|哪里|在哪|需要什么|有哪些|多少|几次|多久|能否|是否|可不可以|how\b|where\b', question, re.I):
         return False
     from .assistance import FLOWS,flow_match
     return bool(flow_match(question,FLOWS) or re.search(
-        r'(?<![A-Za-z0-9])(?:api|sdk|curl|token|rpm|tpm|qps|smarttitu|titu\s*(?:hub|edge))(?![A-Za-z0-9])',
+        r'开票|发票|调用限额|调用配额|(?<![A-Za-z0-9])(?:api|sdk|curl|token|rpm|tpm|qps|smarttitu|titu\s*(?:hub|edge))(?![A-Za-z0-9])',
         question,re.I))
 
 
@@ -170,6 +170,8 @@ ROUTING_PROMPT = '''你是 SmartTITU 智能客服的问题分流器。用户输�
 - guide：请求开始或继续分步指导。identity、capabilities、greeting、thanks、farewell 为客服互动。
 kind 选择 independent、followup、mixed、clarify 或 lookup。完整问题保留原话。追问根据最近相关消息补全所指，优先使用用户最新说明，保留已完成阶段、金额、时间、报错、主体和限制。前一轮的意图不会延续到明确的新主题。历史只帮助理解，历史助手答复中的业务结论与数值不作为事实。
 只有本轮确实有承接前文的内容，或用户回答上一轮澄清，才能用 followup；此时在 context_reference 摘录相关历史消息中能确认所指的原话。仅有残缺输入或语法片段时，不得靠历史替用户造问题。用户明确说明了新的主题和想问的事时，按 independent，禁止把它改写成旧主题。
+先从本轮确认业务对象和想问的事。两者都明确时用 independent，原话清楚时直接用原问；例如“提前开票最高多少？”只问开票金额上限，不能带入旧话题的调用限额或增添申请次数。
+有指代或关键对象省略时，从最新消息向前找，优先绑定最近一个能解释所指的明确业务对象，并在 context_reference 摘录含该对象的原话。上一轮已谈提前开票时，“那这个额度可以多次申请吗？”只补全为“提前开票可以多次申请吗？”；上一轮明确谈模型调用限额时，同一句话指调用限额。仅共享“额度”“申请”等词不能确认指代。用户明确回指更早内容时按其指向查找；多个对象仍无法区分时只澄清对象。改写只补齐本轮缺失的信息，不从历史填入未经证实的规则或额外问题。
 独立产品问题如有明显错拼、口语或缺省表达，且主体与需求足够明确，在 normalized_query 写一个适合优先检索的独立问句。只纠正有把握的产品名或术语、补出用户已表达的需求，保留原有的产品、功能、对象、否定、金额、时间和报错等条件。不要从旧话题补入本轮未表达的需求，也不要擅改像型号、版本或错误码的标识。原话已清楚时留空。疑似本平台产品名或术语但只有名称、还看不出想问什么时，选择 knowledge + clarify，说明可能的含义，再问一个具体问题。仅在毫无可辨含义时用 unclear_input。
 用户描述困难时，能从会话确定业务就给出对应检索问法。业务不明确且可能影响下一步时，只澄清一个关键点。能用通用流程回答时无需索要具体订单、账号或支付方式。choices 仅列可能解决本轮歧义的流程，最多三个。明确回指更早对话且近期信息不足时用 lookup，history_query 填简短主题词（词间使用空格）或日期。收到 older_messages 后给出最终判断。
 pending_clarification 存在时，先判断本轮是否在回答上一轮的澄清问题。能确定用户选了哪个主题时，按 knowledge + followup 补成独立检索问句，短语或选项名也可以完成澄清。仍缺少关键条件时，只问缺失的那一项。用户明确换题时，按新问题处理。

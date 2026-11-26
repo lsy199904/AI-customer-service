@@ -174,6 +174,36 @@ def test_new_api_how_to_does_not_reuse_previous_invoice_topic():
     assert result['kind']=='independent' and result['question']=='API 密钥在哪里创建？'
 
 
+@pytest.mark.parametrize('question', ['提前开票最高多少？', '模型调用限额是多少？'])
+def test_explicit_limit_question_ignores_stale_followup_plan(question):
+    model = Mock()
+    model.complete.return_value = plan(
+        'knowledge', 'followup', question='如何提升充值上限？',
+        context_reference='充值上限', retry_query='充值申请上限是多少？',
+    )
+    result = interpret(model, question, [{'role': 'user', 'content': '充值上限怎么查？'}])
+    assert result['kind'] == 'independent'
+    assert result['question'] == question
+    assert not result['retry_query']
+
+
+@pytest.mark.parametrize('topic,older', [('提前开票', '模型调用限额'), ('模型调用限额', '提前开票')])
+def test_ambiguous_limit_followup_keeps_resolved_topic(topic, older):
+    model = Mock()
+    rewritten = f'{topic}可以多次申请吗？'
+    model.complete.return_value = plan(
+        'knowledge', 'followup', question=rewritten, context_reference=topic,
+    )
+    result = interpret(model, '那这个额度可以多次申请吗？', [
+        {'role': 'user', 'content': f'{older}是多少？'},
+        {'role': 'assistant', 'content': f'刚才讨论的是{older}。'},
+        {'role': 'user', 'content': f'{topic}最高多少？'},
+        {'role': 'assistant', 'content': f'这里说的是{topic}。'},
+    ])
+    assert result['kind'] == 'followup'
+    assert result['question'] == rewritten
+
+
 def test_business_fact_checks_accept_equivalent_amount_and_count_and_reject_extra_limit():
     from app.grounding import unsupported_business_facts
     evidence = [{'content':'最高20,000元，可申请1次。限流指标为每分钟请求数和每分钟 Token 数。'}]
